@@ -1,0 +1,14 @@
+{
+  "python.languageServer": "Pylance",
+  "python.terminal.activateEnvironment": true,
+
+  "editor.formatOnSave": true,
+  "autoDocstring.docstringFormat": "numpy",
+
+  "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    },
+    "editor.defaultFormatter": "ms-python.black-formatter"
+  },
+}

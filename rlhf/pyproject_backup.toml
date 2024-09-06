@@ -1,0 +1,73 @@
+[tool.poetry]
+name = "ml-project"
+version = "0.1.0"
+description = "Project for the AI Center Projects in Machine Learning Research course"
+authors = ["András Geiszl <geiszla@gmail.com>"]
+license = "UNLICENSED"
+readme = "README.md"
+repository = "https://github.com/geiszla/rlhf"
+packages = [{ include = "rlhf" }]
+
+[tool.poetry.scripts]
+generate_feedback = "rlhf.generate_feedback:main"
+train_reward = "rlhf.train_reward_model:main"
+train_agent = "rlhf.train_agent:main"
+plot_reward = "rlhf.plot_reward_model_output:main"
+export_videos = "rlhf.export_videos:main"
+
+[tool.poetry.dependencies]
+python = "~3.11"
+captum = "^0.7.0"
+# Required for mujoco-py to compile properly
+cython = "<3"
+flask = "^3.0.2"
+imitation = "^1.0.0"
+# Required to export videos of RL environments
+mujoco-py = "^2.1.2.14"
+numpy = "^1.26.4"
+optuna = "^3.5.0"
+pytorch-lightning = "^2.2.0.post0"
+ray = { extras = ["tune"], version = "^2.9.3" }
+rl-zoo3 = "^2.2.1"
+# Required for using `gym` with `stable-baselines3`
+shimmy = "^1.3.0"
+stable-baselines3 = "^2.2.1"
+tensorboard = "^2.16.2"
+torch = "^2.2.1"
+wandb = "^0.16.6"
+moviepy = "^1.0.3"
+
+[tool.poetry.group.dev.dependencies]
+black = "^24.2.0"
+conda-lock = "^2.5.5"
+pre-commit = "^3.6.2"
+pydocstyle = "^6.3.0"
+pylint = "^3.0.4"
+pyright = "^1.1.351"
+ruff = "^0.2.2"
+torch-tb-profiler = "^0.4.3"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+
+[tool.pyright]
+pythonVersion = "3.11"
+pythonPlatform = "All"
+
+include = ["rlhf"]
+exclude = ["**/__pycache__"]
+
+typeCheckingMode = "basic"
+
+useLibraryCodeForTypes = true
+stubPath = "python-type-stubs"
+
+[tool.pylint.TYPECHECK]
+generated-members = "torch.*"
+
+[tool.pylint.MAIN]
+disable = "duplicate-code,too-many-arguments,too-many-locals"
