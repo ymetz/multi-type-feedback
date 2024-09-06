@@ -4,7 +4,6 @@ import pickle
 import re
 from pathlib import Path
 from typing import Type, Union, List
-import matplotlib.pyplot as plt
 
 import gymnasium as gym
 from gymnasium.wrappers.stateful_observation import FrameStackObservation
@@ -12,15 +11,14 @@ from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper 
 from procgen import ProcgenGym3Env
 from rl_zoo3.wrappers import Gym3ToGymnasium
+# necessary to import ale_py/procgen, otherwise it will not be found
 import ale_py
-import minigrid
-# minigrid.register_minigrid_envs()
+import procgen
 import numpy as np
 import torch
 from captum.attr import IntegratedGradients
 from numpy.typing import NDArray
 from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.vec_env import VecExtractDictObs
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from torch import Tensor
 import random
@@ -287,27 +285,32 @@ def generate_feedback(
 
         # generate feedback from collected examples, split at given indices and dones
         final_segment_indices = list(set(fb_indices)) #| set(np.where([f[3] for f in feedback] == True)[0])
-        segments.extend(create_segments(feedback, final_segment_indices, np.where(np.array([f[3] for f in feedback]) == True)[0], segment_len, min_segment_len))
+        segments.extend(create_segments(feedback, final_segment_indices, np.where(np.array([f[3] for f in feedback]) is True)[0], segment_len, min_segment_len))
 
         print(f"Generated segments: {len(segments)} of approx. {n_feedback}")
 
     
     # start by computing the evaluative fb. (for the comparative one, we just used samples segment pairs)
     opt_gaps = []
+    single_initial_preds = [] # for debugging
+    single_final_preds = [] # for debugging
     for seg in segments:
         # predict the initial value
-        initial_val = predict_expert_value(
+        initial_vals = [predict_expert_value(
                 expert_model, np.array(seg[0][0])
-            ).item()
-        print("INITIAL VAL", initial_val)
+            ).item() for expert_model in expert_models]
+        print("INITIAL VAL", initial_vals, np.mean(initial_vals))
+        initial_val = np.mean(initial_vals)
+        single_initial_preds.append(initial_vals)
 
         # sum the discounted rewards, don't add reward for last step because we use it to calculate final value
         discounted_rew_sum = discounted_sum_numpy([s[2] for s in seg[:-1]], gamma)
-        print("DISC.REW.SUM", discounted_rew_sum)
         
         # get the final value
-        final_val = predict_expert_value(expert_model, np.array(seg[-1][0])).item()
-        print("FINAL VAL", final_val)
+        final_vals = [predict_expert_value(expert_model, np.array(seg[-1][0])).item() for expert_model in expert_models]
+        print("FINAL VAL", final_vals, np.mean(final_vals))
+        final_val = np.mean(final_vals)
+        single_final_preds.append(final_vals)
 
         # opt gap is the expected returns - actual returns
         opt_gap = (initial_val - gamma ** len(seg) * final_val) - discounted_rew_sum
@@ -331,6 +334,7 @@ def generate_feedback(
     demos = []
     corrections = []
     for i, state in enumerate(state_copies):
+        expert_model = expert_models[np.random.randint(len(expert_models))] # sample random expert model, we just choose one for a segment
         _, _ = environment.reset()
         obs = environment.load_state(state)
 
@@ -390,7 +394,7 @@ def main():
     checkpoints_path = "../main/logs"
 
     # load "ensemble" of expert agents
-    expert_model_paths = [os.path.join(checkpoints_path, args.algorithm, model, "best_model.zip") for model in os.listdir(os.path.join(checkpoints_path, args.algorithm) if args.environment in model]
+    expert_model_paths = [os.path.join(checkpoints_path, args.algorithm, model, "best_model.zip") for model in os.listdir(os.path.join(checkpoints_path, args.algorithm)) if args.environment in model]
     #expert_model = (PPO if args.algorithm == "ppo" else SAC).load(
     #    os.path.join(checkpoints_path, args.algorithm, f"{args.environment.replace("/", "-")}_1", "best_model.zip")
     #)
@@ -398,7 +402,7 @@ def main():
     for model in expert_model_paths:
         expert_models.append((PPO if args.algorithm == "ppo" else SAC).load(
             os.path.join(checkpoints_path, args.algorithm, f"{args.environment.replace("/", "-")}_1", "best_model.zip")
-        )
+        ))
 
     if "procgen" in args.environment:
         _, short_name, _ = args.environment.split("-")
