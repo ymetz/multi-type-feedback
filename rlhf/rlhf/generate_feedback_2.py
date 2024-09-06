@@ -175,10 +175,7 @@ def equal_width_binning_with_indices(data, num_bins):
     data = np.array(data)
     # Find the minimum and maximum values in the data
     min_val, max_val = np.min(data), np.max(data)
-    
-    # Calculate the width of each bin
-    bin_width = (max_val - min_val) / num_bins
-    
+
     # Create bin edges
     bin_edges = np.linspace(min_val, max_val, num_bins + 1)
     
@@ -351,13 +348,14 @@ def generate_feedback(
 
     # descriptive feedback, for now, compute attributions and the average over features
     if algorithm == "sac":
-        explainer = explainer_cls(lambda obs, acts: get_model_logits(expert_model, obs, acts))
+        explainers = [explainer_cls(lambda obs, acts: get_model_logits(expert_model, obs, acts)) for expert_model in expert_models]
     else:
-        explainer = explainer_cls(lambda obs: get_model_logits(expert_model, obs))
+        explainers = [explainer_cls(lambda obs: get_model_logits(expert_model, obs)) for expert_model in expert_models]
 
     descriptions = []
     for i, seg in enumerate(segments):
-        attributions = get_attributions(observation = expert_model.policy.obs_to_tensor(np.array([s[0].squeeze(0) for s in seg]))[0], actions=None, explainer=explainer, algorithm=algorithm)
+        attributions = [get_attributions(observation = expert_model.policy.obs_to_tensor(np.array([s[0].squeeze(0) for s in seg]))[0], actions=None, explainer=explainer, algorithm=algorithm) for expert_model, explainer in zip(expert_models, explainers)]
+        attributions = np.mean(attributions, axis=0)
         saliency = np.std(attributions) / np.mean(attributions) * np.abs(np.mean(attributions))
         descriptions.append((saliency, opt_gaps[i]))
 
