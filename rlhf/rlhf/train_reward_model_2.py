@@ -90,7 +90,6 @@ class FeedbackDataset(Dataset):
                     self.preds.append(1) # assume that the demonstration is optimal, maybe add confidence value (based on regret)
             case "corrective":
                 for comp in feedback_data["corrections"]:
-                    comp_index_gt = comp[0]
                     obs = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[0]])
                     actions = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[0]])
 

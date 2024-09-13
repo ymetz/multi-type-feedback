@@ -25,6 +25,8 @@ import random
 import itertools
 import bisect
 
+import pandas as pd
+
 from rlhf.datatypes import FeedbackDataset
 from rlhf.save_reset_wrapper import SaveResetEnvWrapper
 
@@ -215,7 +217,7 @@ def generate_feedback(
 
     checkpoint_files = [
         file for file in os.listdir(checkpoints_dir) if re.search(r"rl_model_.*\.zip", file)
-    ] or [f"{environment_name}.zip"]
+    ] or [f"{environment_name}.zip"]    
 
     total_steps = n_feedback * total_steps_factor # how many steps we want to generate to sample from, a natural choice is the segment length
     num_checkpoints = len(checkpoint_files) + 1 # also sample steps from random actios as the 0th checkpoint
@@ -242,6 +244,7 @@ def generate_feedback(
     explainer_cls = IntegratedGradients
 
     segments = []
+    state_copies = []
     for model_file in checkpoint_files:
         
         feedback = []
@@ -258,7 +261,6 @@ def generate_feedback(
             model = None
 
         observation, _ = environment.reset()
-        state_copies = []
 
         # now collect original data
         
@@ -296,7 +298,6 @@ def generate_feedback(
         initial_vals = [predict_expert_value(
                 expert_model, np.array(seg[0][0])
             ).item() for expert_model in expert_models]
-        print("INITIAL VAL", initial_vals, np.mean(initial_vals))
         initial_val = np.mean(initial_vals)
         single_initial_preds.append(initial_vals)
 
@@ -305,15 +306,12 @@ def generate_feedback(
         
         # get the final value
         final_vals = [predict_expert_value(expert_model, np.array(seg[-1][0])).item() for expert_model in expert_models]
-        print("FINAL VAL", final_vals, np.mean(final_vals))
         final_val = np.mean(final_vals)
         single_final_preds.append(final_vals)
 
         # opt gap is the expected returns - actual returns
         opt_gap = (initial_val - gamma ** len(seg) * final_val) - discounted_rew_sum
         opt_gaps.append(opt_gap)
-        print("DISC. FINAL VALUE", gamma ** len(seg) * final_val, gamma ** len(seg))
-        print("OPT GAP", opt_gap)
     
     # bin indices, which we interpret as rating feedback, of course flipped because a low opt. gap is good
     max_rating = 10
@@ -326,6 +324,8 @@ def generate_feedback(
     tolerance = 1.0
     pairs = get_k_random_pairs(np.arange(len(segments)), n_feedback)
     preferences = [(a,b,1) if (opt_gaps[a] - opt_gaps[b] > tolerance) else (b,a,1) if (opt_gaps[b] - opt_gaps[a] > tolerance) else (a,b,0) for a, b in pairs]
+
+    print("[INFO] Succesfully generated evaluative feedback")
     
     # instructive feedback, reset env and run expert model for demos for each segment
     demos = []
@@ -346,6 +346,8 @@ def generate_feedback(
         demos.append(demo)
         corrections.append((segments[i], demo))
 
+    print("[INFO] Succesfully generated demonstrative feedback")
+
     # descriptive feedback, for now, compute attributions and the average over features
     if algorithm == "sac":
         explainers = [explainer_cls(lambda obs, acts: get_model_logits(expert_model, obs, acts)) for expert_model in expert_models]
@@ -356,11 +358,15 @@ def generate_feedback(
     for i, seg in enumerate(segments):
         attributions = [get_attributions(observation = expert_model.policy.obs_to_tensor(np.array([s[0].squeeze(0) for s in seg]))[0], actions=None, explainer=explainer, algorithm=algorithm) for expert_model, explainer in zip(expert_models, explainers)]
         attributions = np.mean(attributions, axis=0)
-        saliency = np.std(attributions) / np.mean(attributions) * np.abs(np.mean(attributions))
-        descriptions.append((saliency, opt_gaps[i]))
+        descriptions.append((attributions, opt_gaps[i]))
 
-    descr_preferences = [(a,b,1) if (descriptions[a][1] - descriptions[b][1] > tolerance) else (b, a, 1) if (descriptions[b][1] - descriptions[a][1] > tolerance) else (a, b, 0) for a, b in pairs]        
+        if i % 20 == 0:
+            print(f"Generated {i}/{len(segments)} descriptions")
 
+    descr_preferences = [(a,b,1) if (descriptions[a][1] - descriptions[b][1] > tolerance) else (b, a, 1) if (descriptions[b][1] - descriptions[a][1] > tolerance) else (a, b, 0) for a, b in pairs]   
+
+    print("[INFO] Succesfully generated descriptive feedback")
+    
     return {
         "segments": segments,
         "ratings": ratings,
@@ -375,31 +381,43 @@ def generate_feedback(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment", type=int, default=0, help="Experiment number")
-    parser.add_argument("--algorithm", type=str, default="sac", help="RL algorithm")
+    parser.add_argument("--algorithm", type=str, default="ppo", help="RL algorithm")
     parser.add_argument("--environment", type=str, default="HalfCheetah-v5", help="Environment")
     parser.add_argument("--n-steps-factor", type=int, default=int(20), help="Number of steps sampled for each feedback instance")
     parser.add_argument("--n-feedback", type=int, default=int(1000), help="How many feedback instances should be generated")
     parser.add_argument("--seed", type=int, default=1337, help="TODO: Seed for env and stuff")
     parser.add_argument("--segment-len", type=int, default=50, help="How long is the segment we generate feedback for")
     parser.add_argument("--save-folder", type=str, default="feedback", help="Where to save the feedback")
+    parser.add_argument("--top-n-models", type=int, default=4)
     args = parser.parse_args()
 
     np.random.seed(args.seed)
+    random.seed(args.seed)
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     feedback_id = f"{args.algorithm}_{args.environment}"
-    feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}.pkl"
-    checkpoints_path = "../main/logs"
+    feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}_{args.seed}.pkl"
+    checkpoints_path = "../main/gt_agents"
 
     # load "ensemble" of expert agents
-    expert_model_paths = [os.path.join(checkpoints_path, args.algorithm, model, "best_model.zip") for model in os.listdir(os.path.join(checkpoints_path, args.algorithm)) if args.environment in model]
+    env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")
+    expert_model_paths = [os.path.join(checkpoints_path, args.algorithm, model) for model in os.listdir(os.path.join(checkpoints_path, args.algorithm)) if env_name in model]
+    orig_len = len(expert_model_paths)
     #expert_model = (PPO if args.algorithm == "ppo" else SAC).load(
     #    os.path.join(checkpoints_path, args.algorithm, f"{args.environment.replace("/", "-")}_1", "best_model.zip")
     #)
+
+
+    try:
+        run_eval_scores = pd.read_csv(os.path.join(checkpoints_path, "collected_results.csv"))
+        run_eval_scores = run_eval_scores.loc[run_eval_scores['env'] == args.environment].sort_values(by=['eval_score'], ascending=False).head(args.top_n_models)["run"].to_list()
+        expert_model_paths = [path for path in expert_model_paths if path.split(os.path.sep)[-1] in run_eval_scores]
+    except:
+        print("[WARN] No eval benchmark results are available. Check you eval benchmarks")
+    
     expert_models = []
-    for model in expert_model_paths:
-        expert_models.append((PPO if args.algorithm == "ppo" else SAC).load(
-            os.path.join(checkpoints_path, args.algorithm, f"{args.environment.replace("/", "-")}_1", "best_model.zip")
+    for expert_model_path in expert_model_paths:
+        expert_models.append((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, "best_model.zip")
         ))
 
     if "procgen" in args.environment:
@@ -431,6 +449,7 @@ def main():
 
     feedback_path.parent.mkdir(parents=True, exist_ok=True)
     with open(feedback_path, "wb") as feedback_file:
+        print("FB path", feedback_path)
         pickle.dump(feedback, feedback_file, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == "__main__":

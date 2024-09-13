@@ -388,7 +388,7 @@ CarRacing-v2:
 #   n_timesteps: !!float 1e6
 #   policy: 'MlpPolicy'
 
-Ant-v5: &mujoco-defaults
+Ant-v4: &mujoco-defaults
   normalize: true
   n_timesteps: !!float 1e6
   policy: 'MlpPolicy'
@@ -438,27 +438,27 @@ HalfCheetah-v5:
                     net_arch=dict(pi=[256, 256], vf=[256, 256])
                   )"
 
-# Ant-v4:
-#   normalize: true
-#   n_envs: 1
-#   policy: 'MlpPolicy'
-#   n_timesteps: !!float 1e7
-#   batch_size: 32
-#   n_steps: 512
-#   gamma: 0.98
-#   learning_rate: 1.90609e-05
-#   ent_coef: 4.9646e-07
-#   clip_range: 0.1
-#   n_epochs: 10
-#   gae_lambda: 0.8
-#   max_grad_norm: 0.6
-#   vf_coef: 0.677239
+Ant-v5:
+  normalize: true
+  n_envs: 1
+  policy: 'MlpPolicy'
+  n_timesteps: !!float 1e7
+  batch_size: 32
+  n_steps: 512
+  gamma: 0.98
+  learning_rate: 1.90609e-05
+  ent_coef: 4.9646e-07
+  clip_range: 0.1
+  n_epochs: 10
+  gae_lambda: 0.8
+  max_grad_norm: 0.6
+  vf_coef: 0.677239
 
 Hopper-v5:
   normalize: true
   n_envs: 1
   policy: 'MlpPolicy'
-  n_timesteps: !!float 1e6
+  n_timesteps: !!float 5e6
   batch_size: 32
   n_steps: 512
   gamma: 0.999
