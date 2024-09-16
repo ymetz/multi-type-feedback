@@ -16,14 +16,13 @@ import ale_py
 import procgen
 import numpy as np
 import torch
-from captum.attr import IntegratedGradients
-from numpy.typing import NDArray
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
 from torch import Tensor
 import random
-import itertools
+import bisect
+import cv2
 
 import pandas as pd
 
@@ -107,8 +106,7 @@ def generate_feedback(
     segment_len: int = 50,
     min_segment_len: int = 25, # segments can be pruned at the beginning or end of episodes, remove if shorter than min_len
     algorithm: str = "sac",
-    device: str = "cuda",
-    binning_type: str = "width"
+    seed: int = 1337,
 ) -> FeedbackDataset:
     """Generate agent's observations and feedback in the training environment."""
     feedback_id = f"{algorithm}_{environment_name.replace('/', '-')}"
@@ -163,11 +161,12 @@ def generate_feedback(
         observation, _ = environment.reset()
 
         # now collect original data
-        
+
         for step in range(steps_per_checkpoint):
             if step in final_segment_indices:
                 state_copies.append(environment.save_state(observation=observation))
 
+            render = environment.render()
             if model is not None:
                 actions, _ = model.predict(observation, deterministic=True)
             else:
@@ -176,7 +175,7 @@ def generate_feedback(
             done = terminated | truncated
 
             feedback.append(
-                (np.expand_dims(observation, axis=0), actions, reward, done)
+                (np.expand_dims(observation, axis=0), actions, reward, done, render)
             )
 
             observation = next_observation if not done else environment.reset()[0]
@@ -216,7 +215,6 @@ def generate_feedback(
     print("[INFO] Succesfully computed opt gaps")
     
     # instructive feedback, reset env and run expert model for demos for each segment
-    demos = []
     corrections = []
     for i, state in enumerate(state_copies):
         expert_model = expert_models[np.random.randint(len(expert_models))] # sample random expert model, we just choose one for a segment
@@ -228,6 +226,7 @@ def generate_feedback(
             # if we should normalize obs, do now
             if expert_model[1] is not None: # if the normalize env instance is not none
                 obs = expert_model[1].normalize_obs(obs)
+            render = environment.render()
             action, _ = expert_model[0].predict(obs, deterministic=True)
             obs, rew, terminated, truncated, _ = environment.step(action)
             done = terminated | truncated
@@ -235,8 +234,47 @@ def generate_feedback(
 
             if done:
                 break
-        demos.append(demo)
         corrections.append((segments[i], demo))
+
+
+    # compute opt. gaps for the instructive feedback
+    opt_gaps_instructive = []
+    for i, (seg, demo) in enumerate(corrections):
+        # predict the initial value
+        initial_vals = [predict_expert_value(
+                expert_model[0], np.array(seg[0][0])
+            ).item() for expert_model in expert_models]
+        initial_val = np.mean(initial_vals)
+
+        # sum the discounted rewards, don't add reward for last step because we use it to calculate final value
+        discounted_rew_sum = discounted_sum_numpy([s[2] for s in seg[:-1]], gamma)
+        
+        # get the final value
+        final_vals = [predict_expert_value(expert_model[0], np.array(seg[-1][0])).item() for expert_model in expert_models]
+        final_val = np.mean(final_vals)
+
+        # opt gap is the expected returns - actual returns
+        opt_gap = (initial_val - gamma ** len(seg) * final_val) - discounted_rew_sum
+        opt_gaps_instructive.append(opt_gap)
+
+    # now save the generated feedback as videos, with the naming scheme: <segment/demo>_env_seed_segmentindex_optgap.mp4, round optgap to int
+    for i, (seg, demo) in enumerate(corrections):
+
+        # save the segment
+        out = cv2.VideoWriter(f"feedback_videos/segment_{feedback_id}_{seed}_{i}_{int(opt_gaps[i])}.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 30, (render.shape[1], render.shape[0]))
+        for frame in [f[4] for f in seg]:
+            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+        out.release()
+
+        # save the demo
+        out = cv2.VideoWriter(f"feedback_videos/demo_{feedback_id}_{seed}_{i}_{int(opt_gaps_instructive[i])}.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 30, (render.shape[1], render.shape[0]))
+        for frame in [f[4] for f in demo]:
+            out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+                      
+        out.release()
+
+
 
     print("[INFO] Succesfully generated videos for demonstrative feedback")
 
@@ -287,7 +325,7 @@ def main():
     elif "MiniGrid" in args.environment:
         environment = SaveResetEnvWrapper(FlatObsWrapper(gym.make(args.environment)))
     else:
-        environment = SaveResetEnvWrapper(gym.make(args.environment))
+        environment = SaveResetEnvWrapper(gym.make(args.environment, render_mode="rgb_array"))
 
     expert_models = []
     for expert_model_path in expert_model_paths:
@@ -312,7 +350,7 @@ def main():
         segment_len=args.segment_len,
         checkpoints_path=checkpoints_path,
         algorithm=args.algorithm,
-        device=device,
+        seed=args.seed,
     )
 
     feedback_path.parent.mkdir(parents=True, exist_ok=True)
