@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# activate the venv
+source /home/cluster/venv/bin/activate
+
 # Set the experiment parameters
 envs=("Ant-v5" "Swimmer-v5" "HalfCheetah-v5" "Hopper-v5" "procgen-coinrun-v0" "procgen-miner-v0" "ALE/MsPacman-v5" "ALE/BeamRider-v5" "ALE/Enduro-v5" "ALE/Pong-v5")
 cuda_devices=(0 0 0 1 1 2 2 3 3 4 4)

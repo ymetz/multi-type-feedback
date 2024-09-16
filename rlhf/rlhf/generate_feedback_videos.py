@@ -24,46 +24,11 @@ from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
 from torch import Tensor
 import random
 import itertools
-import bisect
 
 import pandas as pd
 
 from rlhf.datatypes import FeedbackDataset
 from rlhf.save_reset_wrapper import SaveResetEnvWrapper
-
-def get_attributions(
-    observation: Tensor,
-    actions: NDArray = None,
-    explainer: IntegratedGradients = None,
-    algorithm: str = "sac",
-    device: str = "cuda",
-    internal_batch_size: int = None,
-) -> NDArray[np.float64]:
-    """
-    Compute attributions for a given observation and actions using the provided explainer.
-    """
-    observation = observation.to(device)
-    obs_baselines = torch.zeros_like(observation)
-    internal_batch_size = internal_batch_size or 64
-
-    if algorithm == "sac" and actions is not None:
-        actions_tensor = torch.from_numpy(actions).to(device)
-        actions_baselines = torch.zeros_like(actions_tensor)
-        attributions = explainer.attribute(
-            (observation, actions_tensor),
-            target=0,
-            baselines=(obs_baselines, actions_baselines),
-            internal_batch_size=internal_batch_size,
-        )
-    else:
-        attributions = explainer.attribute(
-            observation,
-            target=0,
-            baselines=obs_baselines,
-            internal_batch_size=internal_batch_size,
-        )
-
-    return attributions.detach().cpu().numpy()
 
 def predict_expert_value(
     expert_model: Union[PPO, SAC], 
@@ -79,30 +44,6 @@ def predict_expert_value(
             dim=1,
             keepdim=True,
         )[0]
-
-def get_model_logits(
-    expert_model: Union[PPO, SAC],
-    observation: Tensor,
-    actions: Tensor = None,
-) -> Tensor:
-    if isinstance(expert_model, SAC):
-        return torch.min(
-            torch.cat(expert_model.policy.critic_target(observation, actions), dim=1) if isinstance(expert_model, SAC) else expert_model.policy.predict_values(observation),
-            dim=1,
-            keepdim=True,
-        )[0]
-    else:
-        return expert_model.policy.predict_values(observation)
-
-"""
-archive
-def create_segments(arr, start_indices, done_indices, segment_length):
-    segments = []
-    for start in start_indices:
-        segment = arr[start:start + segment_length]
-        segments.append(segment)
-    return segments
-"""
 
 def create_segments(arr, start_indices, done_indices, segment_length, min_segment_len):
     """
@@ -155,50 +96,6 @@ def discounted_sum_numpy(rewards, discount_factor):
     discount_factors = discount_factor ** np.arange(n)
     return np.sum(rewards * discount_factors)
 
-def equal_depth_binning_with_indices(data, num_bins):
-    data = np.array(data)
-    # Sort the data and get the original indices
-    sorted_indices = np.argsort(data)
-    sorted_data = np.sort(data)
-    
-    # Determine the number of elements per bin
-    bin_size = len(data) // num_bins
-    remainder = len(data) % num_bins
-    
-    bins = []
-    bin_indices = np.zeros(len(data), dtype=int)
-    start = 0
-    
-    for i in range(num_bins):
-        end = start + bin_size + (1 if i < remainder else 0)
-        bin_indices[sorted_indices[start:end]] = i
-        bins.append(sorted_data[start:end])
-        start = end
-    
-    return bin_indices, bins
-
-def equal_width_binning_with_indices(data, num_bins):
-    data = np.array(data)
-    # Find the minimum and maximum values in the data
-    min_val, max_val = np.min(data), np.max(data)
-
-    # Create bin edges
-    bin_edges = np.linspace(min_val, max_val, num_bins + 1)
-    
-    # Use numpy's digitize function to assign bin indices
-    bin_indices = np.digitize(data, bin_edges[:-1])
-    
-    # Create the bins
-    bins = [data[(bin_indices == i)] for i in range(1, num_bins + 1)]
-    
-    return bin_indices, bins
-
-def get_k_random_pairs(data, k):
-    all_pairs = list(itertools.combinations(data, 2))
-    if k > len(all_pairs):
-        raise ValueError("k is too large for the number of possible unique pairs")
-    return random.sample(all_pairs, k)
-
 def generate_feedback(
     model_class: Type[Union[PPO, SAC]],
     expert_models: List[Union[PPO, SAC]],
@@ -233,7 +130,7 @@ def generate_feedback(
     checkpoint_files = ["random"] + sorted(checkpoint_files, key=lambda x: int(re.search(r'\d+', x).group()))
 
     print(f"""
-    Feedback Generation Debug Info:
+    Video Feedback Generation Debug Info:
       Feedback ID: {feedback_id}
       Checkpoints Directory: {checkpoints_dir}
       Number of Checkpoints: {num_checkpoints}
@@ -244,8 +141,6 @@ def generate_feedback(
       Feedback per Checkpoint: {feedback_per_checkpoint}
       Env. Gamma: {gamma}
     """)
-
-    explainer_cls = IntegratedGradients
 
     segments = []
     state_copies = []
@@ -317,20 +212,8 @@ def generate_feedback(
         # opt gap is the expected returns - actual returns
         opt_gap = (initial_val - gamma ** len(seg) * final_val) - discounted_rew_sum
         opt_gaps.append(opt_gap)
-    
-    # bin indices, which we interpret as rating feedback, of course flipped because a low opt. gap is good
-    max_rating = 10
-    if binning_type == "width":
-        ratings = max_rating - equal_width_binning_with_indices(opt_gaps, max_rating)[0]
-    else:
-        ratings = max_rating - equal_depth_binning_with_indices(opt_gaps, max_rating)[0]
 
-    # generate pair preferences, with tolerance 1.0
-    tolerance = 1.0
-    pairs = get_k_random_pairs(np.arange(len(segments)), n_feedback)
-    preferences = [(a,b,1) if (opt_gaps[a] - opt_gaps[b] > tolerance) else (b,a,1) if (opt_gaps[b] - opt_gaps[a] > tolerance) else (a,b,0) for a, b in pairs]
-
-    print("[INFO] Succesfully generated evaluative feedback")
+    print("[INFO] Succesfully computed opt gaps")
     
     # instructive feedback, reset env and run expert model for demos for each segment
     demos = []
@@ -355,97 +238,25 @@ def generate_feedback(
         demos.append(demo)
         corrections.append((segments[i], demo))
 
-    print("[INFO] Succesfully generated demonstrative feedback")
-
-    # Initialize explainers once per expert model
-    explainers = []
-    for expert_model in expert_models:
-        if algorithm == "sac":
-            # Adjusted to handle cases where actions are not provided
-            explainers.append(explainer_cls(lambda obs: get_model_logits(expert_model[0], obs)))
-        else:
-            explainers.append(explainer_cls(lambda obs: get_model_logits(expert_model[0], obs)))
-
-    """
-    descriptions = []
-    for i, seg in enumerate(segments):
-        attributions = [get_attributions(observation = expert_model.policy.obs_to_tensor(np.array([s[0].squeeze(0) for s in seg]))[0], actions=None, explainer=explainer, algorithm=algorithm) for expert_model, explainer in zip(expert_models, explainers)]
-        attributions = np.mean(attributions, axis=0)
-        descriptions.append((attributions, opt_gaps[i]))
-
-        if i % 20 == 0:
-            print(f"Generated {i}/{len(segments)} descriptions")
-    """
-
-
-    # Collect all observations and corresponding segment indices
-    all_obs = []
-    segment_indices = []
-    for idx, seg in enumerate(segments):
-        obs = np.array([s[0].squeeze(0) for s in seg])
-        all_obs.append(obs)
-        segment_indices.extend([idx] * len(obs))
-    all_obs = np.concatenate(all_obs, axis=0)
-    segment_indices = np.array(segment_indices)
-
-    # Convert observations to tensor once
-    observation_tensor = torch.tensor(all_obs, dtype=torch.float32).to(device)
-    internal_batch_size = min(observation_tensor.shape[0], 1024)  # Adjust 1024 as needed
-
-    # Initialize list to hold attributions per expert model
-    attributions_per_expert = []
-
-    for explainer in explainers:
-        # Get attributions in batches
-        attributions = get_attributions(
-            observation=observation_tensor,
-            actions=None,
-            explainer=explainer,
-            algorithm=algorithm,
-            device=device
-        )
-        attributions_per_expert.append(attributions)
-
-    # Average attributions over expert models
-    mean_attributions = np.mean(attributions_per_expert, axis=0)
-
-    # Group attributions back into segments
-    descriptions = []
-    for idx in range(len(segments)):
-        seg_mask = segment_indices == idx
-        seg_attributions = mean_attributions[seg_mask]
-        descriptions.append((seg_attributions, opt_gaps[idx]))
-
-    descr_preferences = [(a,b,1) if (descriptions[a][1] - descriptions[b][1] > tolerance) else (b, a, 1) if (descriptions[b][1] - descriptions[a][1] > tolerance) else (a, b, 0) for a, b in pairs]   
-
-    print("[INFO] Succesfully generated descriptive feedback")
-    
-    return {
-        "segments": segments,
-        "ratings": ratings,
-        "preferences": preferences,
-        "demos": demos,
-        "corrections": corrections,
-        "description": descriptions,
-        "description_preference": descr_preferences,
-        "opt_gaps": opt_gaps
-    }
+    print("[INFO] Succesfully generated videos for demonstrative feedback")
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--experiment", type=int, default=0, help="Experiment number")
     parser.add_argument("--algorithm", type=str, default="ppo", help="RL algorithm")
     parser.add_argument("--environment", type=str, default="HalfCheetah-v5", help="Environment")
-    parser.add_argument("--n-steps-factor", type=int, default=int(20), help="Number of steps sampled for each feedback instance")
-    parser.add_argument("--n-feedback", type=int, default=int(1000), help="How many feedback instances should be generated")
+    parser.add_argument("--n-steps-factor", type=int, default=int(10), help="Number of steps sampled for each feedback instance")
+    parser.add_argument("--n-feedback", type=int, default=int(50), help="How many feedback instances should be generated")
     parser.add_argument("--seed", type=int, default=1337, help="TODO: Seed for env and stuff")
     parser.add_argument("--segment-len", type=int, default=50, help="How long is the segment we generate feedback for")
     parser.add_argument("--save-folder", type=str, default="feedback", help="Where to save the feedback")
-    parser.add_argument("--top-n-models", type=int, default=4)
+    parser.add_argument("--top-n-models", type=int, default=1)
     args = parser.parse_args()
 
     np.random.seed(args.seed)
     random.seed(args.seed)
+
+    os.makedirs("feedback_videos", exist_ok=True)
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     feedback_id = f"{args.algorithm}_{args.environment}"
@@ -457,10 +268,6 @@ def main():
     expert_model_paths = [os.path.join(checkpoints_path, args.algorithm, model) for model in os.listdir(os.path.join(checkpoints_path, args.algorithm)) if env_name in model]
     print(expert_model_paths)
     orig_len = len(expert_model_paths)
-    #expert_model = (PPO if args.algorithm == "ppo" else SAC).load(
-    #    os.path.join(checkpoints_path, args.algorithm, f"{args.environment.replace("/", "-")}_1", "best_model.zip")
-    #)
-
 
     try:
         run_eval_scores = pd.read_csv(os.path.join(checkpoints_path, "collected_results.csv"))
