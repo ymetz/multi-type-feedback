@@ -114,9 +114,9 @@ def generate_feedback(
 
     print(f"Generating feedback for: {feedback_id}")
 
-    checkpoint_files = [
+    checkpoint_files = [sorted([
         file for file in os.listdir(checkpoints_dir) if re.search(r"rl_model_.*\.zip", file)
-    ] or [f"{environment_name}.zip"]    
+    ] or [f"{environment_name}.zip"], key=lambda x: int(re.search(r'\d+', x).group()))[1]]
 
     total_steps = n_feedback * total_steps_factor # how many steps we want to generate to sample from, a natural choice is the segment length
     num_checkpoints = len(checkpoint_files) + 1 # also sample steps from random actios as the 0th checkpoint
@@ -125,7 +125,7 @@ def generate_feedback(
     gamma = expert_models[0][0].gamma
 
     # Sort the files based on the extracted numerical value, makes handling and debugging a bit easier, is shuffled later anyways if necessary
-    checkpoint_files = ["random"] + sorted(checkpoint_files, key=lambda x: int(re.search(r'\d+', x).group()))
+    checkpoint_files = ["random"] + checkpoint_files
 
     print(f"""
     Video Feedback Generation Debug Info:
@@ -230,7 +230,7 @@ def generate_feedback(
             action, _ = expert_model[0].predict(obs, deterministic=True)
             obs, rew, terminated, truncated, _ = environment.step(action)
             done = terminated | truncated
-            demo.append((np.expand_dims(obs, axis=0), action, rew, done))
+            demo.append((np.expand_dims(obs, axis=0), action, rew, done, render))
 
             if done:
                 break
@@ -242,19 +242,19 @@ def generate_feedback(
     for i, (seg, demo) in enumerate(corrections):
         # predict the initial value
         initial_vals = [predict_expert_value(
-                expert_model[0], np.array(seg[0][0])
+                expert_model[0], np.array(demo[0][0])
             ).item() for expert_model in expert_models]
         initial_val = np.mean(initial_vals)
 
         # sum the discounted rewards, don't add reward for last step because we use it to calculate final value
-        discounted_rew_sum = discounted_sum_numpy([s[2] for s in seg[:-1]], gamma)
+        discounted_rew_sum = discounted_sum_numpy([s[2] for s in demo[:-1]], gamma)
         
         # get the final value
         final_vals = [predict_expert_value(expert_model[0], np.array(seg[-1][0])).item() for expert_model in expert_models]
         final_val = np.mean(final_vals)
 
         # opt gap is the expected returns - actual returns
-        opt_gap = (initial_val - gamma ** len(seg) * final_val) - discounted_rew_sum
+        opt_gap = (initial_val - gamma ** len(demo) * final_val) - discounted_rew_sum
         opt_gaps_instructive.append(opt_gap)
 
     # now save the generated feedback as videos, with the naming scheme: <segment/demo>_env_seed_segmentindex_optgap.mp4, round optgap to int
@@ -283,8 +283,8 @@ def main():
     parser.add_argument("--experiment", type=int, default=0, help="Experiment number")
     parser.add_argument("--algorithm", type=str, default="ppo", help="RL algorithm")
     parser.add_argument("--environment", type=str, default="HalfCheetah-v5", help="Environment")
-    parser.add_argument("--n-steps-factor", type=int, default=int(10), help="Number of steps sampled for each feedback instance")
-    parser.add_argument("--n-feedback", type=int, default=int(50), help="How many feedback instances should be generated")
+    parser.add_argument("--n-steps-factor", type=int, default=int(20), help="Number of steps sampled for each feedback instance")
+    parser.add_argument("--n-feedback", type=int, default=int(30), help="How many feedback instances should be generated")
     parser.add_argument("--seed", type=int, default=1337, help="TODO: Seed for env and stuff")
     parser.add_argument("--segment-len", type=int, default=50, help="How long is the segment we generate feedback for")
     parser.add_argument("--save-folder", type=str, default="feedback", help="Where to save the feedback")
