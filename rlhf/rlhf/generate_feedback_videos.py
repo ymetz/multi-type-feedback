@@ -330,17 +330,15 @@ def main():
     expert_models = []
     for expert_model_path in expert_model_paths:
         if os.path.isfile(os.path.join(expert_model_path, env_name, "vecnormalize.pkl")):
-            print("=== LOAD NORMALIZE ENV")
             norm_env = VecNormalize.load(os.path.join(expert_model_path, env_name, "vecnormalize.pkl"), DummyVecEnv([lambda: environment]))
         else:
-            print("=== DON'T LOAD NORMALIZE ENV")
             norm_env = None
         expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, "best_model.zip")
         ), norm_env))
     
     model_class = PPO if args.algorithm == "ppo" else SAC
 
-    feedback = generate_feedback(
+    generate_feedback(
         model_class,
         expert_models,
         environment,
@@ -352,11 +350,5 @@ def main():
         algorithm=args.algorithm,
         seed=args.seed,
     )
-
-    feedback_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(feedback_path, "wb") as feedback_file:
-        print("FB path", feedback_path)
-        pickle.dump(feedback, feedback_file, protocol=pickle.HIGHEST_PROTOCOL)
-
 if __name__ == "__main__":
     main()

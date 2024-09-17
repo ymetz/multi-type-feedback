@@ -292,7 +292,6 @@ def generate_feedback(
         segments.extend(create_segments(feedback, final_segment_indices, np.where(np.array([f[3] for f in feedback]) is True)[0], segment_len, min_segment_len))
 
         print(f"Generated segments: {len(segments)} of approx. {n_feedback}")
-
     
     # start by computing the evaluative fb. (for the comparative one, we just used samples segment pairs)
     opt_gaps = []
@@ -336,24 +335,36 @@ def generate_feedback(
     demos = []
     corrections = []
     for i, state in enumerate(state_copies):
-        expert_model = expert_models[np.random.randint(len(expert_models))] # sample random expert model, we just choose one for a segment
-        _, _ = environment.reset()
-        obs = environment.load_state(state)
+        
+        # we generate a demo/correction for each expert model and take the best one
+        current_demos = []
+        current_expert_model_returns = [] # in the future: replace by opt-gap estimate
+        for exp_model_index, expert_model in enumerate(expert_models):
+            
+            _, _ = environment.reset()
+            obs = environment.load_state(state)
+    
+            demo = []
+            for _ in range(segment_len):
+                # if we should normalize obs, do now
+                if expert_model[1] is not None: # if the normalize env instance is not none
+                    obs = expert_model[1].normalize_obs(obs)
+                action, _ = expert_model[0].predict(obs, deterministic=True)
+                obs, rew, terminated, truncated, _ = environment.step(action)
+                done = terminated | truncated
+                demo.append((np.expand_dims(obs, axis=0), action, rew, done, exp_model_index))
+    
+                if done:
+                    break
 
-        demo = []
-        for _ in range(segment_len):
-            # if we should normalize obs, do now
-            if expert_model[1] is not None: # if the normalize env instance is not none
-                obs = expert_model[1].normalize_obs(obs)
-            action, _ = expert_model[0].predict(obs, deterministic=True)
-            obs, rew, terminated, truncated, _ = environment.step(action)
-            done = terminated | truncated
-            demo.append((np.expand_dims(obs, axis=0), action, rew, done))
+            current_demos.append(demo)
+            current_expert_model_returns.append(discounted_sum_numpy([d[2] for d in demo], gamma))
 
-            if done:
-                break
-        demos.append(demo)
-        corrections.append((segments[i], demo))
+        # choose the best performing one
+        best_index = np.argsort(current_expert_model_returns)[-1]
+        
+        demos.append(current_demos[best_index])
+        corrections.append((segments[i], current_demos[best_index]))
 
     print("[INFO] Succesfully generated demonstrative feedback")
 
