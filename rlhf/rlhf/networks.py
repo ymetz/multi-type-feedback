@@ -14,7 +14,7 @@ from torch.nn.functional import mse_loss
 import gymnasium as gym
 
 # Loss functions
-single_reward_loss = nn.MSELoss(reduce=sum)
+single_reward_loss = nn.MSELoss()
 
 def calculate_mse_loss(network: LightningModule, batch: Tensor):
     """Calculate the mean squared erro loss for the reward."""
@@ -35,36 +35,45 @@ def calculate_mle_loss(network: LightningModule, batch: Tensor):
 
 def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
-    pair, _ = batch
-    rewards1 = torch.sum(network(pair[0][0].squeeze(0), pair[0][1].squeeze(0)))
-    rewards2 = torch.sum(network(pair[1][0].squeeze(0), pair[1][1].squeeze(0)))
+    (pair_obs, pair_actions), preferred_indices = batch  # preferred_indices: (batch_size,)
 
-    # Prefered trajectory comes second
-    index_of_preferred_traj = 1
-    
-    # Stack the rewards into a tensor
-    rewards = torch.stack([rewards1, rewards2])
-    
-    # Apply softmax to get the probability distribution over the two trajectories
-    probabilities = log_softmax(rewards, dim=0)
-    
-    # Create the target based on the human preference
-    # If index_of_preferred_traj = 1, the label is 1 (trajectory 2 is preferred)
-    # If index_of_preferred_traj = 0, the label is 0 (trajectory 1 is preferred)
-    target = torch.tensor([index_of_preferred_traj], dtype=torch.long, device=network.device)
-    
-    # Calculate the negative log likelihood loss
-    loss = nll_loss(probabilities.unsqueeze(0), target)
-    
+    # Unpack observations and actions for both trajectories
+    obs1, actions1 = pair_obs[0], pair_actions[0]
+    obs2, actions2 = pair_obs[1], pair_actions[1]
+
+    # Compute network outputs
+    outputs1 = network(obs1, actions1)  # Shape: (batch_size, segment_length, output_dim)
+    outputs2 = network(obs2, actions2)
+
+    # Sum over sequence dimension
+    rewards1 = outputs1.sum(dim=1).squeeze(-1)  # Shape: (batch_size,)
+    rewards2 = outputs2.sum(dim=1).squeeze(-1)
+
+    # Stack rewards and compute log softmax
+    rewards = torch.stack([rewards1, rewards2], dim=1)  # Shape: (batch_size, 2)
+    log_probs = F.log_softmax(rewards, dim=1)
+
+    # Compute NLL loss
+    loss = nll_loss(log_probs, preferred_indices)
+
     return loss
 
+
 def calculate_single_reward_loss(network: LightningModule, batch: Tensor):
-    """Calculate the MSE loss between prediction and actual reward)"""
-    segment, pred = batch
-    loss = single_reward_loss(
-        torch.sum(network(segment[0].squeeze(0), segment[1].squeeze(0))),
-        pred.float().unsqueeze(1),
-    )
+    """Calculate the MSE loss between prediction and actual reward."""
+    (observations, actions), targets = batch
+    # Network output: (batch_size, segment_length, output_dim)
+    outputs = network(observations, actions)
+
+    # Sum over the sequence dimension to get total rewards per segment
+    total_rewards = outputs.sum(dim=1)  # Shape: (batch_size, output_dim)
+
+    # Ensure targets have the correct shape
+    targets = targets.float().unsqueeze(1)  # Shape: (batch_size, 1)
+
+    # Compute loss
+    loss = single_reward_loss(total_rewards, targets)
+
     return loss
 
 
@@ -138,9 +147,25 @@ class LightningNetwork(LightningModule):
 
     def forward(self, observation: Tensor, actions: Tensor):
         """Do a forward pass through the neural network (inference)."""
-        batch = torch.cat((observation, actions), dim=1)
-        batch = self.network(batch)
-        return batch
+        # observation: (batch_size, segment_length, obs_dim)
+        # actions: (batch_size, segment_length, action_dim)
+        batch_size, segment_length, obs_dim = observation.shape
+        _, _, action_dim = actions.shape
+
+        # Flatten the batch and sequence dimensions
+        obs_flat = observation.reshape(-1, obs_dim)
+        actions_flat = actions.reshape(-1, action_dim)
+
+        # Concatenate observations and actions
+        batch = torch.cat((obs_flat, actions_flat), dim=1)  # Shape: (batch_size * segment_length, obs_dim + action_dim)
+
+        # Pass through the network
+        output = self.network(batch)  # Shape: (batch_size * segment_length, output_dim)
+
+        # Reshape back to (batch_size, segment_length, output_dim)
+        output = output.reshape(batch_size, segment_length, -1)
+
+        return output
 
     def training_step(self, batch: Tensor):
         """Compute the loss for training."""
@@ -231,14 +256,31 @@ class LightningCnnNetwork(LightningModule):
             return int(np.prod(sample_output.size()))
 
     def forward(self, observations, actions):
-        x = self.conv_layers(observations.squeeze(-1))
+        # observations: (batch_size, segment_length, channels, height, width)
+        # actions: (batch_size, segment_length, action_dim)
+        batch_size, segment_length, channels, height, width = observations.shape
+        _, _, action_dim = actions.shape
+
+        # Flatten the batch and sequence dimensions for observations
+        obs_flat = observations.reshape(-1, channels, height, width)
+
+        # Process observations through convolutional layers
+        x = self.conv_layers(obs_flat)
         x = self.flatten(x)
         x = F.relu(x)
 
-        act = self.action_in(actions)
+        # Flatten actions
+        actions_flat = actions.reshape(-1, action_dim)
+        act = self.action_in(actions_flat)
         act = F.relu(act)
-        
-        x = self.fc(torch.cat((x, act), dim=1))
+
+        # Concatenate processed observations and actions
+        x = torch.cat((x, act), dim=1)
+        x = self.fc(x)  # Shape: (batch_size * segment_length, output_dim)
+
+        # Reshape back to (batch_size, segment_length, output_dim)
+        x = x.reshape(batch_size, segment_length, -1)
+
         return x
 
     def training_step(self, batch: Tensor):

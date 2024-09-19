@@ -152,6 +152,7 @@ def train_reward_model(
     split_ratio: float = 0.8,
     enable_progress_bar=True,
     callback: Union[Callback, None] = None,
+    num_ensemble_models: int = 4,
 ):
 
     """Train a reward model given trajectories data."""
@@ -162,7 +163,7 @@ def train_reward_model(
 
     train_loader = DataLoader(
         train_set,
-        batch_size=1,
+        batch_size=num_ensemble_models,
         shuffle=True,
         pin_memory=True,
         #num_workers=cpu_count,
@@ -170,7 +171,7 @@ def train_reward_model(
     )
 
     val_loader = DataLoader(
-        val_set, batch_size=1, pin_memory=True, num_workers=1
+        val_set, batch_size=num_ensemble_models, pin_memory=True, num_workers=1
     )
 
     checkpoint_callback = ModelCheckpoint(
@@ -341,6 +342,7 @@ def main():
         maximum_epochs=100,
         split_ratio=0.5,
         cpu_count=cpu_count,
+        num_ensemble_models=args.n_ensemble,
     )
 
 
