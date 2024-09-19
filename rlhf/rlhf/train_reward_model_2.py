@@ -225,9 +225,6 @@ def main():
 
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument(
-        "--experiment", type=int, default=0, help="Experiment number"
-    )
-    arg_parser.add_argument(
         "--feedback-type",
         type=str,
         default="evaluative",
@@ -236,13 +233,13 @@ def main():
     arg_parser.add_argument(
         "--algorithm",
         type=str,
-        default="sac",
+        default="ppo",
         help="RL algorithm used to generate the feedback",
     )
     arg_parser.add_argument(
         "--environment",
         type=str,
-        default="HalfCheetah-v3",
+        default="HalfCheetah-v5",
         help="Environment used to generate the feedback",
     )
     arg_parser.add_argument(
@@ -251,12 +248,23 @@ def main():
         default=10000,
         help="Number of steps per checkpoint",
     )
+    arg_parser.add_argument(
+        "--seed",
+        type=int,
+        default=12,
+        help="The seed for random generation adn the saved feedback",
+    )
+    arg_parser.add_argument(
+        "--n-ensemble",
+        type=int,
+        default=4,
+    )
     args = arg_parser.parse_args()
 
     FEEDBACK_ID = "_".join(
-        [args.algorithm, args.environment]
+        [args.algorithm, args.environment, str(args.seed)]
     )
-    MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.experiment}"
+    MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
     # Load data
     dataset = FeedbackDataset(
@@ -290,24 +298,7 @@ def main():
     else:
         environment = gym.make(args.environment)
     
-    match args.environment:
-        case "MiniGrid-GoToDoor-5x5-v0" | "Ant-v5" | "Humanoid-v5" | "HalfCheetah-v5":
-                reward_model = LightningNetwork(
-                    input_spaces=(environment.observation_space, environment.action_space),
-                    hidden_dim=256,
-                    action_hidden_dim=32,
-                    layer_num=6,
-                    output_dim=1,
-                    loss_function=loss_function,
-                    learning_rate=(
-                        1e-5
-                        #1e-6
-                        #if args.feedback_type == "corrective"
-                        #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
-                    ),
-                )
-            
-        case "procgen-coinrun-v0" | "procgen-miner-v0" | "procgen-maze-v0" | "ALE/MsPacman-v5" | "ALE/Pong-v5":
+    if "procgen" in args.environment or "ALE" in args.environment:
                 reward_model = LightningCnnNetwork(
                     input_spaces=(environment.observation_space, environment.action_space),
                     hidden_dim=256,
@@ -322,7 +313,25 @@ def main():
                         #if args.feedback_type == "corrective"
                         #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
                     ),
+                    ensemble_count=args.n_ensemble,
                 )
+
+    else:
+            reward_model = LightningNetwork(
+                input_spaces=(environment.observation_space, environment.action_space),
+                hidden_dim=256,
+                action_hidden_dim=32,
+                layer_num=6,
+                output_dim=1,
+                loss_function=loss_function,
+                learning_rate=(
+                    1e-5
+                    #1e-6
+                    #if args.feedback_type == "corrective"
+                    #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
+                ),
+                ensemble_count=args.n_ensemble,
+            )
 
     train_reward_model(
         reward_model,

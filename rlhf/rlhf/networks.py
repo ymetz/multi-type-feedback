@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn.functional import log_softmax, nll_loss
 from pytorch_lightning import LightningModule
+from masksembles.torch import Masksembles1D, Masksembles2D
 from torch import Tensor, nn
 from torch.nn.functional import mse_loss
 import gymnasium as gym
@@ -84,11 +85,13 @@ class LightningNetwork(LightningModule):
         learning_rate: float,
         activation_function: Type[nn.Module] = nn.ReLU,
         last_activation: Union[Type[nn.Module], None] = None,
+        ensemble_count: int = 0,
     ):
         super().__init__()
 
         self.loss_function = loss_function
         self.learning_rate = learning_rate
+        self.ensemble_count = ensemble_count
         obs_space, action_space = input_spaces
         input_dim = obs_space.shape[-1] + action_space.shape[-1]
 
@@ -101,10 +104,26 @@ class LightningNetwork(LightningModule):
             layers.append(nn.Linear(layers_unit[idx], layers_unit[idx + 1]))
             layers.append(activation_function())
 
+            if self.ensemble_count > 1:
+                layers.append(
+                    Masksembles1D(
+                        channels=layers_unit[idx + 1],
+                        n=self.ensemble_count,
+                        scale=1.8,
+                    ).float()
+                )
+
         layers.append(nn.Linear(layers_unit[-1], output_dim))
 
         if last_activation is not None:
             layers.append(last_activation())
+
+            if self.ensemble_count > 1:
+                layers.append(
+                    Masksembles1D(
+                        channels=output_dim, n=self.ensemble_count, scale=1.8
+                    ).float()
+                )
 
         self.network = nn.Sequential(*layers)
 
@@ -158,6 +177,7 @@ class LightningCnnNetwork(LightningModule):
         cnn_channels: list[int] = (16, 32, 32),
         activation_function: Type[nn.Module] = nn.ReLU,
         last_activation: Union[Type[nn.Module], None] = None,
+        ensemble_count: int = 0,
     ):
         super().__init__()
 
