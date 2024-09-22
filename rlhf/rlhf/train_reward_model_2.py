@@ -81,44 +81,75 @@ class FeedbackDataset(Dataset):
                 for demo in feedback_data["demos"]:
                     obs = torch.vstack([torch.as_tensor(p[0]).float() for p in demo])
                     actions = torch.vstack([torch.as_tensor(p[1]).float() for p in demo])
-
+    
                     # just use a random segment as the opposite
                     rand_index = random.randrange(0, len(feedback_data["segments"]))
                     obs_rand = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][rand_index]])
                     actions_rand = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][rand_index]])
+    
+                    # Pad both trajectories to the maximum length
+                    len_obs = obs.size(0)
+                    len_obs_rand = obs_rand.size(0)
+                    max_len = max(len_obs, len_obs_rand)
+    
+                    if len_obs < max_len:
+                        pad_size = max_len - len_obs
+                        obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
+                        actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                    if len_obs_rand < max_len:
+                        pad_size = max_len - len_obs_rand
+                        obs_rand = torch.cat([obs_rand, torch.zeros(pad_size, obs_rand.size(1))], dim=0)
+                        actions_rand = torch.cat([actions_rand, torch.zeros(pad_size, actions_rand.size(1))], dim=0)
+    
                     self.targets.append(((obs_rand, actions_rand), (obs, actions)))
-                    self.preds.append(1) # assume that the demonstration is optimal, maybe add confidence value (based on regret)
+                    self.preds.append(1)  # Assume the demonstration is optimal
             case "corrective":
                 for comp in feedback_data["corrections"]:
                     obs = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[0]])
                     actions = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[0]])
-
+    
                     obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[1]])
                     actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[1]])
+    
+                    # Pad both trajectories to the maximum length
+                    len_obs = obs.size(0)
+                    len_obs2 = obs2.size(0)
+                    max_len = max(len_obs, len_obs2)
+    
+                    if len_obs < max_len:
+                        pad_size = max_len - len_obs
+                        obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
+                        actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                    if len_obs2 < max_len:
+                        pad_size = max_len - len_obs2
+                        obs2 = torch.cat([obs2, torch.zeros(pad_size, obs2.size(1))], dim=0)
+                        actions2 = torch.cat([actions2, torch.zeros(pad_size, actions2.size(1))], dim=0)
                     
-                    self.targets.append(((obs, actions),(obs2, actions2)))
-                    self.preds.append(1) # because the second element is the correction    
+                    self.targets.append(((obs, actions), (obs2, actions2)))
+                    self.preds.append(1)  # The second element is the correction   
             case "descriptive":
                 for desc, seg in zip(feedback_data["description"], feedback_data["segments"]):
                     # multiply the attributions with obs to highlight important features
-                    obs = torch.vstack([torch.as_tensor(p[0]).float() * torch.as_tensor(desc[0]).float() for p in seg])
-                    actions = torch.vstack([torch.as_tensor(p[1]).float() for p in seg])
+                    obs = torch.vstack([torch.as_tensor(single_step[0]).float() * torch.as_tensor(desc[0][i]).float() for i, single_step in enumerate(seg)])
+                    actions = torch.vstack([torch.as_tensor(single_step[1]).float() for single_step in seg])
+
+
                     
                     self.targets.append((obs, actions))
-                    self.preds.append(-desc[1])
+                    self.preds.append(-desc[1] / len(seg)) # lowers the rew.estimate somewhat
             case "descriptive_preference":
                 for dpref in feedback_data["description_preference"]:
                     
                     idx_1 = dpref[0]
                     
                     # seg 1
-                    obs = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_1][0]).float() for p in feedback_data["segments"][idx_1]])
+                    obs = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_1][0][i]).float() for i, p in enumerate(feedback_data["segments"][idx_1])])
                     actions = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_1]])
 
                     idx_2 = dpref[1]
                     
                     # seg 2
-                    obs2 = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_2][0]).float() for p in feedback_data["segments"][idx_2]])
+                    obs2 = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_2][0][i]).float() for i, p in enumerate(feedback_data["segments"][idx_2])])
                     actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_2]])
                     
                     self.targets.append(((obs, actions),(obs2, actions2)))
@@ -168,10 +199,15 @@ def train_reward_model(
         pin_memory=True,
         #num_workers=cpu_count,
         num_workers=0,
+        drop_last=True,
     )
 
     val_loader = DataLoader(
-        val_set, batch_size=num_ensemble_models, pin_memory=True, num_workers=1
+        val_set, 
+        batch_size=num_ensemble_models, 
+        pin_memory=True, 
+        num_workers=1, 
+        drop_last=True
     )
 
     checkpoint_callback = ModelCheckpoint(
@@ -340,7 +376,7 @@ def main():
         args.feedback_type,
         dataset,
         maximum_epochs=100,
-        split_ratio=0.5,
+        split_ratio=0.8,
         cpu_count=cpu_count,
         num_ensemble_models=args.n_ensemble,
     )

@@ -19,7 +19,7 @@ import torch
 from captum.attr import IntegratedGradients
 from numpy.typing import NDArray
 from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.atari_wrappers import AtariWrapper
+from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
 from torch import Tensor
 import random
@@ -72,6 +72,11 @@ def predict_expert_value(
 ) -> Tensor:
     """Return the value from the expert's value function for a given observation and actions."""
 
+    expert_model, norm_env = expert_model
+
+    if norm_env is not None:
+        observation = norm_env.normalize_obs(observation)
+    
     observation = expert_model.policy.obs_to_tensor(observation)[0]
     with torch.no_grad():
         return torch.min(
@@ -203,7 +208,7 @@ def generate_feedback(
     model_class: Type[Union[PPO, SAC]],
     expert_models: List[Union[PPO, SAC]],
     environment: gym.Env,
-    environment_name: str = "HalfCheetah-v3",
+    environment_name: str = "HalfCheetah-v5",
     checkpoints_path: str = "rl_checkpoints",
     total_steps_factor: int = 50,
     n_feedback: int = 100,
@@ -262,19 +267,24 @@ def generate_feedback(
                 os.path.join(checkpoints_dir, model_file),
                 custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0},
             )
+            if os.path.isfile(os.path.join(checkpoints_dir, environment_name, "vecnormalize.pkl")):
+                norm_env = VecNormalize.load(os.path.join(checkpoints_dir, environment_name, "vecnormalize.pkl"), DummyVecEnv([lambda: environment]))
         else:
             model = None
 
         observation, _ = environment.reset()
 
         # now collect original data
-        
         for step in range(steps_per_checkpoint):
             if step in final_segment_indices:
                 state_copies.append(environment.save_state(observation=observation))
 
             if model is not None:
-                actions, _ = model.predict(observation, deterministic=True)
+                if norm_env is not None: # if the normalize env instance is not none
+                    actions, _ = model.predict(norm_env.normalize_obs(observation), deterministic=True)
+                else:
+                    actions, _ = model.predict(observation, deterministic=True)
+            
             else:
                 actions = environment.action_space.sample()
             next_observation, reward, terminated, truncated, _ = environment.step(actions)
@@ -300,7 +310,7 @@ def generate_feedback(
     for seg in segments:
         # predict the initial value
         initial_vals = [predict_expert_value(
-                expert_model[0], np.array(seg[0][0])
+                expert_model, np.array(seg[0][0])
             ).item() for expert_model in expert_models]
         initial_val = np.mean(initial_vals)
         single_initial_preds.append(initial_vals)
@@ -309,7 +319,7 @@ def generate_feedback(
         discounted_rew_sum = discounted_sum_numpy([s[2] for s in seg[:-1]], gamma)
         
         # get the final value
-        final_vals = [predict_expert_value(expert_model[0], np.array(seg[-1][0])).item() for expert_model in expert_models]
+        final_vals = [predict_expert_value(expert_model, np.array(seg[-1][0])).item() for expert_model in expert_models]
         final_val = np.mean(final_vals)
         single_final_preds.append(final_vals)
 
@@ -330,7 +340,7 @@ def generate_feedback(
     preferences = [(a,b,1) if (opt_gaps[a] - opt_gaps[b] > tolerance) else (b,a,1) if (opt_gaps[b] - opt_gaps[a] > tolerance) else (a,b,0) for a, b in pairs]
 
     print("[INFO] Succesfully generated evaluative feedback")
-    
+
     # instructive feedback, reset env and run expert model for demos for each segment
     demos = []
     corrections = []
@@ -348,11 +358,13 @@ def generate_feedback(
             for _ in range(segment_len):
                 # if we should normalize obs, do now
                 if expert_model[1] is not None: # if the normalize env instance is not none
-                    obs = expert_model[1].normalize_obs(obs)
-                action, _ = expert_model[0].predict(obs, deterministic=True)
-                obs, rew, terminated, truncated, _ = environment.step(action)
+                    action, _ = expert_model[0].predict(expert_model[1].normalize_obs(obs), deterministic=True)
+                else:
+                    action, _ = expert_model[0].predict(obs, deterministic=True)
+                new_obs, rew, terminated, truncated, _ = environment.step(action)
                 done = terminated | truncated
                 demo.append((np.expand_dims(obs, axis=0), action, rew, done, exp_model_index))
+                obs = new_obs
     
                 if done:
                     break
@@ -406,8 +418,10 @@ def generate_feedback(
     # Initialize list to hold attributions per expert model
     attributions_per_expert = []
 
-    for explainer in explainers:
+    for i, explainer in enumerate(explainers):
         # Get attributions in batches
+        if expert_models[i][1] is not None:
+            observation_tensor = expert_models[i][1].normalize_obs(observation_tensor)
         attributions = get_attributions(
             observation=observation_tensor,
             actions=None,
@@ -476,7 +490,6 @@ def main():
     try:
         run_eval_scores = pd.read_csv(os.path.join(checkpoints_path, "collected_results.csv"))
         run_eval_scores = run_eval_scores.loc[run_eval_scores['env'] == args.environment].sort_values(by=['eval_score'], ascending=False).head(args.top_n_models)["run"].to_list()
-        print(run_eval_scores)
         expert_model_paths = [path for path in expert_model_paths if path.split(os.path.sep)[-1] in run_eval_scores]
     except:
         print("[WARN] No eval benchmark results are available. Check you eval benchmarks")    
@@ -486,7 +499,7 @@ def main():
         environment = Gym3ToGymnasium(ProcgenGym3Env(num=1, env_name=short_name))
         environment = SaveResetEnvWrapper(TransformObservation(environment, lambda obs: obs["rgb"], environment.observation_space))
     elif "ALE/" in args.environment:
-        environment = FrameStackObservation(AtariWrapper(gym.make(args.environment)), 4)
+        environment = FrameStackObservation(WarpFrame(gym.make(args.environment)), 4)
         environment = SaveResetEnvWrapper(TransformObservation(environment, lambda obs: obs.squeeze(-1), environment.observation_space))
     elif "MiniGrid" in args.environment:
         environment = SaveResetEnvWrapper(FlatObsWrapper(gym.make(args.environment)))
@@ -496,10 +509,8 @@ def main():
     expert_models = []
     for expert_model_path in expert_model_paths:
         if os.path.isfile(os.path.join(expert_model_path, env_name, "vecnormalize.pkl")):
-            print("=== LOAD NORMALIZE ENV")
             norm_env = VecNormalize.load(os.path.join(expert_model_path, env_name, "vecnormalize.pkl"), DummyVecEnv([lambda: environment]))
         else:
-            print("=== DON'T LOAD NORMALIZE ENV")
             norm_env = None
         expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, "best_model.zip")
         ), norm_env))

@@ -38,8 +38,8 @@ def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     (pair_obs, pair_actions), preferred_indices = batch  # preferred_indices: (batch_size,)
 
     # Unpack observations and actions for both trajectories
-    obs1, actions1 = pair_obs[0], pair_actions[0]
-    obs2, actions2 = pair_obs[1], pair_actions[1]
+    obs1, obs2 = pair_obs[0], pair_actions[0]
+    actions1, actions2 = pair_obs[1], pair_actions[1]
 
     # Compute network outputs
     outputs1 = network(obs1, actions1)  # Shape: (batch_size, segment_length, output_dim)
@@ -145,15 +145,15 @@ class LightningNetwork(LightningModule):
 
         self.save_hyperparameters()
 
-    def forward(self, observation: Tensor, actions: Tensor):
+    def forward(self, observations: Tensor, actions: Tensor):
         """Do a forward pass through the neural network (inference)."""
-        # observation: (batch_size, segment_length, obs_dim)
+        # observations: (batch_size, segment_length, obs_dim)
         # actions: (batch_size, segment_length, action_dim)
-        batch_size, segment_length, obs_dim = observation.shape
+        batch_size, segment_length, obs_dim = observations.shape
         _, _, action_dim = actions.shape
 
         # Flatten the batch and sequence dimensions
-        obs_flat = observation.reshape(-1, obs_dim)
+        obs_flat = observations.reshape(-1, obs_dim)
         actions_flat = actions.reshape(-1, action_dim)
 
         # Concatenate observations and actions
@@ -208,13 +208,14 @@ class LightningCnnNetwork(LightningModule):
 
         self.loss_function = loss_function
         self.learning_rate = learning_rate
+        self.ensemble_count = ensemble_count
         obs_space, action_space = input_spaces
         input_channels = obs_space.shape[0]
 
         # Initialize the network
         layers = []
         for i in range(layer_num):
-            layers.append(self.conv_layer(input_channels, cnn_channels[i]))
+            layers.append(self.conv_sequence(input_channels, cnn_channels[i]))
             input_channels = cnn_channels[i]
 
         self.conv_layers = nn.Sequential(*layers)
@@ -227,6 +228,7 @@ class LightningCnnNetwork(LightningModule):
         self.fc = nn.Linear(
             self.compute_flattened_size(obs_space.shape, cnn_channels) + action_hidden_dim, output_dim
         )
+        self.masksemble_out = Masksembles1D(4, 1.8)
 
         self.save_hyperparameters()
 
@@ -236,8 +238,10 @@ class LightningCnnNetwork(LightningModule):
     def residual_block(self, in_channels):
         return nn.Sequential(
             nn.ReLU(),
+            Masksembles2D(in_channels, 4, 1.8),
             self.conv_layer(in_channels, in_channels),
             nn.ReLU(),
+            Masksembles2D(in_channels, 4, 1.8),
             self.conv_layer(in_channels, in_channels),
         )
 
@@ -277,6 +281,7 @@ class LightningCnnNetwork(LightningModule):
         # Concatenate processed observations and actions
         x = torch.cat((x, act), dim=1)
         x = self.fc(x)  # Shape: (batch_size * segment_length, output_dim)
+        x = self.masksemble_out(x)
 
         # Reshape back to (batch_size, segment_length, output_dim)
         x = x.reshape(batch_size, segment_length, -1)

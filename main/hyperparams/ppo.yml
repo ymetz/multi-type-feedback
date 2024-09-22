@@ -1,6 +1,6 @@
 atari:
   env_wrapper:
-    - stable_baselines3.common.atari_wrappers.AtariWrapper
+    - stable_baselines3.common.atari_wrappers.WarpFrame
   frame_stack: 4
   policy: 'CnnPolicy'
   policy_kwargs: "dict(

@@ -35,6 +35,7 @@ class CustomReward(RewardFn):
         self,
         reward_model_cls: typing.Union[LightningNetwork, LightningCnnNetwork] = None,
         reward_model_path: list[str] = [],
+        vec_env_norm_fn: typing.Callable = None,
         device: str = "cuda",
     ):
         """Initialize custom reward."""
@@ -58,11 +59,23 @@ class CustomReward(RewardFn):
         _done: numpy.ndarray,
     ) -> list:
         """Return reward given the current state."""
+        state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(0)
+        actions = torch.as_tensor(actions, device=self.device, dtype=torch.float).unsqueeze(0)
+        
         with torch.no_grad():
-            return self.reward_model(
-                    torch.as_tensor(state, device=self.device, dtype=torch.float),
-                    torch.as_tensor(actions, device=self.device, dtype=torch.float)
-            ).squeeze(1).cpu().numpy()
+            if self.reward_model.ensemble_count > 1:
+                state = state.expand(self.reward_model.ensemble_count, *state.shape[1:])
+                actions = actions.expand(self.reward_model.ensemble_count, *actions.shape[1:])
+
+                return torch.mean(self.reward_model(
+                        torch.as_tensor(state, device=self.device, dtype=torch.float),
+                        torch.as_tensor(actions, device=self.device, dtype=torch.float)
+                ).squeeze(1)[0]).unsqueeze(0).cpu().numpy()                
+            else:
+                return self.reward_model(
+                        torch.as_tensor(state, device=self.device, dtype=torch.float),
+                        torch.as_tensor(actions, device=self.device, dtype=torch.float)
+                ).squeeze(1).cpu().numpy()
 
 def main():
     """Run RL agent training."""
@@ -75,12 +88,6 @@ def main():
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--experiment", 
-        type=int, 
-        default=0, 
-        help="Experiment number",
-    )
     parser.add_argument(
         "--algorithm", 
         type=str, 
@@ -108,16 +115,16 @@ def main():
     parser.add_argument(
         "--seed", 
         type=int, 
-        default=1337, 
+        default=12, 
         help="TODO: Seed for env and stuff",
     )
 
     args = parser.parse_args()
 
     FEEDBACK_ID = "_".join(
-        [args.algorithm, args.environment]
+        [args.algorithm, args.environment, str(args.seed)]
     )
-    MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.experiment}"
+    MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
     reward_model_path = os.path.join(script_path, "reward_models", MODEL_ID + ".ckpt")
 
@@ -136,12 +143,10 @@ def main():
 
 
     # ================ Load correct reward function model =================
-    match args.environment:
-        case "Ant-v5" | "Humanoid-v5" | "HalfCheetah-v5":
-            architecture_cls = LightningNetwork
-            
-        case "MiniGrid-GoToDoor-5x5-v0" | "procgen-coinrun-v0" | "procgen-miner-v0" | "procgen-maze-v0" | "ALE/MsPacman-v5" | "ALE/Pong-v5":
-            architecture_cls = LightningCnnNetwork
+    if "ALE/" in args.environment or "procgen" in args.environment:
+        architecture_cls = LightningCnnNetwork
+    else:
+        architecture_cls = LightningNetwork
 
     # ================ Load correct reward function model ===================
 
