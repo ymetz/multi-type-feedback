@@ -4,7 +4,7 @@
 envs=("Ant-v5" "Swimmer-v5" "HalfCheetah-v5" "Hopper-v5" "Walker2d-v5")
 cuda_devices=(0 1 2 3 4 0 1 2 3 4 0 1 2 3 4)
 #seeds=(1789 1687123 12 912391 330)
-seeds=(12 912391 330)
+seeds=(1789 1687123 12 912391 330)
 feedback_types=("evaluative" "comparative" "demonstrative" "corrective") #"descriptive" "descriptive_preference")
 
 # Loop over the environments and CUDA devices
