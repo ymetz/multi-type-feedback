@@ -1,8 +1,10 @@
 #!/bin/bash
 
 # Set the experiment parameters
-envs=("Ant-v5" "Swimmer-v5" "HalfCheetah-v5" "Hopper-v5" "Walker2d-v5")
+envs=("Swimmer-v5" "HalfCheetah-v5" "Hopper-v5" "Walker2d-v5")
 seeds=(1789 1687123 12 912391 330)
+feedback_types=("evaluative" "comparative" "demonstrative" "corrective")
+noise_levels=(0.1 0.2 0.3 0.4 0.5)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -13,7 +15,11 @@ declare -a combinations
 # Generate all combinations
 for seed in "${seeds[@]}"; do
     for env in "${envs[@]}"; do
-        combinations+=("$seed $env")
+        for feedback in "${feedback_types[@]}"; do
+            for noise in "${noise_levels[@]}"; do
+                combinations+=("$seed $env $feedback $noise")
+            done
+        done
     done
 done
 
@@ -35,8 +41,8 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
 #SBATCH --cpus-per-task=4
 #SBATCH --ntasks=1
 #SBATCH --job-name=train_reward_models_$batch_id
-#SBATCH --time=02:00:00
-#SBATCH --output=logs/train_generate_feedback_${batch_id}_%j.out
+#SBATCH --time=01:00:00
+#SBATCH --output=logs/train_reward_models_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
 # module load python/3.8
@@ -47,8 +53,8 @@ EOT
 
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
-        read seed env <<< $combination
-        echo "python rlhf/generate_feedback_2.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_descript &" >> $sbatch_script
+        read seed env feedback noise <<< $combination
+        echo "python rlhf/train_reward_model_with_noise_2.py --algorithm ppo --environment $env --feedback-type $feedback --seed $seed --noise-level $noise &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

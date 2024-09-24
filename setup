@@ -2,8 +2,8 @@ python -m venv venv
 source venv/bin/activate
 pip3 install torch torchvision
 cd main && pip install -e .
-cd ..
+cd procgen && pip install -e .
+cd ../..
 cd rlhf
 pip install -e masksembles
-pip install lightning
-pip install gymnasium==1.0.0a2 lightning matplotlib minigrid mujoco ale-py procgen
+pip install gymnasium==1.0.0a2 lightning minigrid mujoco ale-py wandb

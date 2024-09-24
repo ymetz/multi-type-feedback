@@ -11,6 +11,7 @@ from typing import Union, List, Tuple
 from numpy.typing import NDArray
 import gymnasium as gym
 import random
+from scipy.stats import truncnorm
 
 import numpy as np
 import torch
@@ -39,6 +40,12 @@ script_path = Path(__file__).parents[1].resolve()
 # Utilize Tensor Cores of NVIDIA GPUs
 torch.set_float32_matmul_precision("high")
 
+def truncated_normal(mean=0, std=1, low=0, upp=9):
+    if std == 0:
+        return max(low, min(upp, mean))
+    else:
+        a, b = (low - mean) / std, (upp - mean) / std
+        return truncnorm(a, b, loc=mean, scale=std).rvs()
 
 class FeedbackDataset(Dataset):
     """PyTorch Dataset for loading the feedback data."""
@@ -48,6 +55,7 @@ class FeedbackDataset(Dataset):
         dataset_path: str,
         feedback_type: FeedbackType,
         n_feedback: int,
+        noise_level: float = 0.0, # depending on the feedback, we use different types of noise (e.g. flip the preference, add noise to the rating or description)
     ):
         """Initialize dataset."""
         print("Loading dataset...")
@@ -58,107 +66,109 @@ class FeedbackDataset(Dataset):
         with open(dataset_path, "rb") as feedback_file:
             feedback_data: FeedbackDataset = pickle.load(feedback_file)
 
-        match feedback_type:
-            case "evaluative":
-                for seg in feedback_data["segments"]:
-                    obs = torch.vstack([torch.as_tensor(p[0]).float() for p in seg])
-                    actions = torch.vstack([torch.as_tensor(p[1]).float() for p in seg])
-                    self.targets.append((obs, actions))
-                    self.preds = feedback_data["ratings"]
-            case "comparative":
-                for comp in feedback_data["preferences"]:
-                    # seg 1
-                    obs = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][comp[0]]])
-                    actions = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][comp[0]]])
+        if feedback_type == "evaluative":
+            for seg in feedback_data["segments"]:
+                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in seg])
+                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in seg])
+                self.targets.append((obs, actions))
+                self.preds = feedback_data["ratings"]
+                # add noise to the ratings
+                if noise_level > 0:
+                    # apply noise, but we sure to clip the values to the range [0,9]
+                    self.preds = [truncated_normal(mean=p, std=noise_level*10, low=0, upp=9) for p in self.preds]
+        elif feedback_type == "comparative":
+            for comp in feedback_data["preferences"]:
+                # seg 1
+                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][comp[0]]])
+                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][comp[0]]])
 
-                    # seg 2
-                    obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][comp[1]]])
-                    actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][comp[1]]])
-                    
+                # seg 2
+                obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][comp[1]]])
+                actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][comp[1]]])
+                
+                # flip the preference with a certain probability
+                if random.random() < noise_level:
+                    self.targets.append(((obs2, actions2),(obs, actions)))
+                    self.preds.append(comp[2])
+                else:
                     self.targets.append(((obs, actions),(obs2, actions2)))
                     self.preds.append(comp[2])
                     
-            case "demonstrative":
-                for demo in feedback_data["demos"]:
-                    obs = torch.vstack([torch.as_tensor(p[0]).float() for p in demo])
-                    actions = torch.vstack([torch.as_tensor(p[1]).float() for p in demo])
-    
-                    # just use a random segment as the opposite
-                    rand_index = random.randrange(0, len(feedback_data["segments"]))
-                    obs_rand = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][rand_index]])
-                    actions_rand = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][rand_index]])
-    
-                    # Pad both trajectories to the maximum length
-                    len_obs = obs.size(0)
-                    len_obs_rand = obs_rand.size(0)
-                    max_len = max(len_obs, len_obs_rand)
-    
-                    if len_obs < max_len:
-                        pad_size = max_len - len_obs
-                        obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
-                        actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
-                    if len_obs_rand < max_len:
-                        pad_size = max_len - len_obs_rand
-                        obs_rand = torch.cat([obs_rand, torch.zeros(pad_size, obs_rand.size(1))], dim=0)
-                        actions_rand = torch.cat([actions_rand, torch.zeros(pad_size, actions_rand.size(1))], dim=0)
-    
-                    self.targets.append(((obs_rand, actions_rand), (obs, actions)))
-                    self.preds.append(1)  # Assume the demonstration is optimal
-            case "corrective":
-                for comp in feedback_data["corrections"]:
-                    obs = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[0]])
-                    actions = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[0]])
-    
-                    obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[1]])
-                    actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[1]])
-    
-                    # Pad both trajectories to the maximum length
-                    len_obs = obs.size(0)
-                    len_obs2 = obs2.size(0)
-                    max_len = max(len_obs, len_obs2)
-    
-                    if len_obs < max_len:
-                        pad_size = max_len - len_obs
-                        obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
-                        actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
-                    if len_obs2 < max_len:
-                        pad_size = max_len - len_obs2
-                        obs2 = torch.cat([obs2, torch.zeros(pad_size, obs2.size(1))], dim=0)
-                        actions2 = torch.cat([actions2, torch.zeros(pad_size, actions2.size(1))], dim=0)
-                    
-                    self.targets.append(((obs, actions), (obs2, actions2)))
-                    self.preds.append(1)  # The second element is the correction   
-            case "descriptive":
-                for desc, seg in zip(feedback_data["description"], feedback_data["segments"]):
-                    # multiply the attributions with obs to highlight important features
-                    obs = torch.vstack([torch.as_tensor(single_step[0]).float() * torch.as_tensor(desc[0][i]).float() for i, single_step in enumerate(seg)])
-                    actions = torch.vstack([torch.as_tensor(single_step[1]).float() for single_step in seg])
+        elif feedback_type == "demonstrative":
+            for demo in feedback_data["demos"]:
+                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in demo])
+                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in demo])
+            
+                # just use a random segment as the opposite
+                rand_index = random.randrange(0, len(feedback_data["segments"]))
+                obs_rand = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][rand_index]])
+                actions_rand = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][rand_index]])
+                self.targets.append(((obs_rand, actions_rand), (obs, actions)))
+                self.preds.append(1) # assume that the demonstration is optimal, maybe add confidence value (based on regret)
+        elif feedback_type == "corrective":
+            for comp in feedback_data["corrections"]:
+                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[0]])
+                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[0]])
 
+                obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[1]])
+                actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[1]])
+                
+                # flip the preference with a certain probability
+                if random.random() < noise_level:
+                    self.targets.append(((obs, actions),(obs2, actions2)))
+                    self.preds.append(1) # because the second element is the correction   
+                else:
+                    self.targets.append(((obs2, actions2),(obs, actions)))
+                    self.preds.append(1) 
+        elif feedback_type == "descriptive":
+            for desc, seg in zip(feedback_data["description"], feedback_data["segments"]):
+                # multiply the attributions with obs to highlight important features
+                obs = torch.vstack([torch.as_tensor(p[0]).float() * torch.as_tensor(desc[0]).float() for p in seg])
+                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in seg])
 
-                    
-                    self.targets.append((obs, actions))
-                    self.preds.append(-desc[1] / len(seg)) # lowers the rew.estimate somewhat
-            case "descriptive_preference":
-                for dpref in feedback_data["description_preference"]:
-                    
-                    idx_1 = dpref[0]
-                    
-                    # seg 1
-                    obs = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_1][0][i]).float() for i, p in enumerate(feedback_data["segments"][idx_1])])
-                    actions = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_1]])
+                # add noise to the description
+                if noise_level > 0:
+                    # apply noise, but we sure to clip the values to the range [0,1]
+                    obs = torch.clamp(obs + torch.randn_like(obs) * noise_level, 0, 1)
+                    actions = torch.clamp(actions + torch.randn_like(actions) * noise_level, 0, 1)
+                
+                self.targets.append((obs, actions))
 
-                    idx_2 = dpref[1]
-                    
-                    # seg 2
-                    obs2 = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_2][0][i]).float() for i, p in enumerate(feedback_data["segments"][idx_2])])
-                    actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_2]])
-                    
+                self.preds.append(-desc[1])
+        elif feedback_type == "descriptive_preference":
+            for dpref in feedback_data["description_preference"]:
+                
+                idx_1 = dpref[0]
+                
+                # seg 1
+                obs = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_1][0]).float() for p in feedback_data["segments"][idx_1]])
+                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_1]])
+
+                idx_2 = dpref[1]
+                
+                # seg 2
+                obs2 = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_2][0]).float() for p in feedback_data["segments"][idx_2]])
+                actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_2]])
+                
+                # flip the preference with a certain probability
+                if random.random() < noise_level:
+                    self.targets.append(((obs2, actions2),(obs, actions)))
+                    self.preds.append(dpref[2])
+                else:
                     self.targets.append(((obs, actions),(obs2, actions2)))
                     self.preds.append(dpref[2])
-            case _:
-                raise NotImplementedError(
-                    "Dataset not implemented for this feedback type."
-                )
+        elif feedback_type == "cluster_description":
+            for cluster_representative in feedback_data["cluster_description"]:
+                self.targets.append((np.expand_dims(cluster_representative[0], 0), np.expand_dims(cluster_representative[1], 0)))
+                if noise_level > 0.0:
+                    rew = cluster_representative[2] + np.random.uniform(-noise_level, noise_level)
+                    self.preds.append(rew)
+                else:
+                    self.preds.append(cluster_representative[2])
+        else:
+            raise NotImplementedError(
+                "Dataset not implemented for this feedback type."
+            )
 
         print("Dataset loaded")
 
@@ -298,22 +308,32 @@ def main():
         default=4,
     )
     arg_parser.add_argument(
-        "--n-feedback ",
+        "--n-feedback",
         type=int,
         default=-1,
+    )
+    arg_parser.add_argument(
+        "--noise-level",
+        type=float,
+        default=0.0,
+        help="Noise level to add to the feedback",
     )
     args = arg_parser.parse_args()
 
     FEEDBACK_ID = "_".join(
         [args.algorithm, args.environment, str(args.seed)]
     )
-    MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
+    if args.noise_level > 0.0:
+        MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}_noise_{str(args.noise_level)}"
+    else:
+        MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
     # Load data
     dataset = FeedbackDataset(
         path.join(script_path, "feedback", f"{FEEDBACK_ID}.pkl"),
         args.feedback_type,
         args.n_feedback,
+        noise_level=args.noise_level,
     )
 
     # Select loss function based on feedback type
