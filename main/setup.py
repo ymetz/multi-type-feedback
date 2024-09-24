@@ -16,7 +16,7 @@ See https://github.com/DLR-RM/rl-baselines3-zoo
 """
 install_requires = [
     "sb3_contrib>=2.4.0a4,<3.0",
-    "gymnasium~=0.29.1",
+    "gymnasium==1.0.0a2",
     "huggingface_sb3>=3.0,<4.0",
     "tqdm",
     "rich",

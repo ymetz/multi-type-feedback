@@ -412,8 +412,7 @@ def generate_feedback(
     segment_indices = np.array(segment_indices)
 
     # Convert observations to tensor once
-    observation_tensor = torch.tensor(all_obs, dtype=torch.float32).to(device)
-    internal_batch_size = min(observation_tensor.shape[0], 1024)  # Adjust 1024 as needed
+    internal_batch_size = min(all_obs.shape[0], 1024)  # Adjust 1024 as needed
 
     # Initialize list to hold attributions per expert model
     attributions_per_expert = []
@@ -421,7 +420,7 @@ def generate_feedback(
     for i, explainer in enumerate(explainers):
         # Get attributions in batches
         if expert_models[i][1] is not None:
-            observation_tensor = expert_models[i][1].normalize_obs(observation_tensor)
+            observation_tensor = torch.tensor(expert_models[i][1].normalize_obs(all_obs), dtype=torch.float32).to(device)
         attributions = get_attributions(
             observation=observation_tensor,
             actions=None,
