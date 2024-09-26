@@ -53,7 +53,7 @@ def predict_expert_value(
             keepdim=True,
         )[0]
 
-def create_segments(arr, start_indices, done_indices, segment_length, min_segment_len):
+def create_segments(arr, start_indices, done_indices, segment_length):
     """
         Creates array segments with target length (segment_length) and minimum length min_segment_len,
         selects the longest contiguous array within a segment [start_indices: start_indeces+segment_length]
@@ -92,6 +92,8 @@ def create_segments(arr, start_indices, done_indices, segment_length, min_segmen
             
             # Use the longest valid segment
             segment = longest_segment
+
+        segments.append(segment)
     
     return segments
 
@@ -260,7 +262,7 @@ def generate_feedback(
     state_copies = []
     for model_file in checkpoint_files:
         feedback = []
-        fb_indices = random.sample(range(steps_per_checkpoint - segment_len + 1), k=feedback_per_checkpoint)
+        fb_indices = random.sample(range(steps_per_checkpoint - segment_len + 1), k=feedback_per_checkpoint+1)
         final_segment_indices = sorted(set(fb_indices))
   
         if model_file != "random":
@@ -317,6 +319,9 @@ def generate_feedback(
     demos = []
     corrections = []
     improvements = []
+
+    print(len(state_copies))
+    print(len(segments))
     
     for i, state in enumerate(state_copies):
         current_demos = []
