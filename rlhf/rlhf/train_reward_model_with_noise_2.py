@@ -121,43 +121,7 @@ class FeedbackDataset(Dataset):
                     self.targets.append(((obs2, actions2),(obs, actions)))
                     self.preds.append(1) 
         elif feedback_type == "descriptive":
-            for desc, seg in zip(feedback_data["description"], feedback_data["segments"]):
-                # multiply the attributions with obs to highlight important features
-                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in seg]) * torch.as_tensor(desc[0]).float()
-                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in seg])
-                # add noise to the description
-                if noise_level > 0:
-                    # apply noise, but we sure to clip the values to the range [0,1]
-                    obs = torch.clamp(obs + torch.randn_like(obs) * noise_level, 0, 1)
-                    actions = torch.clamp(actions + torch.randn_like(actions) * noise_level, 0, 1)
-                
-                self.targets.append((obs, actions))
-
-                self.preds.append(-desc[1])
-        elif feedback_type == "descriptive_preference":
-            for dpref in feedback_data["description_preference"]:
-                
-                idx_1 = dpref[0]
-                
-                # seg 1
-                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][idx_1]]) * torch.as_tensor(feedback_data["description"][idx_1][0]).float()
-                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_1]])
-
-                idx_2 = dpref[1]
-                
-                # seg 2
-                obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][idx_2]]) * torch.as_tensor(feedback_data["description"][idx_2][0]).float()
-                actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_2]])
-                
-                # flip the preference with a certain probability
-                if random.random() < noise_level:
-                    self.targets.append(((obs2, actions2),(obs, actions)))
-                    self.preds.append(dpref[2])
-                else:
-                    self.targets.append(((obs, actions),(obs2, actions2)))
-                    self.preds.append(dpref[2])
-        elif feedback_type == "cluster_description":
-            for cluster_representative in feedback_data["cluster_description"]:
+            for cluster_representative in feedback_data["description"]:
                 self.targets.append((torch.as_tensor(cluster_representative[0]).unsqueeze(0).float(), torch.as_tensor(cluster_representative[1]).unsqueeze(0).float()))
                 
                 if noise_level > 0.0:
@@ -165,19 +129,19 @@ class FeedbackDataset(Dataset):
                     self.preds.append(rew)
                 else:
                     self.preds.append(cluster_representative[2])
-        elif feedback_type == "cluster_preferences":
-            for cpref in feedback_data["cluster_description"]:
+        elif feedback_type == "descriptive_preferences":
+            for cpref in feedback_data["description_preference"]:
                 idx_1 = dpref[0]
                                 
                 # cluster 1
-                obs = torch.as_tensor(feedback_data["cluster_description"][idx_1][0]).unsqueeze(0).float()
-                actions = torch.as_tensor(feedback_data["cluster_description"][idx_1][1]).unsqueeze(0).float()
+                obs = torch.as_tensor(feedback_data["description"][idx_1][0]).unsqueeze(0).float()
+                actions = torch.as_tensor(feedback_data["description"][idx_1][1]).unsqueeze(0).float()
 
                 idx_2 = dpref[1]
                 
                 # cluster 2
-                obs2 = torch.as_tensor(feedback_data["cluster_description"][idx_2][0]).unsqueeze(0).float()
-                actions2 = torch.as_tensor(feedback_data["cluster_description"][idx_2][1]).unsqueeze(0).float()
+                obs2 = torch.as_tensor(feedback_data["description"][idx_2][0]).unsqueeze(0).float()
+                actions2 = torch.as_tensor(feedback_data["description"][idx_2][1]).unsqueeze(0).float()
 
                 # flip the preference with a certain probability
                 if random.random() < noise_level:
