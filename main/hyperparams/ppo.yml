@@ -442,7 +442,7 @@ Ant-v5:
   normalize: false
   n_envs: 1
   policy: 'MlpPolicy'
-  n_timesteps: !!float 1e7
+  n_timesteps: !!float 5e6
   batch_size: 32
   n_steps: 512
   gamma: 0.98
