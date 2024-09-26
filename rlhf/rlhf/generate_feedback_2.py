@@ -92,9 +92,6 @@ def create_segments(arr, start_indices, done_indices, segment_length, min_segmen
             
             # Use the longest valid segment
             segment = longest_segment
-        
-        if len(segment) > min_segment_len:  # Only add non-empty segments
-            segments.append(segment)
     
     return segments
 
@@ -295,7 +292,7 @@ def generate_feedback(
 
             observation = next_observation if not done else environment.reset()[0]
 
-        segments.extend(create_segments(feedback, final_segment_indices, np.where([f[3] for f in feedback])[0], segment_len, min_segment_len))
+        segments.extend(create_segments(feedback, final_segment_indices, np.where([f[3] for f in feedback])[0], segment_len))
 
         print(f"Generated segments: {len(segments)} of target {target_n_feedback}")
     

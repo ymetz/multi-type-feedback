@@ -48,7 +48,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env <<< $combination
-        echo "python rlhf/generate_feedback_2.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_descript &" >> $sbatch_script
+        echo "python rlhf/generate_feedback_2.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_new &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish
@@ -58,7 +58,7 @@ EOT
     sbatch $sbatch_script
 
     # Optional: Remove the temporary Slurm script
-    # rm $sbatch_script
+    rm $sbatch_script
 done
 
 echo "All jobs have been submitted."
