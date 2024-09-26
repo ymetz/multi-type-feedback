@@ -93,8 +93,9 @@ def create_segments(arr, start_indices, done_indices, segment_length, min_segmen
             # Use the longest valid segment
             segment = longest_segment
         
-        if len(segment) > min_segment_len:  # Only add non-empty segments
-            segments.append(segment)
+        # if len(segment) > min_segment_len:  # Only add non-empty segments
+        
+        segments.append(segment)
     
     return segments
 
@@ -263,7 +264,7 @@ def generate_feedback(
     state_copies = []
     for model_file in checkpoint_files:
         feedback = []
-        fb_indices = random.sample(range(steps_per_checkpoint - segment_len + 1), k=feedback_per_checkpoint)
+        fb_indices = random.sample(range(steps_per_checkpoint - segment_len + 1), k=feedback_per_checkpoint+1)
         final_segment_indices = sorted(set(fb_indices))
   
         if model_file != "random":
@@ -320,6 +321,9 @@ def generate_feedback(
     demos = []
     corrections = []
     improvements = []
+
+    print(len(state_copies))
+    print(len(segments))
     
     for i, state in enumerate(state_copies):
         current_demos = []
