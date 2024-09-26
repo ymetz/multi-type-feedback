@@ -181,7 +181,7 @@ class LightningNetwork(LightningModule):
 
     def configure_optimizers(self):
         """Configure optimizer to optimize the neural network."""
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
         return optimizer
 
 
@@ -302,5 +302,5 @@ class LightningCnnNetwork(LightningModule):
 
     def configure_optimizers(self):
         """Configure optimizer to optimize the neural network."""
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
         return optimizer

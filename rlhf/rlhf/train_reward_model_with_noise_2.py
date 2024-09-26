@@ -159,11 +159,33 @@ class FeedbackDataset(Dataset):
         elif feedback_type == "cluster_description":
             for cluster_representative in feedback_data["cluster_description"]:
                 self.targets.append((torch.as_tensor(cluster_representative[0]).unsqueeze(0).float(), torch.as_tensor(cluster_representative[1]).unsqueeze(0).float()))
+                
                 if noise_level > 0.0:
                     rew = cluster_representative[2] + np.random.uniform(-noise_level, noise_level)
                     self.preds.append(rew)
                 else:
                     self.preds.append(cluster_representative[2])
+        elif feedback_type == "cluster_preferences":
+            for cpref in feedback_data["cluster_description"]:
+                idx_1 = dpref[0]
+                                
+                # cluster 1
+                obs = torch.as_tensor(feedback_data["cluster_description"][idx_1][0]).unsqueeze(0).float()
+                actions = torch.as_tensor(feedback_data["cluster_description"][idx_1][1]).unsqueeze(0).float()
+
+                idx_2 = dpref[1]
+                
+                # cluster 2
+                obs2 = torch.as_tensor(feedback_data["cluster_description"][idx_2][0]).unsqueeze(0).float()
+                actions2 = torch.as_tensor(feedback_data["cluster_description"][idx_2][1]).unsqueeze(0).float()
+
+                # flip the preference with a certain probability
+                if random.random() < noise_level:
+                    self.targets.append(((obs2, actions2),(obs, actions)))
+                    self.preds.append(dpref[2])
+                else:
+                    self.targets.append(((obs, actions),(obs2, actions2)))
+                    self.preds.append(dpref[2])
         else:
             raise NotImplementedError(
                 "Dataset not implemented for this feedback type."
