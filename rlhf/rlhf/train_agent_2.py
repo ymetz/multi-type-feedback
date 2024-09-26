@@ -65,16 +65,17 @@ class CustomReward(RewardFn):
             if self.reward_model.ensemble_count > 1:
                 state = state.expand(self.reward_model.ensemble_count, *state.shape[1:])
                 actions = actions.expand(self.reward_model.ensemble_count, *actions.shape[1:])
-
-                return torch.mean(self.reward_model(
-                        torch.as_tensor(state, device=self.device, dtype=torch.float),
-                        torch.as_tensor(actions, device=self.device, dtype=torch.float)
-                ).squeeze(1)[0]).unsqueeze(0).cpu().numpy()                
-            else:
-                return self.reward_model(
-                        torch.as_tensor(state, device=self.device, dtype=torch.float),
-                        torch.as_tensor(actions, device=self.device, dtype=torch.float)
-                ).squeeze(1).cpu().numpy()
+            
+            rewards = self.reward_model(
+                torch.as_tensor(state, device=self.device, dtype=torch.float),
+                torch.as_tensor(actions, device=self.device, dtype=torch.float)
+            )
+            # Reshape rewards to always have 3 dimensions: (ensemble_count, batch_size, 1)
+            rewards = rewards.view(self.reward_model.ensemble_count, -1, 1)
+            # Take mean across ensemble dimension (dim=0)
+            mean_rewards = torch.mean(rewards, dim=0).squeeze(-1)
+            
+            return mean_rewards.cpu().numpy()
 
 def main():
     """Run RL agent training."""

@@ -143,9 +143,8 @@ class FeedbackDataset(Dataset):
         elif feedback_type == "descriptive":
             for desc, seg in zip(feedback_data["description"], feedback_data["segments"]):
                 # multiply the attributions with obs to highlight important features
-                obs = torch.vstack([torch.as_tensor(p[0]).float() * torch.as_tensor(desc[0]).float() for p in seg])
+                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in seg]) * torch.as_tensor(desc[0]).float()
                 actions = torch.vstack([torch.as_tensor(p[1]).float() for p in seg])
-
                 # add noise to the description
                 if noise_level > 0:
                     # apply noise, but we sure to clip the values to the range [0,1]
@@ -161,13 +160,13 @@ class FeedbackDataset(Dataset):
                 idx_1 = dpref[0]
                 
                 # seg 1
-                obs = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_1][0]).float() for p in feedback_data["segments"][idx_1]])
+                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][idx_1]]) * torch.as_tensor(feedback_data["description"][idx_1][0]).float()
                 actions = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_1]])
 
                 idx_2 = dpref[1]
                 
                 # seg 2
-                obs2 = torch.vstack([torch.as_tensor(p[0]).float()  * torch.as_tensor(feedback_data["description"][idx_2][0]).float() for p in feedback_data["segments"][idx_2]])
+                obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][idx_2]]) * torch.as_tensor(feedback_data["description"][idx_2][0]).float()
                 actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][idx_2]])
                 
                 # flip the preference with a certain probability
@@ -179,7 +178,7 @@ class FeedbackDataset(Dataset):
                     self.preds.append(dpref[2])
         elif feedback_type == "cluster_description":
             for cluster_representative in feedback_data["cluster_description"]:
-                self.targets.append((np.expand_dims(cluster_representative[0], 0), np.expand_dims(cluster_representative[1], 0)))
+                self.targets.append((torch.as_tensor(cluster_representative[0]).unsqueeze(0).float(), torch.as_tensor(cluster_representative[1]).unsqueeze(0).float()))
                 if noise_level > 0.0:
                     rew = cluster_representative[2] + np.random.uniform(-noise_level*10, noise_level*10)
                     self.preds.append(rew)
@@ -362,8 +361,9 @@ def main():
         MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
     # Load data
+    dataset_dir = "feedback" if "descript" not in args.feedback_type else "feedback_descript"
     dataset = FeedbackDataset(
-        path.join(script_path, "feedback", f"{FEEDBACK_ID}.pkl"),
+        path.join(script_path, dataset_dir, f"{FEEDBACK_ID}.pkl"),
         args.feedback_type,
         args.n_feedback,
         noise_level=args.noise_level,
