@@ -21,7 +21,6 @@ from stable_baselines3.common.utils import set_random_seed
 import ale_py
 import minigrid
 
-from rlhf.common import get_reward_model_name
 from rlhf.datatypes import FeedbackType
 from rlhf.networks import LightningNetwork, LightningCnnNetwork, calculate_pairwise_loss, calculate_single_reward_loss
 
@@ -118,13 +117,21 @@ def main():
         default=12, 
         help="TODO: Seed for env and stuff",
     )
-
+    parser.add_argument(
+        "--noise-level",
+        type=float,
+        default=0.0,
+        help="Noise level to add to the feedback",
+    )
     args = parser.parse_args()
 
     FEEDBACK_ID = "_".join(
         [args.algorithm, args.environment, str(args.seed)]
     )
-    MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
+    if args.noise_level > 0.0:
+        MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}_noise_{str(args.noise_level)}"
+    else:
+        MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
     reward_model_path = os.path.join(script_path, "reward_models", MODEL_ID + ".ckpt")
 
@@ -155,7 +162,7 @@ def main():
         args.algorithm,
         args.environment,
         os.path.join("agents","RL_"+MODEL_ID),
-        tensorboard_log=f"runs/{"RL_"+MODEL_ID}",
+        tensorboard_log=f"runs/{'RL_'+MODEL_ID}",
         n_timesteps=args.train_steps,
         seed=args.seed,
         log_interval=-1,

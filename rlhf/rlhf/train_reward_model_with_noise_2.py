@@ -11,7 +11,7 @@ from typing import Union, List, Tuple
 from numpy.typing import NDArray
 import gymnasium as gym
 import random
-from scipy.stats import truncnorm
+from scipy.stats import truncnorm, uniform
 
 import numpy as np
 import torch
@@ -40,12 +40,27 @@ script_path = Path(__file__).parents[1].resolve()
 # Utilize Tensor Cores of NVIDIA GPUs
 torch.set_float32_matmul_precision("high")
 
-def truncated_normal(mean=0, std=1, low=0, upp=9):
-    if std == 0:
-        return max(low, min(upp, mean))
-    else:
-        a, b = (low - mean) / std, (upp - mean) / std
-        return truncnorm(a, b, loc=mean, scale=std).rvs()
+def truncated_uniform_vectorized(mean, width, low=0, upp=9):
+    # Handle scalar inputs
+    scalar_input = np.isscalar(mean) and np.isscalar(width)
+    mean = np.atleast_1d(mean)
+    width = np.atleast_1d(width)
+    
+    # Calculate the bounds of the uniform distribution
+    lower = mean - width/2
+    upper = mean + width/2
+    
+    # Clip the bounds to [low, upp]
+    lower = np.clip(lower, low, upp)
+    upper = np.clip(upper, low, upp)
+    
+    # Generate random values
+    r = np.random.uniform(size=mean.shape)
+    
+    # Calculate the result
+    result = lower + r * (upper - lower)
+    
+    return result[0] if scalar_input else result
 
 class FeedbackDataset(Dataset):
     """PyTorch Dataset for loading the feedback data."""
@@ -74,8 +89,13 @@ class FeedbackDataset(Dataset):
                 self.preds = feedback_data["ratings"]
                 # add noise to the ratings
                 if noise_level > 0:
-                    # apply noise, but we sure to clip the values to the range [0,9]
-                    self.preds = [truncated_normal(mean=p, std=noise_level*10, low=0, upp=9) for p in self.preds]
+                    # apply noise, accounting for clipping at the borders [0,9]
+                    self.preds = truncated_uniform_vectorized(
+                        mean=self.preds, 
+                        width=noise_level*10*np.ones_like(self.preds), 
+                        low=0, 
+                        upp=9
+                    )
         elif feedback_type == "comparative":
             for comp in feedback_data["preferences"]:
                 # seg 1
@@ -161,7 +181,15 @@ class FeedbackDataset(Dataset):
             for cluster_representative in feedback_data["cluster_description"]:
                 self.targets.append((np.expand_dims(cluster_representative[0], 0), np.expand_dims(cluster_representative[1], 0)))
                 if noise_level > 0.0:
-                    rew = cluster_representative[2] + np.random.uniform(-noise_level, noise_level)
+                    rew = cluster_representative[2] + np.random.uniform(-noise_level*10, noise_level*10)
+                    self.preds.append(rew)
+                else:
+                    self.preds.append(cluster_representative[2])
+        elif feedback_type == "cluster_preferences":
+            for cluster_representative in feedback_data["cluster_description"]:
+                self.targets.append((np.expand_dims(cluster_representative[0], 0), np.expand_dims(cluster_representative[1], 0)))
+                if noise_level > 0.0:
+                    rew = cluster_representative[2] + np.random.uniform(-noise_level*10, noise_level*10)
                     self.preds.append(rew)
                 else:
                     self.preds.append(cluster_representative[2])
@@ -318,6 +346,11 @@ def main():
         default=0.0,
         help="Noise level to add to the feedback",
     )
+    arg_parser.add_argument(
+        '--no-loading-bar', 
+        action='store_true', 
+        help="Disable the loading bar"
+    )
     args = arg_parser.parse_args()
 
     FEEDBACK_ID = "_".join(
@@ -340,7 +373,7 @@ def main():
     loss_function = None
     architecture_cls = None
 
-    if args.feedback_type == "evaluative" or args.feedback_type == "descriptive":
+    if args.feedback_type == "evaluative" or args.feedback_type == "descriptive" or rags.feedback_type == "cluster_description":
         loss_function = calculate_single_reward_loss
     else:
         #"comparative" | "corrective" | "demonstrative" | "descriptive_preference":
@@ -359,39 +392,39 @@ def main():
         environment = gym.make(args.environment)
     
     if "procgen" in args.environment or "ALE" in args.environment:
-                reward_model = LightningCnnNetwork(
-                    input_spaces=(environment.observation_space, environment.action_space),
-                    hidden_dim=256,
-                    action_hidden_dim=16,
-                    layer_num=3,
-                    cnn_channels=(16,32,32),
-                    output_dim=1,
-                    loss_function=loss_function,
-                    learning_rate=(
-                        1e-5
-                        #1e-6
-                        #if args.feedback_type == "corrective"
-                        #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
-                    ),
-                    ensemble_count=args.n_ensemble,
-                )
+        reward_model = LightningCnnNetwork(
+            input_spaces=(environment.observation_space, environment.action_space),
+            hidden_dim=256,
+            action_hidden_dim=16,
+            layer_num=3,
+            cnn_channels=(16,32,32),
+            output_dim=1,
+            loss_function=loss_function,
+            learning_rate=(
+                1e-5
+                #1e-6
+                #if args.feedback_type == "corrective"
+                #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
+            ),
+            ensemble_count=args.n_ensemble,
+        )
 
     else:
-            reward_model = LightningNetwork(
-                input_spaces=(environment.observation_space, environment.action_space),
-                hidden_dim=256,
-                action_hidden_dim=32,
-                layer_num=6,
-                output_dim=1,
-                loss_function=loss_function,
-                learning_rate=(
-                    1e-5
-                    #1e-6
-                    #if args.feedback_type == "corrective"
-                    #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
-                ),
-                ensemble_count=args.n_ensemble,
-            )
+        reward_model = LightningNetwork(
+            input_spaces=(environment.observation_space, environment.action_space),
+            hidden_dim=256,
+            action_hidden_dim=32,
+            layer_num=6,
+            output_dim=1,
+            loss_function=loss_function,
+            learning_rate=(
+                1e-5
+                #1e-6
+                #if args.feedback_type == "corrective"
+                #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
+            ),
+            ensemble_count=args.n_ensemble,
+        )
 
     train_reward_model(
         reward_model,
@@ -402,6 +435,7 @@ def main():
         split_ratio=0.8,
         cpu_count=cpu_count,
         num_ensemble_models=args.n_ensemble,
+        enable_progress_bar=False if args.no_loading_bar else True,
     )
 
 

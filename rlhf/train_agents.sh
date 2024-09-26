@@ -13,7 +13,7 @@ for seed in "${!seeds[@]}"; do
       for j in "${!feedback_types[@]}"; do
           export CUDA_VISIBLE_DEVICES=${cuda_devices[$j]}
           echo "Train Agent for ${envs[$i]} and FB Type ${feedback_types[$j]} with CUDA_VISIBLE_DEVICES=${cuda_devices[$j]}"
-          python rlhf/train_agent_2.py --algorithm ppo --environment ${envs[$i]} --feedback-type ${feedback_types[$j]}           python rlhf/train_reward_model_2.py --algorithm ppo --environment ${envs[$i]} --feedback-type ${feedback_types[$j]} --seed ${seeds[$seed]} &  &
+          python rlhf/train_agent_2.py --algorithm ppo --environment ${envs[$i]} --feedback-type ${feedback_types[$j]} &
       done
     
       # Wait for all training processes to finish
