@@ -224,6 +224,8 @@ def generate_feedback(
 ) -> dict:
     """Generate agent's observations and feedback in the training environment."""
     feedback_id = f"{algorithm}_{environment_name.replace('/', '-')}"
+
+    possible_checkpoint_indices = [str(model_dir.split("_")[-1]) for model_dir in os.listdir(os.path.join(checkpoints_path, algorithm)) if f"{environment_name.replace('/', '-')}" in model_dir]
     checkpoints_dir = os.path.join(checkpoints_path, algorithm, f"{environment_name.replace('/', '-')}_1")
 
     print(f"Generating feedback for: {feedback_id}")
@@ -266,11 +268,14 @@ def generate_feedback(
         final_segment_indices = sorted(set(fb_indices))
   
         if model_file != "random":
+            # replace the _1 index by other possible indices, this only works if all models have exactly the same number of checkpoints
+            #model_path = checkpoints_dir.replace("_1", f"_{random.choice(possible_checkpoint_indices)}")
+            model_path = checkpoints_dir.replace("_1", "_5")
             model = model_class.load(
-                os.path.join(checkpoints_dir, model_file),
+                os.path.join(model_path, model_file),
                 custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0},
             )
-            norm_env_path = os.path.join(checkpoints_dir, environment_name, "vecnormalize.pkl")
+            norm_env_path = os.path.join(model_path, environment_name, "vecnormalize.pkl")
             norm_env = VecNormalize.load(norm_env_path, DummyVecEnv([lambda: environment])) if os.path.isfile(norm_env_path) else None
         else:
             model = None
@@ -300,19 +305,20 @@ def generate_feedback(
     
     opt_gaps = []
     for seg in segments:
+        """
         initial_vals = [predict_expert_value(expert_model, np.array(seg[0][0])).item() for expert_model in expert_models]
-        initial_val = np.min(initial_vals)
-        print("INITIAL VAL", initial_val)
+        initial_val = np.mean(initial_vals)
+        #initial_val = initial_vals[0]
 
         discounted_rew_sum = discounted_sum_numpy([s[2] for s in seg[:-1]], gamma)
-        print("DISC. REW. SUM.", discounted_rew_sum)
         
         final_vals = [predict_expert_value(expert_model, np.array(seg[-1][0])).item() for expert_model in expert_models]
-        final_val = np.min(final_vals)
-        print("FINAL VAL", final_val)
+        final_val = np.mean(final_vals)
+        #final_val = final_vals[0]
 
         opt_gap = initial_val - (discounted_rew_sum + gamma ** len(seg) * final_val)
-        print("OPT GAP", opt_gap)
+        """
+        opt_gap = -discounted_sum_numpy([s[2] for s in seg[:-1]], gamma)
         opt_gaps.append(opt_gap)
     
     max_rating = 10
@@ -323,9 +329,6 @@ def generate_feedback(
     demos = []
     corrections = []
     improvements = []
-
-    print(len(state_copies))
-    print(len(segments))
     
     for i, state in enumerate(state_copies):
         current_demos = []
@@ -348,7 +351,7 @@ def generate_feedback(
     
             current_demos.append(demo)
             current_expert_model_returns.append(discounted_sum_numpy([d[2] for d in demo], gamma))
-    
+
         best_index = np.argmax(current_expert_model_returns)
         best_demo = current_demos[best_index]
         best_demo_return = current_expert_model_returns[best_index]
@@ -363,6 +366,9 @@ def generate_feedback(
             demos.append(None)
             corrections.append(None)
             improvements.append(0)
+
+        if i % 100 == 0:
+            print(f"Generated demos: {len(demos)} of target {target_n_feedback}")
     
     sorted_indices = np.argsort(improvements)[::-1]
     
@@ -376,12 +382,12 @@ def generate_feedback(
             final_demos.append(demos[idx])
             final_corrections.append(corrections[idx])
             selected_indices.append(idx)
-    
+
     if len(final_demos) < n_feedback:
         for idx in sorted_indices:
             if len(final_demos) >= n_feedback:
                 break
-            if idx not in selected_indices:
+            if idx not in selected_indices and demos[idx] is not None:
                 final_demos.append(demos[idx])
                 final_corrections.append((segments[idx], demos[idx]))
                 selected_indices.append(idx)
@@ -398,6 +404,7 @@ def generate_feedback(
     print("[INFO] Successfully generated comparative feedback")
 
     demos = final_demos
+    print(len(final_demos))
     corrections = final_corrections
 
     print("[INFO] Successfully generated demonstrative/corrective feedback")
@@ -461,7 +468,7 @@ def main():
     parser.add_argument("--seed", type=int, default=1337, help="TODO: Seed for env and stuff")
     parser.add_argument("--segment-len", type=int, default=50, help="How long is the segment we generate feedback for")
     parser.add_argument("--save-folder", type=str, default="feedback", help="Where to save the feedback")
-    parser.add_argument("--top-n-models", type=int, default=4)
+    parser.add_argument("--top-n-models", type=int, default=3)
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -475,7 +482,6 @@ def main():
     # load "ensemble" of expert agents
     env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")
     expert_model_paths = [os.path.join(checkpoints_path, args.algorithm, model) for model in os.listdir(os.path.join(checkpoints_path, args.algorithm)) if env_name in model]
-    print(expert_model_paths)
     orig_len = len(expert_model_paths)
     #expert_model = (PPO if args.algorithm == "ppo" else SAC).load(
     #    os.path.join(checkpoints_path, args.algorithm, f"{args.environment.replace("/", "-")}_1", "best_model.zip")
@@ -507,7 +513,7 @@ def main():
             norm_env = VecNormalize.load(os.path.join(expert_model_path, env_name, "vecnormalize.pkl"), DummyVecEnv([lambda: environment]))
         else:
             norm_env = None
-        expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, "best_model.zip")
+        expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, f"{env_name}.zip")
         ), norm_env))
     
     model_class = PPO if args.algorithm == "ppo" else SAC

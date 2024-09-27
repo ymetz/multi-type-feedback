@@ -389,7 +389,7 @@ CarRacing-v2:
 #   policy: 'MlpPolicy'
 
 Ant-v4: &mujoco-defaults
-  normalize: false
+  normalize: true
   n_timesteps: !!float 1e6
   policy: 'MlpPolicy'
 
@@ -417,7 +417,7 @@ Swimmer-v5:
 # 10 mujoco envs
 
 HalfCheetah-v5:
-  normalize: false
+  normalize: true
   n_envs: 1
   policy: 'MlpPolicy'
   n_timesteps: !!float 1e6
@@ -439,7 +439,7 @@ HalfCheetah-v5:
                   )"
 
 Ant-v5:
-  normalize: false
+  normalize: true
   n_envs: 1
   policy: 'MlpPolicy'
   n_timesteps: !!float 5e6
@@ -455,7 +455,7 @@ Ant-v5:
   vf_coef: 0.677239
 
 Hopper-v5:
-  normalize: false
+  normalize: true
   n_envs: 1
   policy: 'MlpPolicy'
   n_timesteps: !!float 5e6
@@ -499,8 +499,8 @@ HumanoidStandup-v2:
                   )"
 
 Humanoid-v5:
-  normalize: false
-  n_envs: 8
+  normalize: true
+  n_envs: 1
   policy: 'MlpPolicy'
   n_timesteps: !!float 5e6
   batch_size: 256
@@ -569,7 +569,7 @@ Reacher-v4:
   vf_coef: 0.950368
 
 Walker2d-v5:
-  normalize: false
+  normalize: true
   n_envs: 1
   policy: 'MlpPolicy'
   n_timesteps: !!float 1e6

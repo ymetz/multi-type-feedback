@@ -4,7 +4,7 @@
 #envs=("Swimmer-v5" "HalfCheetah-v5" "Hopper-v5" "Walker2d-v5")
 envs=("HalfCheetah-v5")
 #seeds=(1789 1687123 12 912391 330)
-seeds=(330)
+seeds=(1789)
 #feedback_types=("evaluative" "comparative" "demonstrative" "corrective")
 feedback_types=("evaluative" "comparative" "demonstrative" "corrective" "descriptive" "descriptive_preference")
 #noise_levels=(0.1 0.2 0.3 0.4 0.5)
