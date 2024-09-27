@@ -107,12 +107,6 @@ def main():
         help="Environment",
     )
     parser.add_argument(
-        "--train-steps", 
-        type=int, 
-        default=int(1e6), 
-        help="Number of steps to generate feedback for",
-    )
-    parser.add_argument(
         "--seed", 
         type=int, 
         default=12, 
@@ -143,7 +137,13 @@ def main():
     run = wandb.init(
         name="RL_"+MODEL_ID,
         project="multi_reward_feedback",
-        config=vars(args),
+        config={
+            **vars(args),
+            "feedback_type": args.feedback_type,
+            "noise_level": args.noise_level,
+            "seed": args.seed,
+            "environment": args.environment,
+        },
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         monitor_gym=False,  # auto-upload the videos of agents playing the game
         save_code=False,  # optional
@@ -164,7 +164,6 @@ def main():
         args.environment,
         os.path.join("agents","RL_"+MODEL_ID),
         tensorboard_log=f"runs/{'RL_'+MODEL_ID}",
-        n_timesteps=args.train_steps,
         seed=args.seed,
         log_interval=-1,
         reward_function=CustomReward(

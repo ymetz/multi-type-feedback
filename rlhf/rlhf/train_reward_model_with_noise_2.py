@@ -208,6 +208,8 @@ def train_reward_model(
     enable_progress_bar=True,
     callback: Union[Callback, None] = None,
     num_ensemble_models: int = 4,
+    noise_level: float = 0.0,
+    seed: int = 0,
 ):
 
     """Train a reward model given trajectories data."""
@@ -241,7 +243,17 @@ def train_reward_model(
     )
 
     # initialise the wandb logger and name your wandb project
-    wandb_logger = WandbLogger(project="multi_reward_feedback", name=reward_model_id)
+    # initialise the wandb logger and name your wandb project
+    wandb_logger = WandbLogger(project="multi_reward_feedback_rerun", 
+                               name=reward_model_id,
+                               config={
+                                    **vars(args),
+                                    "feedback_type": feedback_type,
+                                    "noise_level": noise_level,
+                                    "seed": seed,
+                                    "environment": environment,
+                                },
+    )
 
     trainer = Trainer(
         max_epochs=maximum_epochs,
@@ -257,20 +269,6 @@ def train_reward_model(
             *([callback] if callback is not None else []),
         ],
     )
-
-    # add your batch size to the wandb config
-    if trainer.global_rank == 0:
-        wandb_logger.experiment.config.update(
-            {
-                "rl_algorithm": algorithm,
-                "rl_environment": environment,
-                "rl_feedback_type": feedback_type,
-                "max_epochs": maximum_epochs,
-                #"batch_size": batch_size,
-                "gradient_clip_value": gradient_clip_value,
-                "learning_rate": reward_model.learning_rate,
-            }
-        )
 
     trainer.fit(reward_model, train_loader, val_loader)
 
@@ -304,12 +302,6 @@ def main():
         help="Environment used to generate the feedback",
     )
     arg_parser.add_argument(
-        "--steps-per-checkpoint",
-        type=int,
-        default=10000,
-        help="Number of steps per checkpoint",
-    )
-    arg_parser.add_argument(
         "--seed",
         type=int,
         default=12,
@@ -324,7 +316,7 @@ def main():
         "--n-feedback",
         type=int,
         default=-1,
-    )
+    )ƒst
     arg_parser.add_argument(
         "--noise-level",
         type=float,
@@ -418,10 +410,12 @@ def main():
         args.feedback_type,
         dataset,
         maximum_epochs=100,
-        split_ratio=0.8,
+        split_ratio=0.85,
         cpu_count=cpu_count,
         num_ensemble_models=args.n_ensemble,
         enable_progress_bar=False if args.no_loading_bar else True,
+        noise_level=args.noise_level,
+        seed=args.seed,
     )
 
 

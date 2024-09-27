@@ -47,7 +47,7 @@ def predict_expert_value(
     
     observation = expert_model.policy.obs_to_tensor(observation)[0]
     with torch.no_grad():
-        return torch.mean(
+        return torch.min(
             torch.cat(expert_model.policy.critic_target(observation, actions), dim=1) if isinstance(expert_model, SAC) else expert_model.policy.predict_values(observation),
             dim=1,
             keepdim=True,
@@ -301,14 +301,18 @@ def generate_feedback(
     opt_gaps = []
     for seg in segments:
         initial_vals = [predict_expert_value(expert_model, np.array(seg[0][0])).item() for expert_model in expert_models]
-        initial_val = np.mean(initial_vals)
+        initial_val = np.min(initial_vals)
+        print("INITIAL VAL", initial_val)
 
         discounted_rew_sum = discounted_sum_numpy([s[2] for s in seg[:-1]], gamma)
+        print("DISC. REW. SUM.", discounted_rew_sum)
         
         final_vals = [predict_expert_value(expert_model, np.array(seg[-1][0])).item() for expert_model in expert_models]
-        final_val = np.mean(final_vals)
+        final_val = np.min(final_vals)
+        print("FINAL VAL", final_val)
 
-        opt_gap = (initial_val - gamma ** len(seg) * final_val) - discounted_rew_sum
+        opt_gap = initial_val - (discounted_rew_sum + gamma ** len(seg) * final_val)
+        print("OPT GAP", opt_gap)
         opt_gaps.append(opt_gap)
     
     max_rating = 10
@@ -466,7 +470,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     feedback_id = f"{args.algorithm}_{args.environment}"
     feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}_{args.seed}.pkl"
-    checkpoints_path = "../main/gt_agents"
+    checkpoints_path = "../main/gt_agents_non_normed"
 
     # load "ensemble" of expert agents
     env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")

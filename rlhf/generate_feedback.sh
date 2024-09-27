@@ -1,8 +1,10 @@
 #!/bin/bash
 
 # Set the experiment parameters
-envs=("Ant-v5" "Swimmer-v5" "HalfCheetah-v5" "Hopper-v5" "Walker2d-v5")
-seeds=(1789 1687123 12 912391 330)
+#envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
+envs=("Swimmer-v5")
+#seeds=(1789 1687123 12 912391 330)
+seeds=(1687123)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -34,8 +36,8 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --ntasks=1
-#SBATCH --job-name=train_reward_models_$batch_id
-#SBATCH --time=02:00:00
+#SBATCH --job-name=generate_feedback_$batch_id
+#SBATCH --time=02:30:00
 #SBATCH --output=logs/train_generate_feedback_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
@@ -48,7 +50,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env <<< $combination
-        echo "python rlhf/generate_feedback_2.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_new &" >> $sbatch_script
+        echo "python rlhf/generate_feedback_2.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_non_normed &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish
