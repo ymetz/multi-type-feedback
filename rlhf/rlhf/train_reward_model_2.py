@@ -134,8 +134,6 @@ class FeedbackDataset(Dataset):
                     obs = torch.vstack([torch.as_tensor(single_step[0]).float() * torch.as_tensor(desc[0][i]).float() for i, single_step in enumerate(seg)])
                     actions = torch.vstack([torch.as_tensor(single_step[1]).float() for single_step in seg])
 
-
-                    
                     self.targets.append((obs, actions))
                     self.preds.append(-desc[1] / len(seg)) # lowers the rew.estimate somewhat
             case "descriptive_preference":
@@ -223,7 +221,6 @@ def train_reward_model(
     wandb_logger = WandbLogger(project="multi_reward_feedback_rerun", 
                                name=reward_model_id,
                                config={
-                                    **vars(args),
                                     "feedback_type": feedback_type,
                                     "noise_level": noise_level,
                                     "seed": seed,

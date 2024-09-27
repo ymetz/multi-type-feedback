@@ -207,7 +207,7 @@ class FeedbackDataset(Dataset):
                     self.preds.append(rew)
                 else:
                     self.preds.append(cluster_representative[2])
-        elif feedback_type == "descriptive_preferences":
+        elif feedback_type == "descriptive_preference":
             for cpref in feedback_data["description_preference"]:
                 idx_1 = dpref[0]
                                 
@@ -400,7 +400,7 @@ def main():
     loss_function = None
     architecture_cls = None
 
-    if args.feedback_type == "evaluative" or args.feedback_type == "descriptive" or rags.feedback_type == "cluster_description":
+    if args.feedback_type == "evaluative" or args.feedback_type == "descriptive" or args.feedback_type == "descriptive_preference":
         loss_function = calculate_single_reward_loss
     else:
         #"comparative" | "corrective" | "demonstrative" | "descriptive_preference":
