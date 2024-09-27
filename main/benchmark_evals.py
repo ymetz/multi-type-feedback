@@ -14,7 +14,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
                     prog='CollectResults',
                     description='Collecting results from runs')
-    parser.add_argument('--model-base-path', default="gt_agents")
+    parser.add_argument('--model-base-path', default="gt_agents_non_normed")
     parser.add_argument('--algorithm', default="ppo")
 
     args = parser.parse_args()

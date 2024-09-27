@@ -71,6 +71,7 @@ class FeedbackDataset(Dataset):
         feedback_type: FeedbackType,
         n_feedback: int,
         noise_level: float = 0.0, # depending on the feedback, we use different types of noise (e.g. flip the preference, add noise to the rating or description)
+        segment_len: int = 50,
     ):
         """Initialize dataset."""
         print("Loading dataset...")
@@ -85,6 +86,15 @@ class FeedbackDataset(Dataset):
             for seg in feedback_data["segments"]:
                 obs = torch.vstack([torch.as_tensor(p[0]).float() for p in seg])
                 actions = torch.vstack([torch.as_tensor(p[1]).float() for p in seg])
+
+                # Pad both trajectories to the maximum length
+                len_obs = obs.size(0)
+
+                if len_obs < segment_len:
+                    pad_size = segment_len - len_obs
+                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                
                 self.targets.append((obs, actions))
                 self.preds = feedback_data["ratings"]
                 # add noise to the ratings
@@ -105,6 +115,19 @@ class FeedbackDataset(Dataset):
                 # seg 2
                 obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][comp[1]]])
                 actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][comp[1]]])
+
+                # Pad both trajectories to the maximum length, necessary for batching with data loader
+                len_obs = obs.size(0)
+                len_obs2 = obs2.size(0)
+
+                if len_obs < segment_len:
+                    pad_size = segment_len - len_obs
+                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                if len_obs2 < segment_len:
+                    pad_size = segment_len - len_obs2
+                    obs2 = torch.cat([obs2, torch.zeros(pad_size, obs2.size(1))], dim=0)
+                    actions2 = torch.cat([actions2, torch.zeros(pad_size, actions2.size(1))], dim=0)
                 
                 # flip the preference with a certain probability
                 if random.random() < noise_level:
@@ -123,6 +146,20 @@ class FeedbackDataset(Dataset):
                 rand_index = random.randrange(0, len(feedback_data["segments"]))
                 obs_rand = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][rand_index]])
                 actions_rand = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][rand_index]])
+
+                # Pad both trajectories to the maximum length
+                len_obs = obs.size(0)
+                len_obs_rand = obs_rand.size(0)
+
+                if len_obs < segment_len:
+                    pad_size = segment_len - len_obs
+                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                if len_obs_rand < segment_len:
+                    pad_size = segment_len - len_obs_rand
+                    obs_rand = torch.cat([obs_rand, torch.zeros(pad_size, obs_rand.size(1))], dim=0)
+                    actions_rand = torch.cat([actions_rand, torch.zeros(pad_size, actions_rand.size(1))], dim=0)
+                
                 self.targets.append(((obs_rand, actions_rand), (obs, actions)))
                 self.preds.append(1) # assume that the demonstration is optimal, maybe add confidence value (based on regret)
         elif feedback_type == "corrective":
@@ -132,7 +169,20 @@ class FeedbackDataset(Dataset):
 
                 obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[1]])
                 actions2 = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[1]])
-                
+
+                # Pad both trajectories to the maximum length
+                len_obs = obs.size(0)
+                len_obs2 = obs2.size(0)
+
+                if len_obs < segment_len:
+                    pad_size = segment_len - len_obs
+                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                if len_obs2 < segment_len:
+                    pad_size = segment_len - len_obs2
+                    obs2 = torch.cat([obs2, torch.zeros(pad_size, obs2.size(1))], dim=0)
+                    actions2 = torch.cat([actions2, torch.zeros(pad_size, actions2.size(1))], dim=0)
+            
                 # flip the preference with a certain probability
                 if random.random() < noise_level:
                     self.targets.append(((obs, actions),(obs2, actions2)))
@@ -247,7 +297,6 @@ def train_reward_model(
     wandb_logger = WandbLogger(project="multi_reward_feedback_rerun", 
                                name=reward_model_id,
                                config={
-                                    **vars(args),
                                     "feedback_type": feedback_type,
                                     "noise_level": noise_level,
                                     "seed": seed,
@@ -316,7 +365,7 @@ def main():
         "--n-feedback",
         type=int,
         default=-1,
-    )ƒst
+    )
     arg_parser.add_argument(
         "--noise-level",
         type=float,
@@ -339,7 +388,7 @@ def main():
         MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
     # Load data
-    dataset_dir = "feedback" if "descript" not in args.feedback_type else "feedback_descript"
+    dataset_dir = "feedback_non_normed"
     dataset = FeedbackDataset(
         path.join(script_path, dataset_dir, f"{FEEDBACK_ID}.pkl"),
         args.feedback_type,

@@ -500,9 +500,9 @@ HumanoidStandup-v2:
 
 Humanoid-v5:
   normalize: false
-  n_envs: 1
+  n_envs: 8
   policy: 'MlpPolicy'
-  n_timesteps: !!float 1e6
+  n_timesteps: !!float 5e6
   batch_size: 256
   n_steps: 512
   gamma: 0.95
