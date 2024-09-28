@@ -312,7 +312,7 @@ def train_reward_model(
     )
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=path.join(script_path, "reward_models_2"),
+        dirpath=path.join(script_path, "reward_models"),
         filename=reward_model_id,
         monitor="val_loss",
     )

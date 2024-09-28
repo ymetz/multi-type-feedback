@@ -1,12 +1,13 @@
 #!/bin/bash
 
 # Set the experiment parameters
-#envs=("Swimmer-v5" "HalfCheetah-v5" "Hopper-v5" "Walker2d-v5")
-#envs=("HalfCheetah-v5" "Walker2d-v5" "Swimmer-v5")
-envs=("Ant-v5" "Hopper-v5")
+#envs=("Swimmer-v5" "HalfCheetah-v5" "Hopper-v5" "Walker2d-v5" "Humanoid-v5")
+#envs=("HalfCheetah-v5" "Walker2d-v5" "Swimmer-v5" "Ant-v5" "Hopper-v5")
+envs=("Humanoid-v5")
 #seeds=(1789 1687123 12 912391 330)
-seeds=(1789)
-feedback_types=("evaluative" "comparative" "demonstrative" "corrective" "descriptive" "descriptive_preference")
+seeds=(330)
+#feedback_types=("evaluative" "comparative" "demonstrative" "corrective" "descriptive" "descriptive_preference")
+feedback_types=("corrective")
 #noise_levels=(0.1 0.2 0.3 0.4 0.5)
 noise_levels=(0.0)
 
