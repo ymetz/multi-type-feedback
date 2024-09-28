@@ -404,7 +404,6 @@ def generate_feedback(
     print("[INFO] Successfully generated comparative feedback")
 
     demos = final_demos
-    print(len(final_demos))
     corrections = final_corrections
 
     print("[INFO] Successfully generated demonstrative/corrective feedback")

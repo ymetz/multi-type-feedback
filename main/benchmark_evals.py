@@ -14,7 +14,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
                     prog='CollectResults',
                     description='Collecting results from runs')
-    parser.add_argument('--model-base-path', default="gt_agents_non_normed")
+    parser.add_argument('--model-base-path', default="gt_agents")
     parser.add_argument('--algorithm', default="ppo")
 
     args = parser.parse_args()
@@ -54,7 +54,7 @@ if __name__ == "__main__":
             df = pd.concat([df, pd.DataFrame([the_dict])], ignore_index=True)
 
             df = df.sort_values('env')
-            df.to_csv(f"collected_results.csv")
+            df.to_csv(f"collected_results_{args.algorithm}.csv")
         except Exception:
             print(traceback.format_exc())
             exit(0)
