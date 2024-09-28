@@ -2,9 +2,9 @@
 
 # Set the experiment parameters
 #envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
+#envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
 envs=("Swimmer-v5")
-#seeds=(1789 1687123 12 912391 330)
-seeds=(1687123)
+seeds=(1789 1687123 12 912391 330)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -20,7 +20,7 @@ for seed in "${seeds[@]}"; do
 done
 
 # Set the batch size (number of jobs per GPU)
-batch_size=4
+batch_size=5
 total_combinations=${#combinations[@]}
 
 # Loop over the combinations in batches
@@ -32,16 +32,16 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
     sbatch_script="batch_job_$batch_id.sh"
     cat <<EOT > $sbatch_script
 #!/bin/bash
-#SBATCH --partition=gpu_4
+#SBATCH --partition=gpu_4,gpu_8,gpu_4_a100
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=5
 #SBATCH --ntasks=1
 #SBATCH --job-name=generate_feedback_$batch_id
 #SBATCH --time=02:30:00
 #SBATCH --output=logs/train_generate_feedback_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
-# module load python/3.8
+# module load python/3.9
 source /pfs/data5/home/kn/kn_kn/kn_pop257914/multi-type-feedback/venv/bin/activate
 
 # Run the training jobs in background
@@ -50,7 +50,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env <<< $combination
-        echo "python rlhf/generate_feedback_2.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_non_normed &" >> $sbatch_script
+        echo "python rlhf/generate_feedback_2.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_regen &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

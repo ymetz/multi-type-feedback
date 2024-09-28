@@ -72,6 +72,7 @@ class FeedbackDataset(Dataset):
         n_feedback: int,
         noise_level: float = 0.0, # depending on the feedback, we use different types of noise (e.g. flip the preference, add noise to the rating or description)
         segment_len: int = 50,
+        env = None,
     ):
         """Initialize dataset."""
         print("Loading dataset...")
@@ -141,7 +142,27 @@ class FeedbackDataset(Dataset):
             for demo in feedback_data["demos"]:
                 obs = torch.vstack([torch.as_tensor(p[0]).float() for p in demo])
                 actions = torch.vstack([torch.as_tensor(p[1]).float() for p in demo])
-            
+
+                if noise_level > 0.0:
+                    # Get the shape of the actions tensor
+                    num_actions, action_dim = actions.shape
+                    
+                    # Calculate how many actions to replace
+                    num_replace = int(num_actions * noise_level)
+                    
+                    # Randomly select indices to replace
+                    replace_indices = np.random.choice(num_actions, num_replace, replace=False)
+                    
+                    # Create a new tensor to store the modified actions
+                    new_actions = actions.clone()
+                    
+                    # Replace selected actions with random actions from the environment
+                    for idx in replace_indices:
+                        random_action = env.action_space.sample()
+                        new_actions[idx] = torch.as_tensor(random_action).float()
+
+                    actions = new_actions
+
                 # just use a random segment as the opposite
                 rand_index = random.randrange(0, len(feedback_data["segments"]))
                 obs_rand = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][rand_index]])
@@ -185,17 +206,20 @@ class FeedbackDataset(Dataset):
             
                 # flip the preference with a certain probability
                 if random.random() < noise_level:
-                    self.targets.append(((obs, actions),(obs2, actions2)))
-                    self.preds.append(1) # because the second element is the correction   
-                else:
                     self.targets.append(((obs2, actions2),(obs, actions)))
                     self.preds.append(1) 
+                else:
+                    self.targets.append(((obs, actions),(obs2, actions2)))
+                    self.preds.append(1) 
         elif feedback_type == "descriptive":
+
+            rew_range = np.array([cr[2] for cr in feedback_data["description"]]).var()
+            
             for cluster_representative in feedback_data["description"]:
                 self.targets.append((torch.as_tensor(cluster_representative[0]).unsqueeze(0).float(), torch.as_tensor(cluster_representative[1]).unsqueeze(0).float()))
                 
                 if noise_level > 0.0:
-                    rew = cluster_representative[2] + np.random.uniform(-noise_level*10, noise_level*10)
+                    rew = cluster_representative[2] + np.random.uniform(-noise_level*rew_range, noise_level*rew_range)
                     self.preds.append(rew)
                 else:
                     self.preds.append(cluster_representative[2])
@@ -203,19 +227,20 @@ class FeedbackDataset(Dataset):
             for cluster_representative in feedback_data["cluster_description"]:
                 self.targets.append((np.expand_dims(cluster_representative[0], 0), np.expand_dims(cluster_representative[1], 0)))
                 if noise_level > 0.0:
+                    cluster_variance = 0
                     rew = cluster_representative[2] + np.random.uniform(-noise_level*10, noise_level*10)
                     self.preds.append(rew)
                 else:
                     self.preds.append(cluster_representative[2])
         elif feedback_type == "descriptive_preference":
             for cpref in feedback_data["description_preference"]:
-                idx_1 = dpref[0]
+                idx_1 = cpref[0]
                                 
                 # cluster 1
                 obs = torch.as_tensor(feedback_data["description"][idx_1][0]).unsqueeze(0).float()
                 actions = torch.as_tensor(feedback_data["description"][idx_1][1]).unsqueeze(0).float()
 
-                idx_2 = dpref[1]
+                idx_2 = cpref[1]
                 
                 # cluster 2
                 obs2 = torch.as_tensor(feedback_data["description"][idx_2][0]).unsqueeze(0).float()
@@ -224,10 +249,10 @@ class FeedbackDataset(Dataset):
                 # flip the preference with a certain probability
                 if random.random() < noise_level:
                     self.targets.append(((obs2, actions2),(obs, actions)))
-                    self.preds.append(dpref[2])
+                    self.preds.append(cpref[2])
                 else:
                     self.targets.append(((obs, actions),(obs2, actions2)))
-                    self.preds.append(dpref[2])
+                    self.preds.append(cpref[2])
         else:
             raise NotImplementedError(
                 "Dataset not implemented for this feedback type."
@@ -287,14 +312,14 @@ def train_reward_model(
     )
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=path.join(script_path, "reward_models"),
+        dirpath=path.join(script_path, "reward_models_2"),
         filename=reward_model_id,
         monitor="val_loss",
     )
 
     # initialise the wandb logger and name your wandb project
     # initialise the wandb logger and name your wandb project
-    wandb_logger = WandbLogger(project="multi_reward_feedback_rerun", 
+    wandb_logger = WandbLogger(project="multi_reward_feedback_final", 
                                name=reward_model_id,
                                config={
                                     "feedback_type": feedback_type,
@@ -387,20 +412,11 @@ def main():
     else:
         MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
-    # Load data
-    dataset_dir = "feedback_non_normed"
-    dataset = FeedbackDataset(
-        path.join(script_path, dataset_dir, f"{FEEDBACK_ID}.pkl"),
-        args.feedback_type,
-        args.n_feedback,
-        noise_level=args.noise_level,
-    )
-
     # Select loss function based on feedback type
     loss_function = None
     architecture_cls = None
 
-    if args.feedback_type == "evaluative" or args.feedback_type == "descriptive" or args.feedback_type == "descriptive_preference":
+    if args.feedback_type == "evaluative" or args.feedback_type == "descriptive":
         loss_function = calculate_single_reward_loss
     else:
         #"comparative" | "corrective" | "demonstrative" | "descriptive_preference":
@@ -452,6 +468,16 @@ def main():
             ),
             ensemble_count=args.n_ensemble,
         )
+
+    # Load data
+    dataset_dir = "feedback_regen"
+    dataset = FeedbackDataset(
+        path.join(script_path, dataset_dir, f"{FEEDBACK_ID}.pkl"),
+        args.feedback_type,
+        args.n_feedback,
+        noise_level=args.noise_level,
+        env=environment if args.feedback_type == "demonstrative" else None,
+    )
 
     train_reward_model(
         reward_model,

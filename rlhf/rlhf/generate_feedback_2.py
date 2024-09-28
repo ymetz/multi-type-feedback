@@ -318,7 +318,7 @@ def generate_feedback(
 
         opt_gap = initial_val - (discounted_rew_sum + gamma ** len(seg) * final_val)
         """
-        opt_gap = -discounted_sum_numpy([s[2] for s in seg[:-1]], gamma)
+        opt_gap = -discounted_sum_numpy([s[2] for s in seg], gamma)
         opt_gaps.append(opt_gap)
     
     max_rating = 10
@@ -477,7 +477,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     feedback_id = f"{args.algorithm}_{args.environment}"
     feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}_{args.seed}.pkl"
-    checkpoints_path = "../main/gt_agents_non_normed"
+    checkpoints_path = "../main/gt_agents"
 
     # load "ensemble" of expert agents
     env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")
