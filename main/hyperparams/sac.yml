@@ -205,7 +205,7 @@ Walker2d-v5:
 
 Humanoid-v5:
   <<: *mujoco-defaults
-  n_timesteps: !!float 2e6
+  n_timesteps: !!float 1e6
 
 Swimmer-v5:
   <<: *mujoco-defaults
