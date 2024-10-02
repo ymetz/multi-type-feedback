@@ -136,7 +136,7 @@ def main():
 
     run = wandb.init(
         name="RL_"+MODEL_ID,
-        project="multi_reward_feedback_final",
+        project="multi_reward_feedback_final_lul",
         config={
             **vars(args),
             "feedback_type": args.feedback_type,

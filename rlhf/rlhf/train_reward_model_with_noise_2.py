@@ -35,6 +35,19 @@ import wandb
 from rlhf.datatypes import FeedbackDataset, FeedbackType, SegmentT
 from rlhf.networks import LightningNetwork, LightningCnnNetwork, calculate_single_reward_loss, calculate_pairwise_loss
 
+# for convenice sake, todo: make dynamic in the future
+discount_factors = {
+    'HalfCheetah-v5': 0.98,
+    'Hopper-v5': 0.99,
+    'Swimmer-v5': 0.9999,
+    'Ant-v5': 0.99,
+    'Walker2d-v5': 0.99,
+    'ALE/BeamRider-v5': 0.99,
+    'ALE/MsPacman-v5': 0.99,
+    'ALE/Enduro-v5': 0.99,
+    'Humanoid-v5': 0.99,
+}
+
 script_path = Path(__file__).parents[1].resolve()
 
 # Utilize Tensor Cores of NVIDIA GPUs
@@ -62,6 +75,28 @@ def truncated_uniform_vectorized(mean, width, low=0, upp=9):
     
     return result[0] if scalar_input else result
 
+def truncated_gaussian_vectorized(mean, width, low=0, upp=9):
+    # Handle scalar inputs
+    scalar_input = np.isscalar(mean) and np.isscalar(width)
+    mean = np.atleast_1d(mean)
+    width = np.atleast_1d(width)
+    
+    # Calculate the bounds of the distribution
+    lower = np.maximum(mean - width/2, low)
+    upper = np.minimum(mean + width/2, upp)
+    
+    # Calculate parameters for truncated normal distribution
+    a = (lower - mean) / (width/4)  # 4 sigma range
+    b = (upper - mean) / (width/4)
+    
+    # Generate samples from truncated normal distribution
+    result = truncnorm.rvs(a, b, loc=mean, scale=width/4, size=mean.shape)
+    
+    return result[0] if scalar_input else result
+
+def discounted_sum_numpy(rewards, gamma):
+    return np.sum(rewards * (gamma ** np.arange(len(rewards))))
+
 class FeedbackDataset(Dataset):
     """PyTorch Dataset for loading the feedback data."""
 
@@ -70,6 +105,7 @@ class FeedbackDataset(Dataset):
         dataset_path: str,
         feedback_type: FeedbackType,
         n_feedback: int,
+        env_name: str = "",
         noise_level: float = 0.0, # depending on the feedback, we use different types of noise (e.g. flip the preference, add noise to the rating or description)
         segment_len: int = 50,
         env = None,
@@ -97,17 +133,23 @@ class FeedbackDataset(Dataset):
                     actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
                 
                 self.targets.append((obs, actions))
-                self.preds = feedback_data["ratings"]
-                # add noise to the ratings
-                if noise_level > 0:
-                    # apply noise, accounting for clipping at the borders [0,9]
-                    self.preds = truncated_uniform_vectorized(
-                        mean=self.preds, 
-                        width=noise_level*10*np.ones_like(self.preds), 
-                        low=0, 
-                        upp=9
-                    )
+            
+            self.preds = feedback_data["ratings"]
+            # add noise to the ratings
+            if noise_level > 0:
+                # apply noise, accounting for clipping at the borders [0,9]
+                self.preds = truncated_gaussian_vectorized(
+                    mean=self.preds, 
+                    width=noise_level*10*np.ones_like(self.preds), 
+                    low=0, 
+                    upp=9
+                )
         elif feedback_type == "comparative":
+            
+            rews_min, rews_max = np.min([e * -1 for e in feedback_data["opt_gaps"]]), np.max([e * -1 for e in feedback_data["opt_gaps"]])
+            ref_diff = np.abs(rews_max - rews_min)
+
+            flipped = 0
             for comp in feedback_data["preferences"]:
                 # seg 1
                 obs = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][comp[0]]])
@@ -130,15 +172,39 @@ class FeedbackDataset(Dataset):
                     obs2 = torch.cat([obs2, torch.zeros(pad_size, obs2.size(1))], dim=0)
                     actions2 = torch.cat([actions2, torch.zeros(pad_size, actions2.size(1))], dim=0)
                 
-                # flip the preference with a certain probability
-                if random.random() < noise_level:
-                    self.targets.append(((obs2, actions2),(obs, actions)))
+                # add noise and recompute preferences
+                if noise_level > 0:
+                    rew1 = -feedback_data["opt_gaps"][comp[0]]
+                    rew2 = -feedback_data["opt_gaps"][comp[1]]
+
+                    rew1 = truncated_gaussian_vectorized(
+                        mean=np.array(rew1), 
+                        width=np.array(noise_level) * ref_diff, 
+                        low=rews_min,
+                        upp=rews_max
+                    )
+                    rew2 = truncated_gaussian_vectorized(
+                        mean=np.array(rew2), 
+                        width=np.array(noise_level) * ref_diff, 
+                        low=rews_min,
+                        upp=rews_max
+                    ) 
+
+                    if rew2 > rew1:
+                        self.targets.append(((obs, actions),(obs2, actions2)))
+                    else:
+                        self.targets.append(((obs2, actions2),(obs, actions)))
+                        flipped += 1
                     self.preds.append(comp[2])
                 else:
                     self.targets.append(((obs, actions),(obs2, actions2)))
                     self.preds.append(comp[2])
-                    
+
         elif feedback_type == "demonstrative":
+
+            with open(os.path.join("samples", f"random_{env_name}.pkl"), "rb") as random_file:
+                random_data = pickle.load(random_file)
+            
             for demo in feedback_data["demos"]:
                 obs = torch.vstack([torch.as_tensor(p[0]).float() for p in demo])
                 actions = torch.vstack([torch.as_tensor(p[1]).float() for p in demo])
@@ -164,9 +230,9 @@ class FeedbackDataset(Dataset):
                     actions = new_actions
 
                 # just use a random segment as the opposite
-                rand_index = random.randrange(0, len(feedback_data["segments"]))
-                obs_rand = torch.vstack([torch.as_tensor(p[0]).float() for p in feedback_data["segments"][rand_index]])
-                actions_rand = torch.vstack([torch.as_tensor(p[1]).float() for p in feedback_data["segments"][rand_index]])
+                rand_index = random.randrange(0, len(random_data["segments"]))
+                obs_rand = torch.vstack([torch.as_tensor(p[0]).float() for p in random_data["segments"][rand_index]])
+                actions_rand = torch.vstack([torch.as_tensor(p[1]).float() for p in random_data["segments"][rand_index]])
 
                 # Pad both trajectories to the maximum length
                 len_obs = obs.size(0)
@@ -184,6 +250,12 @@ class FeedbackDataset(Dataset):
                 self.targets.append(((obs_rand, actions_rand), (obs, actions)))
                 self.preds.append(1) # assume that the demonstration is optimal, maybe add confidence value (based on regret)
         elif feedback_type == "corrective":
+
+            rews_min, rews_max = np.min([e * -1 for e in feedback_data["opt_gaps"]]), np.max([e * -1 for e in feedback_data["opt_gaps"]])
+            rew_diff = np.abs(rews_max - rews_min)
+            gamma = discount_factors[env_name]
+            
+            flipped = 0
             for comp in feedback_data["corrections"]:
                 obs = torch.vstack([torch.as_tensor(p[0]).float() for p in comp[0]])
                 actions = torch.vstack([torch.as_tensor(p[1]).float() for p in comp[0]])
@@ -204,35 +276,59 @@ class FeedbackDataset(Dataset):
                     obs2 = torch.cat([obs2, torch.zeros(pad_size, obs2.size(1))], dim=0)
                     actions2 = torch.cat([actions2, torch.zeros(pad_size, actions2.size(1))], dim=0)
             
-                # flip the preference with a certain probability
-                if random.random() < noise_level:
-                    self.targets.append(((obs2, actions2),(obs, actions)))
-                    self.preds.append(1) 
+                # add noise and recompute preferences
+                if noise_level > 0.0:
+                    rews1 = discounted_sum_numpy(np.array([p[2] for p in comp[0]]), gamma)
+                    rews2 = discounted_sum_numpy(np.array([p[2] for p in comp[1]]), gamma)
+
+                    rew1 = truncated_gaussian_vectorized(
+                        mean=rews1, 
+                        width=np.array(noise_level) * rew_diff, 
+                        low=min(rews_min, rews1),
+                        upp=max(rews_max, rews1),
+                    ).item()
+                    rew2 = truncated_gaussian_vectorized(
+                        mean=rews2, 
+                        width=np.array(noise_level) * rew_diff, 
+                        low=min(rews_min, rews2),
+                        upp=max(rews_max, rews2)
+                    ).item()
+
+                    if rew2 > rew1:
+                        self.targets.append(((obs, actions),(obs2, actions2)))
+                    else:
+                        self.targets.append(((obs2, actions2),(obs, actions)))
+                        flipped += 1
+                    self.preds.append(1)
                 else:
                     self.targets.append(((obs, actions),(obs2, actions2)))
-                    self.preds.append(1) 
+                    self.preds.append(1)
         elif feedback_type == "descriptive":
 
-            rew_range = np.array([cr[2] for cr in feedback_data["description"]]).var()
+            cluster_rews = np.array([cr[2] for cr in feedback_data["description"]])
+            cluster_rew_min, cluster_rew_max = cluster_rews.min(), cluster_rews.max()
+            cluster_rew_diff = np.abs(cluster_rew_max - cluster_rew_min)
             
             for cluster_representative in feedback_data["description"]:
                 self.targets.append((torch.as_tensor(cluster_representative[0]).unsqueeze(0).float(), torch.as_tensor(cluster_representative[1]).unsqueeze(0).float()))
                 
                 if noise_level > 0.0:
-                    rew = cluster_representative[2] + np.random.uniform(-noise_level*rew_range, noise_level*rew_range)
-                    self.preds.append(rew)
-                else:
-                    self.preds.append(cluster_representative[2])
-        elif feedback_type == "cluster_preferences":
-            for cluster_representative in feedback_data["cluster_description"]:
-                self.targets.append((np.expand_dims(cluster_representative[0], 0), np.expand_dims(cluster_representative[1], 0)))
-                if noise_level > 0.0:
-                    cluster_variance = 0
-                    rew = cluster_representative[2] + np.random.uniform(-noise_level*10, noise_level*10)
-                    self.preds.append(rew)
+                    rew = truncated_gaussian_vectorized(
+                        mean=np.array(cluster_representative[2]), 
+                        width=np.array(noise_level) * cluster_rew_diff, 
+                        low=cluster_rew_min,
+                        upp=cluster_rew_max
+                    ) 
+                    self.preds.append(rew.item())
                 else:
                     self.preds.append(cluster_representative[2])
         elif feedback_type == "descriptive_preference":
+
+            cluster_rews = np.array([cr[2] for cr in feedback_data["description"]])
+            cluster_rew_min, cluster_rew_max = cluster_rews.min(), cluster_rews.max()
+            cluster_rew_diff = np.abs(cluster_rew_max - cluster_rew_min)
+            
+            flipped = 0
             for cpref in feedback_data["description_preference"]:
                 idx_1 = cpref[0]
                                 
@@ -246,9 +342,29 @@ class FeedbackDataset(Dataset):
                 obs2 = torch.as_tensor(feedback_data["description"][idx_2][0]).unsqueeze(0).float()
                 actions2 = torch.as_tensor(feedback_data["description"][idx_2][1]).unsqueeze(0).float()
 
-                # flip the preference with a certain probability
-                if random.random() < noise_level:
-                    self.targets.append(((obs2, actions2),(obs, actions)))
+                # add noise and recompute preferences
+                if noise_level > 0:
+                    rew1 = feedback_data["description"][idx_1][2]
+                    rew2 = feedback_data["description"][idx_2][2]
+
+                    rew1 = truncated_gaussian_vectorized(
+                        mean=np.array(rew1), 
+                        width=np.array(noise_level) * cluster_rew_diff, 
+                        low=cluster_rew_min,
+                        upp=cluster_rew_max
+                    ).item()
+                    rew2 = truncated_gaussian_vectorized(
+                        mean=np.array(rew2), 
+                        width=np.array(noise_level) * cluster_rew_diff, 
+                        low=cluster_rew_min,
+                        upp=cluster_rew_max
+                    ).item()
+
+                    if rew2 > rew1:
+                        self.targets.append(((obs, actions),(obs2, actions2)))
+                    else:
+                        self.targets.append(((obs2, actions2),(obs, actions)))
+                        flipped += 1
                     self.preds.append(cpref[2])
                 else:
                     self.targets.append(((obs, actions),(obs2, actions2)))
@@ -312,14 +428,14 @@ def train_reward_model(
     )
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=path.join(script_path, "reward_models"),
+        dirpath=path.join(script_path, "reward_models_lul"),
         filename=reward_model_id,
         monitor="val_loss",
     )
 
     # initialise the wandb logger and name your wandb project
     # initialise the wandb logger and name your wandb project
-    wandb_logger = WandbLogger(project="multi_reward_feedback_final", 
+    wandb_logger = WandbLogger(project="multi_reward_feedback_final_lul", 
                                name=reward_model_id,
                                config={
                                     "feedback_type": feedback_type,
@@ -404,6 +520,9 @@ def main():
     )
     args = arg_parser.parse_args()
 
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+
     FEEDBACK_ID = "_".join(
         [args.algorithm, args.environment, str(args.seed)]
     )
@@ -477,6 +596,7 @@ def main():
         args.n_feedback,
         noise_level=args.noise_level,
         env=environment if args.feedback_type == "demonstrative" else None,
+        env_name=args.environment,
     )
 
     train_reward_model(
@@ -486,6 +606,7 @@ def main():
         dataset,
         maximum_epochs=100,
         split_ratio=0.85,
+        environment=args.environment,
         cpu_count=cpu_count,
         num_ensemble_models=args.n_ensemble,
         enable_progress_bar=False if args.no_loading_bar else True,

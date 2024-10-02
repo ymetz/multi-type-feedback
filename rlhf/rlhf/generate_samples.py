@@ -87,36 +87,47 @@ def generate_feedback(
     min_segment_len: int = 25,
     algorithm: str = "sac",
     device: str = "cuda",
-    binning_type: str = "width"
+    binning_type: str = "width",
+    random_sample: bool = False,
 ) -> dict:
     """Generate agent's observations and feedback in the training environment."""
     feedback_id = f"{algorithm}_{environment_name.replace('/', '-')}"
 
-    possible_checkpoint_indices = [str(model_dir.split("_")[-1]) for model_dir in os.listdir(os.path.join(checkpoints_path, algorithm)) if f"{environment_name.replace('/', '-')}" in model_dir]
-    checkpoints_dir = os.path.join(checkpoints_path, algorithm, f"{environment_name.replace('/', '-')}_1")
+    if not random_sample:
+        possible_checkpoint_indices = [str(model_dir.split("_")[-1]) for model_dir in os.listdir(os.path.join(checkpoints_path, algorithm)) if f"{environment_name.replace('/', '-')}" in model_dir]
+        checkpoints_dir = os.path.join(checkpoints_path, algorithm, f"{environment_name.replace('/', '-')}_1")
 
-    print(f"Generating feedback for: {feedback_id}")
+        print(f"Generating feedback for: {feedback_id}")
+    
+        # Adaptive oversampling
+        oversampling_factor = 1.0
+        target_n_feedback = int(n_feedback * oversampling_factor)
+    
+        checkpoint_files = [
+            file for file in os.listdir(checkpoints_dir) if re.search(r"rl_model_.*\.zip", file)
+        ] or [f"{environment_name}.zip"]    
+    
+        total_steps = n_feedback * total_steps_factor
+        num_checkpoints = len(checkpoint_files) + 1
+        steps_per_checkpoint = total_steps // num_checkpoints
+        feedback_per_checkpoint = target_n_feedback // num_checkpoints
+        gamma = expert_models[0][0].gamma
 
-    # Adaptive oversampling
-    oversampling_factor = 1.0
-    target_n_feedback = int(n_feedback * oversampling_factor)
+        checkpoint_files = ["random"] + sorted(checkpoint_files, key=lambda x: int(re.search(r'\d+', x).group()))
 
-    checkpoint_files = [
-        file for file in os.listdir(checkpoints_dir) if re.search(r"rl_model_.*\.zip", file)
-    ] or [f"{environment_name}.zip"]    
-
-    total_steps = n_feedback * total_steps_factor
-    num_checkpoints = len(checkpoint_files) + 1
-    steps_per_checkpoint = total_steps // num_checkpoints
-    feedback_per_checkpoint = target_n_feedback // num_checkpoints
-    gamma = expert_models[0][0].gamma
-
-    checkpoint_files = ["random"] + sorted(checkpoint_files, key=lambda x: int(re.search(r'\d+', x).group()))
+    else:
+        print(f"Generating random samples for: {environment_name}")
+        checkpoint_files = ["random"]
+        target_n_feedback = n_feedback
+        total_steps = n_feedback * total_steps_factor
+        num_checkpoints = 1
+        steps_per_checkpoint = total_steps
+        feedback_per_checkpoint = target_n_feedback
+        gamma = expert_models[0][0].gamma
 
     print(f"""
     Feedback Generation Debug Info:
       Feedback ID: {feedback_id}
-      Checkpoints Directory: {checkpoints_dir}
       Number of Checkpoints: {num_checkpoints}
       Checkpoint Files: {checkpoint_files}
       Total Steps: {total_steps}
@@ -167,6 +178,7 @@ def generate_feedback(
             observation = next_observation if not done else environment.reset()[0]
 
         segments.extend(create_segments(feedback, final_segment_indices, np.where([f[3] for f in feedback])[0], segment_len))
+        print(len(segments))
 
         print(f"Generated segments: {len(segments)} of target {target_n_feedback}")
     
@@ -185,6 +197,7 @@ def main():
     parser.add_argument("--segment-len", type=int, default=50, help="How long is the segment we generate feedback for")
     parser.add_argument("--save-folder", type=str, default="samples", help="Where to save the feedback")
     parser.add_argument("--top-n-models", type=int, default=3)
+    parser.add_argument("--random", action='store_true')
     args = parser.parse_args()
 
     np.random.seed(args.seed)
@@ -192,7 +205,10 @@ def main():
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     feedback_id = f"{args.algorithm}_{args.environment}"
-    feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}_{args.seed}.pkl"
+    if not args.random:
+        feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}_{args.seed}.pkl"
+    else:
+        feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"random_{args.environment}.pkl"
     checkpoints_path = "../main/gt_agents"
 
     # load "ensemble" of expert agents
@@ -202,7 +218,6 @@ def main():
     #expert_model = (PPO if args.algorithm == "ppo" else SAC).load(
     #    os.path.join(checkpoints_path, args.algorithm, f"{args.environment.replace("/", "-")}_1", "best_model.zip")
     #)
-
 
     try:
         run_eval_scores = pd.read_csv(os.path.join(checkpoints_path, "collected_results.csv"))
@@ -232,6 +247,7 @@ def main():
         expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, f"{env_name}.zip")
         ), norm_env))
     
+    
     model_class = PPO if args.algorithm == "ppo" else SAC
 
     feedback = generate_feedback(
@@ -245,6 +261,7 @@ def main():
         checkpoints_path=checkpoints_path,
         algorithm=args.algorithm,
         device=device,
+        random_sample=args.random
     )
 
     feedback_path.parent.mkdir(parents=True, exist_ok=True)
