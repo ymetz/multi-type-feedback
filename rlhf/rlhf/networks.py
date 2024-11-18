@@ -20,7 +20,6 @@ def calculate_mse_loss(network: LightningModule, batch: Tensor):
     """Calculate the mean squared erro loss for the reward."""
     return mse_loss(network(batch[0]), batch[1].unsqueeze(1), reduction="sum")
 
-
 def calculate_mle_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
     rewards1 = network(batch[0]).flatten()
@@ -31,7 +30,6 @@ def calculate_mle_loss(network: LightningModule, batch: Tensor):
     loss = -torch.sum(torch.log(probs_softmax))
 
     return loss
-
 
 def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
@@ -224,11 +222,11 @@ class LightningCnnNetwork(LightningModule):
         # action input_layer
         action_shape = action_space.shape if action_space.shape else 1
         self.action_in = nn.Linear(action_shape, action_hidden_dim)
-        
+        self.masksemble_out = Masksembles1D(channels=action_hidden_dim, n=self.ensemble_count, scale=1.8).float()
+
         self.fc = nn.Linear(
             self.compute_flattened_size(obs_space.shape, cnn_channels) + action_hidden_dim, output_dim
         )
-        self.masksemble_out = Masksembles1D(4, 1.8)
 
         self.save_hyperparameters()
 
@@ -238,10 +236,10 @@ class LightningCnnNetwork(LightningModule):
     def residual_block(self, in_channels):
         return nn.Sequential(
             nn.ReLU(),
-            Masksembles2D(in_channels, 4, 1.8),
+            Masksembles2D(channels=in_channels, n=self.ensemble_count, scale=1.8).float(),
             self.conv_layer(in_channels, in_channels),
             nn.ReLU(),
-            Masksembles2D(in_channels, 4, 1.8),
+            Masksembles2D(channels=in_channels, n=self.ensemble_count, scale=1.8).float(),
             self.conv_layer(in_channels, in_channels),
         )
 
@@ -255,20 +253,19 @@ class LightningCnnNetwork(LightningModule):
 
     def compute_flattened_size(self, observation_space, cnn_channels):
         with torch.no_grad():
-            sample_input = torch.zeros(1, *observation_space).squeeze(-1)
-            sample_output = self.conv_layers(sample_input)
-            return int(np.prod(sample_output.size()))
+            sample_input = torch.zeros(self.ensemble_count, *observation_space).squeeze(-1)
+            sample_output = self.conv_layers(sample_input).flatten()
+            return sample_output.shape[-1]
 
     def forward(self, observations, actions):
         # observations: (batch_size, segment_length, channels, height, width)
         # actions: (batch_size, segment_length, action_dim)
+        print(observations.shape)
         batch_size, segment_length, channels, height, width = observations.shape
         _, _, action_dim = actions.shape
 
-        # Flatten the batch and sequence dimensions for observations
-        obs_flat = observations.reshape(-1, channels, height, width)
-
         # Process observations through convolutional layers
+        obs_flat = observations.reshape(batch_size * segment_length, channels, height, width)
         x = self.conv_layers(obs_flat)
         x = self.flatten(x)
         x = F.relu(x)
@@ -276,15 +273,16 @@ class LightningCnnNetwork(LightningModule):
         # Flatten actions
         actions_flat = actions.reshape(-1, action_dim)
         act = self.action_in(actions_flat)
+        act = self.masksemble_out(act)
         act = F.relu(act)
 
         # Concatenate processed observations and actions
         x = torch.cat((x, act), dim=1)
+        print("X SHAPE", x.shape)
         x = self.fc(x)  # Shape: (batch_size * segment_length, output_dim)
-        x = self.masksemble_out(x)
 
         # Reshape back to (batch_size, segment_length, output_dim)
-        x = x.reshape(batch_size, segment_length, -1)
+        output = output.reshape(batch_size, segment_length, -1)
 
         return x
 

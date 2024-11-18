@@ -45,6 +45,7 @@ discount_factors = {
     'ALE/BeamRider-v5': 0.99,
     'ALE/MsPacman-v5': 0.99,
     'ALE/Enduro-v5': 0.99,
+    'ALE/Pong-v5': 0.99,
     'Humanoid-v5': 0.99,
 }
 
@@ -129,8 +130,8 @@ class FeedbackDataset(Dataset):
 
                 if len_obs < segment_len:
                     pad_size = segment_len - len_obs
-                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
-                    actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.size()[1:])], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.size()[1:])], dim=0)
                 
                 self.targets.append((obs, actions))
             
@@ -165,12 +166,12 @@ class FeedbackDataset(Dataset):
 
                 if len_obs < segment_len:
                     pad_size = segment_len - len_obs
-                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
-                    actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size()[1:])], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.size()[1:])], dim=0)
                 if len_obs2 < segment_len:
                     pad_size = segment_len - len_obs2
-                    obs2 = torch.cat([obs2, torch.zeros(pad_size, obs2.size(1))], dim=0)
-                    actions2 = torch.cat([actions2, torch.zeros(pad_size, actions2.size(1))], dim=0)
+                    obs2 = torch.cat([obs2, torch.zeros(pad_size, *obs2.size()[1:])], dim=0)
+                    actions2 = torch.cat([actions2, torch.zeros(pad_size, *actions2.size()[1:])], dim=0)
                 
                 # add noise and recompute preferences
                 if noise_level > 0:
@@ -240,12 +241,12 @@ class FeedbackDataset(Dataset):
 
                 if len_obs < segment_len:
                     pad_size = segment_len - len_obs
-                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
-                    actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.size()[1:])], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.size()[1:])], dim=0)
                 if len_obs_rand < segment_len:
                     pad_size = segment_len - len_obs_rand
-                    obs_rand = torch.cat([obs_rand, torch.zeros(pad_size, obs_rand.size(1))], dim=0)
-                    actions_rand = torch.cat([actions_rand, torch.zeros(pad_size, actions_rand.size(1))], dim=0)
+                    obs_rand = torch.cat([obs_rand, torch.zeros(pad_size, *obs_rand.size()[1:])], dim=0)
+                    actions_rand = torch.cat([actions_rand, torch.zeros(pad_size, *actions_rand.size()[1:])], dim=0)
                 
                 self.targets.append(((obs_rand, actions_rand), (obs, actions)))
                 self.preds.append(1) # assume that the demonstration is optimal, maybe add confidence value (based on regret)
@@ -269,12 +270,12 @@ class FeedbackDataset(Dataset):
 
                 if len_obs < segment_len:
                     pad_size = segment_len - len_obs
-                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size(1))], dim=0)
-                    actions = torch.cat([actions, torch.zeros(pad_size, actions.size(1))], dim=0)
+                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.size()[1:])], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.size()[1:])], dim=0)
                 if len_obs2 < segment_len:
                     pad_size = segment_len - len_obs2
-                    obs2 = torch.cat([obs2, torch.zeros(pad_size, obs2.size(1))], dim=0)
-                    actions2 = torch.cat([actions2, torch.zeros(pad_size, actions2.size(1))], dim=0)
+                    obs2 = torch.cat([obs2, torch.zeros(pad_size, *obs2.size()[1:])], dim=0)
+                    actions2 = torch.cat([actions2, torch.zeros(pad_size, *actions2.size()[1:])], dim=0)
             
                 # add noise and recompute preferences
                 if noise_level > 0.0:
@@ -523,8 +524,9 @@ def main():
     np.random.seed(args.seed)
     random.seed(args.seed)
 
+    env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")
     FEEDBACK_ID = "_".join(
-        [args.algorithm, args.environment, str(args.seed)]
+        [args.algorithm, env_name, str(args.seed)]
     )
     if args.noise_level > 0.0:
         MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}_noise_{str(args.noise_level)}"

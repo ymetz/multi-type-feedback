@@ -1,250 +1,296 @@
-import numpy as np
-import torch
-import os
-import re
-from typing import List, Tuple, Dict, Any, Union
-from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.vec_env import VecNormalize, DummyVecEnv
-from sklearn.cluster import MiniBatchKMeans
-from scipy.spatial.distance import cdist
-
 class FeedbackOracle:
-    def __init__(self, 
+    """Previous initialization and helper methods remain the same..."""
+   def __init__(self, 
                  expert_models: List[Tuple[Union[PPO, SAC], VecNormalize]], 
                  environment,
-                 checkpoints_path: str,
-                 algorithm: str,
-                 n_clusters: int = 100,
-                 n_trajectories_per_checkpoint: int = 10,
+                 reference_data_path: str,  # Path to pre-computed reference data
                  segment_len: int = 50,
-                 gamma: float = 0.99):
+                 gamma: float = 0.99,
+                 noise_level: float = 0.0,
+                 n_clusters: int = 100):
         self.expert_models = expert_models
         self.environment = environment
-        self.checkpoints_path = checkpoints_path
-        self.algorithm = algorithm
-        self.n_clusters = n_clusters
-        self.n_trajectories_per_checkpoint = n_trajectories_per_checkpoint
         self.segment_len = segment_len
         self.gamma = gamma
+        self.noise_level = noise_level
+        self.n_clusters = n_clusters
         
-        # Pre-compute binning and clustering
-        self.initialize_binning_and_clustering()
+        # Load and process reference data for calibration
+        self.initialize_calibration(reference_data_path)
 
-    def initialize_binning_and_clustering(self):
-        # Generate trajectories from checkpoints
-        trajectories = self.generate_trajectories_from_checkpoints()
+    def initialize_calibration(self, reference_data_path: str):
+        """Initialize calibration data from pre-computed reference trajectories."""
+        with open(reference_data_path, 'rb') as f:
+            reference_data = pickle.load(f)
+            
+        # Store reference optimality gaps for evaluative feedback calibration
+        self.reference_opt_gaps = reference_data['opt_gaps']
+        max_rating = 10
+        self.ratings_bins = np.linspace(
+            min(self.reference_opt_gaps), 
+            max(self.reference_opt_gaps), 
+            max_rating + 1
+        )
         
-        # Compute optimality gaps for binning
-        self.opt_gaps = self.compute_optimality_gaps(trajectories)
+        # Process state-action pairs for clustering (descriptive feedback)
+        states_actions = []
+        for segment in reference_data['segments']:
+            states_actions.extend([
+                np.concatenate((step[0].squeeze(0), step[1])) 
+                for step in segment
+            ])
+        states_actions = np.array(states_actions)
         
-        # Compute tolerance for preference comparisons
-        self.tolerance = np.std(self.opt_gaps) / 10.0
-
-        # Prepare data for clustering
-        states_actions = np.concatenate([
-            np.array([np.concatenate((step[0].squeeze(0), step[1])) for step in traj])
-            for traj in trajectories
-        ])
-        
-        rewards = np.concatenate([
-            np.array([step[2] for step in traj])
-            for traj in trajectories
-        ])
-
-        # Clustering
+        # Fit clustering model
         batch_size = min(1000, len(states_actions) // 100)
-        self.kmeans = MiniBatchKMeans(n_clusters=self.n_clusters, batch_size=batch_size, random_state=42)
+        self.kmeans = MiniBatchKMeans(
+            n_clusters=self.n_clusters, 
+            batch_size=batch_size, 
+            random_state=42
+        )
         self.kmeans.fit(states_actions)
-        self.cluster_representatives = self.kmeans.cluster_centers_
         
-        # Compute average rewards per cluster for descriptive feedback
-        cluster_assignments = self.kmeans.predict(states_actions)
+        # Store cluster representatives and their average returns
+        self.cluster_representatives = []
         self.cluster_rewards = []
+        
+        # Calculate average rewards for each cluster
+        cluster_assignments = self.kmeans.predict(states_actions)
+        rewards = []
+        for segment in reference_data['segments']:
+            rewards.extend([step[2] for step in segment])
+        rewards = np.array(rewards)
+        
         for i in range(self.n_clusters):
             cluster_mask = cluster_assignments == i
-            cluster_rewards = rewards[cluster_mask]
-            if len(cluster_rewards) > 0:
-                avg_reward = np.mean(cluster_rewards)
-            else:
-                avg_reward = 0.0
-            self.cluster_rewards.append(avg_reward)
+            if np.any(cluster_mask):
+                center = self.kmeans.cluster_centers_[i]
+                avg_reward = np.mean(rewards[cluster_mask])
+                self.cluster_representatives.append(center)
+                self.cluster_rewards.append(avg_reward)
         
-        # Compute ratings bins
-        max_rating = 10
-        self.ratings_bins = np.linspace(min(self.opt_gaps), max(self.opt_gaps), max_rating + 1)
+        self.cluster_representatives = np.array(self.cluster_representatives)
+        self.cluster_rewards = np.array(self.cluster_rewards)
 
-    def generate_trajectories_from_checkpoints(self) -> List[List[Tuple[np.ndarray, np.ndarray, float, bool]]]:
-        trajectories = []
-        checkpoints_dir = os.path.join(self.checkpoints_path, self.algorithm, f"{self.environment.spec.id.replace('/', '-')}_1")
-        checkpoint_files = [
-            file for file in os.listdir(checkpoints_dir) if re.search(r"rl_model_.*\.zip", file)
-        ]
-        checkpoint_files = ["random"] + sorted(checkpoint_files, key=lambda x: int(re.search(r'\d+', x).group()) if x != "random" else -1)
-
-        for model_file in checkpoint_files:
-            if model_file != "random":
-                model = (PPO if self.algorithm == "ppo" else SAC).load(
-                    os.path.join(checkpoints_dir, model_file),
-                    custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0},
-                )
-                norm_env_path = os.path.join(checkpoints_dir, self.environment.spec.id, "vecnormalize.pkl")
-                norm_env = VecNormalize.load(norm_env_path, DummyVecEnv([lambda: self.environment])) if os.path.isfile(norm_env_path) else None
-            else:
-                model = None
-                norm_env = None
-
-            for _ in range(self.n_trajectories_per_checkpoint):
-                trajectory = self.generate_single_trajectory(model, norm_env)
-                trajectories.append(trajectory)
-
-        return trajectories
-
-    def generate_single_trajectory(self, model: Union[PPO, SAC, None], norm_env: VecNormalize) -> List[Tuple[np.ndarray, np.ndarray, float, bool]]:
-        obs, _ = self.environment.reset()
-        trajectory = []
-        done = False
-        while not done:
-            if model is not None:
-                action, _ = model.predict(norm_env.normalize_obs(obs) if norm_env else obs, deterministic=True)
-            else:
-                action = self.environment.action_space.sample()
-            next_obs, reward, terminated, truncated, _ = self.environment.step(action)
-            done = terminated or truncated
-            trajectory.append((np.expand_dims(obs, axis=0), action, reward, done))
-            obs = next_obs
-        return trajectory
-
-    def compute_optimality_gaps(self, trajectories: List[List[Tuple[np.ndarray, np.ndarray, float, bool]]]) -> List[float]:
-        opt_gaps = []
-        for traj in trajectories:
-            initial_vals = [self.predict_expert_value(expert_model, traj[0][0]) for expert_model in self.expert_models]
-            initial_val = np.mean(initial_vals)
-            rewards = np.array([step[2] for step in traj])
-            discounted_rew_sum = np.sum(rewards * (self.gamma ** np.arange(len(rewards))))
-            final_vals = [self.predict_expert_value(expert_model, traj[-1][0]) for expert_model in self.expert_models]
-            final_val = np.mean(final_vals)
-            opt_gap = (initial_val - self.gamma ** len(rewards) * final_val) - discounted_rew_sum
-            opt_gaps.append(opt_gap)
-        return opt_gaps
-
-    def predict_expert_value(self, expert_model: Tuple[Union[PPO, SAC], VecNormalize], observation: np.ndarray) -> float:
-        model, norm_env = expert_model
-        if norm_env is not None:
-            observation = norm_env.normalize_obs(observation)
-        observation = model.policy.obs_to_tensor(observation)[0]
-        with torch.no_grad():
-            if isinstance(model, SAC):
-                actions = torch.zeros((observation.shape[0], model.action_space.shape[0]), device=observation.device)
-                q_values = torch.cat(model.policy.critic(observation, actions), dim=1)
-                value = q_values.mean(dim=1)
-            else:
-                value = model.policy.predict_values(observation)
-            return value.item()
-
-    def get_feedback(self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]], initial_state: np.ndarray, feedback_types: List[str]) -> Dict[str, Any]:
-        feedback = {}
+    def get_feedback(self, 
+                    trajectory_data: Union[
+                        List[Tuple[np.ndarray, np.ndarray, float, bool]],  # single trajectory
+                        Tuple[List[Tuple[np.ndarray, np.ndarray, float, bool]], 
+                              List[Tuple[np.ndarray, np.ndarray, float, bool]]]  # trajectory pair
+                    ],
+                    initial_state: np.ndarray,
+                    feedback_type: str) -> Any:
+        """
+        Get feedback of specified type for either a single trajectory or a pair of trajectories.
         
-        if 'evaluative' in feedback_types:
-            feedback['evaluative'] = self.get_evaluative_feedback(trajectory)
-        
-        if 'comparative' in feedback_types:
-            # For comparative feedback, need another trajectory to compare
-            # For demonstration purposes, we can select a random trajectory from precomputed ones
-            other_trajectory = self.get_random_trajectory()
-            feedback['comparative'] = self.get_comparative_feedback(trajectory, other_trajectory)
-        
-        if 'demonstrative' in feedback_types:
-            feedback['demonstrative'] = self.get_demonstrative_feedback(initial_state)
-        
-        if 'corrective' in feedback_types:
-            feedback['corrective'] = self.get_corrective_feedback(trajectory, initial_state)
-        
-        if 'descriptive' in feedback_types:
-            feedback['descriptive'] = self.get_descriptive_feedback(trajectory)
-        
-        return feedback
+        Args:
+            trajectory_data: Either a single trajectory or a tuple of two trajectories
+            initial_state: Initial state of the trajectory for demonstrative/corrective feedback
+            feedback_type: Type of feedback to provide
+            
+        Returns:
+            Feedback of the specified type
+        """
+        if feedback_type in ['evaluative', 'demonstrative', 'corrective', 'descriptive']:
+            if not isinstance(trajectory_data, list):
+                raise ValueError(f"{feedback_type} feedback requires a single trajectory")
+            
+            if feedback_type == 'evaluative':
+                return self.get_evaluative_feedback(trajectory_data)
+            elif feedback_type == 'demonstrative':
+                return self.get_demonstrative_feedback(initial_state)
+            elif feedback_type == 'corrective':
+                return self.get_corrective_feedback(trajectory_data, initial_state)
+            elif feedback_type == 'descriptive':
+                return self.get_descriptive_feedback(trajectory_data)
+                
+        elif feedback_type in ['comparative', 'descriptive_preference']:
+            if not isinstance(trajectory_data, tuple) or len(trajectory_data) != 2:
+                raise ValueError(f"{feedback_type} feedback requires a pair of trajectories")
+                
+            trajectory1, trajectory2 = trajectory_data
+            
+            if feedback_type == 'comparative':
+                return self.get_comparative_feedback(trajectory1, trajectory2)
+            elif feedback_type == 'descriptive_preference':
+                return self.get_descriptive_preference_feedback(trajectory1, trajectory2)
+                
+        else:
+            raise ValueError(f"Unknown feedback type: {feedback_type}")
 
     def get_evaluative_feedback(self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]]) -> int:
-        opt_gap = self.compute_optimality_gaps([trajectory])[0]
-        bin_index = np.digitize(opt_gap, self.ratings_bins) - 1  # Adjust index since np.digitize starts from 1
-        rating = 10 - bin_index  # Ratings from 0 to 10, higher is better
-        rating = max(0, min(10, rating))  # Ensure rating is within [0, 10]
+        """Return a calibrated rating between 0 and 10 based on optimality gap."""
+        opt_gap = -self._compute_discounted_return(trajectory)  # Negative return as gap
+        
+        # Add noise if specified
+        if self.noise_level > 0:
+            opt_gap += np.random.normal(0, self.noise_level * np.std(self.reference_opt_gaps))
+        
+        # Use pre-computed bins to determine rating
+        bin_index = np.digitize(opt_gap, self.ratings_bins) - 1
+        rating = 10 - bin_index  # Higher rating for lower optimality gap
+        rating = max(0, min(10, rating))
+        
         return int(rating)
 
-    def get_comparative_feedback(self, trajectory1: List[Tuple[np.ndarray, np.ndarray, float, bool]], trajectory2: List[Tuple[np.ndarray, np.ndarray, float, bool]]) -> Tuple[int, int, int]:
-        opt_gap1 = self.compute_optimality_gaps([trajectory1])[0]
-        opt_gap2 = self.compute_optimality_gaps([trajectory2])[0]
-        gap_diff = opt_gap1 - opt_gap2
-        if abs(gap_diff) < self.tolerance:
-            # Indifferent preference
+    def get_descriptive_feedback(self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]]) -> Tuple[np.ndarray, np.ndarray, float]:
+        """Return the most similar cluster representative and its average reward."""
+        # Compute average state-action for the trajectory
+        states_actions = np.array([
+            np.concatenate((step[0].squeeze(0), step[1])) 
+            for step in trajectory
+        ])
+        avg_state_action = np.mean(states_actions, axis=0)
+        
+        # Find closest cluster
+        distances = cdist([avg_state_action], self.cluster_representatives)
+        closest_cluster = np.argmin(distances)
+        
+        # Get cluster representative
+        representative = self.cluster_representatives[closest_cluster]
+        reward = self.cluster_rewards[closest_cluster]
+        
+        # Add noise to reward if specified
+        if self.noise_level > 0:
+            reward += np.random.normal(0, self.noise_level * np.std(self.cluster_rewards))
+        
+        # Split into state and action components
+        obs_dim = trajectory[0][0].squeeze(0).shape[0]
+        return (
+            representative[:obs_dim],  # state
+            representative[obs_dim:],  # action
+            reward
+        )
+
+    def get_comparative_feedback(self, trajectory1, trajectory2):
+        """Existing implementation..."""
+        return1 = self._compute_discounted_return(trajectory1)
+        return2 = self._compute_discounted_return(trajectory2)
+        
+        if self.noise_level > 0:
+            return1 += np.random.normal(0, self.noise_level * abs(return1))
+            return2 += np.random.normal(0, self.noise_level * abs(return2))
+        
+        total_return = abs(return1) + abs(return2)
+        if total_return == 0:
             return (0, 1, 0)
-        elif gap_diff > 0:
-            # trajectory2 preferred over trajectory1
+            
+        diff = abs(return1 - return2) / total_return
+        if diff < 0.1:
+            return (0, 1, 0)
+        elif return1 > return2:
             return (1, 0, 1)
         else:
-            # trajectory1 preferred over trajectory2
             return (0, 1, 1)
 
-    def get_demonstrative_feedback(self, initial_state: np.ndarray) -> List[Tuple[np.ndarray, np.ndarray, float, bool, int]]:
-        self.environment.reset()
-        self.environment.load_state(initial_state)
-        
+    def get_demonstrative_feedback(self, initial_state):
+        """Existing implementation..."""
         best_demo = None
         best_return = float('-inf')
         
         for exp_model_index, (expert_model, exp_norm_env) in enumerate(self.expert_models):
+            self.environment.reset()
+            obs = initial_state.squeeze(0)
             demo = []
-            obs = initial_state
-            done = False
+            
             for _ in range(self.segment_len):
-                action, _ = expert_model.predict(exp_norm_env.normalize_obs(obs) if exp_norm_env else obs, deterministic=True)
+                action, _ = expert_model.predict(
+                    exp_norm_env.normalize_obs(obs) if exp_norm_env else obs, 
+                    deterministic=True
+                )
                 next_obs, reward, terminated, truncated, _ = self.environment.step(action)
                 done = terminated or truncated
                 demo.append((np.expand_dims(obs, axis=0), action, reward, done, exp_model_index))
-                obs = next_obs
                 if done:
                     break
+                obs = next_obs
             
-            demo_return = sum(step[2] for step in demo)
+            demo_return = self._compute_discounted_return(demo)
             if demo_return > best_return:
                 best_return = demo_return
                 best_demo = demo
         
         return best_demo
 
-    def get_corrective_feedback(self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]], initial_state: np.ndarray) -> Tuple[List[Tuple[np.ndarray, np.ndarray, float, bool]], Union[List[Tuple[np.ndarray, np.ndarray, float, bool, int]], None]]:
-        expert_trajectory = self.get_demonstrative_feedback(initial_state)
+    def get_corrective_feedback(self, trajectory, initial_state):
+        """Existing implementation..."""
+        trajectory_return = self._compute_discounted_return(trajectory)
+        expert_demo = self.get_demonstrative_feedback(initial_state)
+        expert_return = self._compute_discounted_return(expert_demo)
         
-        if sum(step[2] for step in expert_trajectory) > sum(step[2] for step in trajectory):
-            return (trajectory, expert_trajectory)
-        else:
-            return (trajectory, None)
+        if self.noise_level > 0:
+            expert_return += np.random.normal(0, self.noise_level * abs(expert_return))
+            trajectory_return += np.random.normal(0, self.noise_level * abs(trajectory_return))
+        
+        if expert_return > trajectory_return:
+            return (trajectory, expert_demo)
+        return (trajectory, None)
 
-    def get_descriptive_feedback(self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]]) -> Tuple[np.ndarray, np.ndarray, float]:
-        states_actions = np.array([np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory])
-        avg_state_action = np.mean(states_actions, axis=0)
-        
-        distances = cdist([avg_state_action], self.cluster_representatives)
-        most_similar_cluster = np.argmin(distances)
-        cluster_representative = self.cluster_representatives[most_similar_cluster]
-        cluster_reward = self.cluster_rewards[most_similar_cluster]
-        
-        obs_dim = trajectory[0][0].squeeze(0).shape[0]
-        return (
-            cluster_representative[:obs_dim],  # state
-            cluster_representative[obs_dim:],  # action
-            cluster_reward  # average reward of the cluster
-        )
-
-    def get_random_trajectory(self) -> List[Tuple[np.ndarray, np.ndarray, float, bool]]:
-        # Generate a random trajectory from the environment
-        obs, _ = self.environment.reset()
+    def get_random_trajectory(self):
+        """Existing implementation..."""
+        self.environment.reset()
         trajectory = []
         done = False
+        
         while not done and len(trajectory) < self.segment_len:
             action = self.environment.action_space.sample()
             next_obs, reward, terminated, truncated, _ = self.environment.step(action)
             done = terminated or truncated
-            trajectory.append((np.expand_dims(obs, axis=0), action, reward, done))
-            obs = next_obs
+            trajectory.append((np.expand_dims(next_obs, axis=0), action, reward, done))
+            
         return trajectory
+
+    def _compute_discounted_return(self, trajectory: List[Tuple]) -> float:
+        """Helper method to compute discounted return of a trajectory."""
+        rewards = [step[2] for step in trajectory]
+        return sum(reward * (self.gamma ** i) for i, reward in enumerate(rewards))
+
+    def get_descriptive_preference_feedback(self, 
+                                              trajectory1: List[Tuple[np.ndarray, np.ndarray, float, bool]],
+                                              trajectory2: List[Tuple[np.ndarray, np.ndarray, float, bool]]) -> Tuple[int, int, int]:
+            """Compare two trajectories based on their closest cluster representatives."""
+            # Get cluster information for both trajectories
+            states_actions1 = np.array([
+                np.concatenate((step[0].squeeze(0), step[1])) 
+                for step in trajectory1
+            ])
+            states_actions2 = np.array([
+                np.concatenate((step[0].squeeze(0), step[1])) 
+                for step in trajectory2
+            ])
+            
+            avg_state_action1 = np.mean(states_actions1, axis=0)
+            avg_state_action2 = np.mean(states_actions2, axis=0)
+            
+            # Find closest clusters
+            distances1 = cdist([avg_state_action1], self.cluster_representatives)
+            distances2 = cdist([avg_state_action2], self.cluster_representatives)
+            
+            cluster1 = np.argmin(distances1)
+            cluster2 = np.argmin(distances2)
+            
+            reward1 = self.cluster_rewards[cluster1]
+            reward2 = self.cluster_rewards[cluster2]
+            
+            # Add noise if specified
+            if self.noise_level > 0:
+                noise_scale = self.noise_level * np.std(self.cluster_rewards)
+                reward1 += np.random.normal(0, noise_scale)
+                reward2 += np.random.normal(0, noise_scale)
+            
+            # Compare cluster rewards
+            reward_diff = reward1 - reward2
+            total_reward = abs(reward1) + abs(reward2)
+            
+            if total_reward == 0:
+                return (0, 1, 0)  # Indifferent if both rewards are 0
+                
+            diff = abs(reward_diff) / total_reward
+            
+            # If difference is small, mark as indifferent
+            if diff < 0.1:  # 10% threshold for indifference
+                return (0, 1, 0)
+            elif reward1 > reward2:
+                return (1, 0, 1)
+            else:
+                return (0, 1, 1)

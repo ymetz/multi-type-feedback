@@ -7,7 +7,7 @@ import warnings
 from collections import OrderedDict
 from pathlib import Path
 from pprint import pprint
-from procgen import ProcgenEnv
+import procgen
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import gymnasium as gym
@@ -640,7 +640,7 @@ class ExperimentManager:
         # therefore, we use DummyVecEnv by default
         if "procgen" in self.env_name.gym_id:
             _, short_name, _ = self.env_name.gym_id.split("-")
-            env = ProcgenEnv(num_envs=n_envs, env_name=short_name)
+            env = procgen.ProcgenEnv(num_envs=n_envs, env_name=short_name)
             env = VecExtractDictObs(env, "rgb")
             env = VecMonitor(env)
             env.seed = lambda x: print("Trying to call seed with", x)

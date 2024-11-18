@@ -128,7 +128,7 @@ def main():
     else:
         MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
-    reward_model_path = os.path.join(script_path, "reward_models", MODEL_ID + ".ckpt")
+    reward_model_path = os.path.join(script_path, "reward_models_lul", MODEL_ID + ".ckpt")
 
     print("Reward model ID:", MODEL_ID)
 

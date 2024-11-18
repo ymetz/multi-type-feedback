@@ -32,7 +32,7 @@ def generate_correlation_data(env, algo, seed=6389, reward_seed=1789, num_sample
     rew_fn_types = ["evaluative", "comparative", "demonstrative", "corrective", "descriptive", "descriptive_preference"]
     reward_functions = []
     
-    base_dir = "reward_models"
+    base_dir = "reward_models_lul"
     rew_functions = []
     for type in rew_fn_types:
         if noise_level > 0.0:

@@ -1,10 +1,13 @@
 #!/bin/bash
 
-# Set the experiment parameters
-#envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
-#envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
-envs=("Swimmer-v5")
-seeds=(1789 1687123 12 912391 330)
+#envs=("HalfCheetah-v5" "Walker2d-v5")
+#envs=("Ant-v5" "Hopper-v5" "Humanoid-v5")
+envs=("Hopper-v5")
+#seeds=(1789 1687123 12 912391 330)
+seeds=(1789 1687123 12)
+feedback_types=("evaluative" "comparative" "demonstrative" "corrective" "descriptive" "descriptive_preference")
+#feedback_types=("comparative" "demonstrative" "corrective" "descriptive" "descriptive_preference")
+noise_levels=(0.1 0.25 0.5 0.75)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -15,12 +18,16 @@ declare -a combinations
 # Generate all combinations
 for seed in "${seeds[@]}"; do
     for env in "${envs[@]}"; do
-        combinations+=("$seed $env")
+        for feedback in "${feedback_types[@]}"; do
+            for noise in "${noise_levels[@]}"; do
+                combinations+=("$seed $env $feedback $noise")
+            done
+        done
     done
 done
 
 # Set the batch size (number of jobs per GPU)
-batch_size=5
+batch_size=4
 total_combinations=${#combinations[@]}
 
 # Loop over the combinations in batches
@@ -34,14 +41,14 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
 #!/bin/bash
 #SBATCH --partition=gpu_4,gpu_8,gpu_4_a100
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=5
+#SBATCH --cpus-per-task=4
 #SBATCH --ntasks=1
-#SBATCH --job-name=generate_feedback_$batch_id
-#SBATCH --time=02:30:00
-#SBATCH --output=logs/train_generate_feedback_${batch_id}_%j.out
+#SBATCH --job-name=train_agents_$batch_id
+#SBATCH --time=08:00:00
+#SBATCH --output=logs/train_agents_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
-# module load python/3.9
+# module load python/3.8
 source /pfs/data5/home/kn/kn_kn/kn_pop257914/multi-type-feedback/venv/bin/activate
 
 # Run the training jobs in background
@@ -49,8 +56,8 @@ EOT
 
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
-        read seed env <<< $combination
-        echo "python rlhf/generate_feedback_2.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_regen &" >> $sbatch_script
+        read seed env feedback noise <<< $combination
+        echo "python rlhf/train_agent_2.py --algorithm sac --environment $env --feedback-type $feedback --seed $seed --noise-level $noise &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish
@@ -60,7 +67,7 @@ EOT
     sbatch $sbatch_script
 
     # Optional: Remove the temporary Slurm script
-    rm $sbatch_script
+    # rm $sbatch_script
 done
 
 echo "All jobs have been submitted."

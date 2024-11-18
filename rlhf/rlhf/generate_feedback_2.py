@@ -412,7 +412,7 @@ def generate_feedback(
     all_obs = []
     all_rewards = []
     for seg in segments:
-        obs = np.array([np.concatenate((s[0].squeeze(0), s[1])) for s in seg])
+        obs = np.array([np.concatenate((s[0].squeeze(0).flatten(), np.expand_dims(s[1], 0) if s[1].ndim == 0 else s[1])) for s in seg])
         rewards = np.array([s[2] for s in seg])
         all_obs.append(obs)
         all_rewards.append(rewards)
@@ -474,12 +474,12 @@ def main():
     random.seed(args.seed)
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    feedback_id = f"{args.algorithm}_{args.environment}"
+    env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")
+    feedback_id = f"{args.algorithm}_{env_name}"
     feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}_{args.seed}.pkl"
     checkpoints_path = "../main/gt_agents"
 
     # load "ensemble" of expert agents
-    env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")
     expert_model_paths = [os.path.join(checkpoints_path, args.algorithm, model) for model in os.listdir(os.path.join(checkpoints_path, args.algorithm)) if env_name in model]
     orig_len = len(expert_model_paths)
     #expert_model = (PPO if args.algorithm == "ppo" else SAC).load(
@@ -512,8 +512,12 @@ def main():
             norm_env = VecNormalize.load(os.path.join(expert_model_path, env_name, "vecnormalize.pkl"), DummyVecEnv([lambda: environment]))
         else:
             norm_env = None
-        expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, f"{env_name}.zip")
-        ), norm_env))
+        if "ALE" not in env_name:
+            expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, f"{env_name}.zip")
+            ), norm_env))
+        else:
+            expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, f"best_model.zip")
+            ), norm_env))
     
     model_class = PPO if args.algorithm == "ppo" else SAC
 
