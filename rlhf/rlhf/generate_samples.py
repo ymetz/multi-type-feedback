@@ -11,10 +11,12 @@ from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper 
 from procgen import ProcgenGym3Env
 from rl_zoo3.wrappers import Gym3ToGymnasium
+from rl_zoo3.utils import ppo_make_metaworld_env
 # necessary to import ale_py/procgen, otherwise it will not be found
 import ale_py
 import procgen
 import numpy as np
+import highway_env
 import torch
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import WarpFrame
@@ -27,6 +29,11 @@ import pandas as pd
 
 from rlhf.datatypes import FeedbackDataset
 from rlhf.save_reset_wrapper import SaveResetEnvWrapper
+
+def one_hot_vector(k, max_val):
+    vec = np.zeros(max_val)
+    np.put(vec,k,1)
+    return vec
 
 def create_segments(arr, start_indices, done_indices, segment_length):
     """
@@ -88,6 +95,7 @@ def generate_feedback(
     algorithm: str = "sac",
     device: str = "cuda",
     binning_type: str = "width",
+    action_one_hot: bool = False,
     random_sample: bool = False,
 ) -> dict:
     """Generate agent's observations and feedback in the training environment."""
@@ -138,6 +146,9 @@ def generate_feedback(
       Env. Gamma: {gamma}
     """)
 
+    if action_one_hot:
+        one_hot_dim = environment.action_space.n # only works for discrete spaces
+
     segments = []
     state_copies = []
     for model_file in checkpoint_files:
@@ -173,9 +184,15 @@ def generate_feedback(
             next_observation, reward, terminated, truncated, _ = environment.step(actions)
             done = terminated or truncated
 
+            if action_one_hot:
+                actions = one_hot_vector(actions, one_hot_dim)
+
             feedback.append((np.expand_dims(observation, axis=0), actions, reward, done))
 
             observation = next_observation if not done else environment.reset()[0]
+
+            if step % 100 == 0:
+                print(f"Generate {step} steps ouf of {total_steps}")
 
         segments.extend(create_segments(feedback, final_segment_indices, np.where([f[3] for f in feedback])[0], segment_len))
         print(len(segments))
@@ -235,6 +252,9 @@ def main():
         environment = SaveResetEnvWrapper(TransformObservation(environment, lambda obs: obs.squeeze(-1), environment.observation_space))
     elif "MiniGrid" in args.environment:
         environment = SaveResetEnvWrapper(FlatObsWrapper(gym.make(args.environment)))
+    elif "metaworld" in args.environment:
+        environment_name = args.environment.replace("metaworld-", "")
+        environment = SaveResetEnvWrapper(ppo_make_metaworld_env(environment_name, args.seed))
     else:
         environment = SaveResetEnvWrapper(gym.make(args.environment))
 
@@ -250,6 +270,8 @@ def main():
     
     model_class = PPO if args.algorithm == "ppo" else SAC
 
+    is_discrete_action = isinstance(environment.action_space, gym.spaces.Discrete)
+
     feedback = generate_feedback(
         model_class,
         expert_models,
@@ -261,7 +283,8 @@ def main():
         checkpoints_path=checkpoints_path,
         algorithm=args.algorithm,
         device=device,
-        random_sample=args.random
+        random_sample=args.random,
+        action_one_hot=is_discrete_action,
     )
 
     feedback_path.parent.mkdir(parents=True, exist_ok=True)

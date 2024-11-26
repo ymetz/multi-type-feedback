@@ -7,6 +7,7 @@ import typing
 from os import path
 from pathlib import Path
 import wandb
+import numpy as np
 from wandb.integration.sb3 import WandbCallback
 
 import numpy
@@ -20,6 +21,7 @@ from stable_baselines3.common.utils import set_random_seed
 # register custom envs
 import ale_py
 import minigrid
+import highway_env
 
 from rlhf.datatypes import FeedbackType
 from rlhf.networks import LightningNetwork, LightningCnnNetwork, calculate_pairwise_loss, calculate_single_reward_loss
@@ -49,7 +51,23 @@ class CustomReward(RewardFn):
         self.rewards = []
         self.expert_rewards = []
         self.counter = 0
+        self.n_discrete_actions = 5 # hard-code for highway-env for now
 
+    def _one_hot_encode_batch(self, actions: torch.Tensor) -> torch.Tensor:
+        """
+        Convert nested batch of discrete actions to one-hot encoded format.
+        
+        Args:
+            actions: Tensor of shape (1, batch_size) containing discrete action indices
+            
+        Returns:
+            one_hot_actions: Tensor of shape (1, batch_size, n_discrete_actions)
+        """
+        outer_batch, inner_batch = actions.shape
+        one_hot = torch.zeros((outer_batch, inner_batch, self.n_discrete_actions), device=self.device)
+        actions = actions.long().unsqueeze(-1)  # Add dimension for scatter
+        return one_hot.scatter_(2, actions, 1)
+    
     def __call__(
         self,
         state: numpy.ndarray,
@@ -58,8 +76,12 @@ class CustomReward(RewardFn):
         _done: numpy.ndarray,
     ) -> list:
         """Return reward given the current state."""
-        state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(0)
+        
+        state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(0)        
         actions = torch.as_tensor(actions, device=self.device, dtype=torch.float).unsqueeze(0)
+
+        if len(actions.shape) < 3:
+            actions = self._one_hot_encode_batch(actions)
         
         with torch.no_grad():
             if self.reward_model.ensemble_count > 1:
@@ -128,7 +150,8 @@ def main():
     else:
         MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
 
-    reward_model_path = os.path.join(script_path, "reward_models_lul", MODEL_ID + ".ckpt")
+    if not args.feedback_type == "baseline":
+        reward_model_path = os.path.join(script_path, "reward_models_lul", MODEL_ID + ".ckpt")
 
     print("Reward model ID:", MODEL_ID)
 
@@ -169,8 +192,8 @@ def main():
         reward_function=CustomReward(
             reward_model_cls=architecture_cls,
             reward_model_path=reward_model_path,
-            device=DEVICE
-        ),
+            device=DEVICE,
+        ) if not args.feedback_type == "baseline" else None,
         use_wandb_callback=True,
     )
 

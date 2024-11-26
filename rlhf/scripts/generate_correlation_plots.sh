@@ -1,9 +1,13 @@
 #!/bin/bash
 
 # Set the experiment parameters
-#envs=("Ant-v5" "Hopper-v5" "Humanoid-v5")
-envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
+envs=("Ant-v5" "Hopper-v5" "Humanoid-v5")
+#envs=("roundabout-v0" "merge-v0" "highway-fast-v0")
+#envs=("metaworld-sweep-into-v0")
+#envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
 seeds=(1789 1687123 12)
+noise_levels=(0.1 0.25 0.5 0.75 1.5 3.0)
+#noise_levels=(0.0)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -14,12 +18,14 @@ declare -a combinations
 # Generate all combinations
 for seed in "${seeds[@]}"; do
     for env in "${envs[@]}"; do
-        combinations+=("$seed $env")
+        for noise_level in "${noise_levels[@]}"; do
+            combinations+=("$seed $env $noise_level")
+        done
     done
 done
 
 # Set the batch size (number of jobs per GPU)
-batch_size=4
+batch_size=3
 total_combinations=${#combinations[@]}
 
 # Loop over the combinations in batches
@@ -35,8 +41,8 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --ntasks=1
-#SBATCH --job-name=generate_feedback_$batch_id
-#SBATCH --time=01:30:00
+#SBATCH --job-name=generate_correlation_plots_$batch_id
+#SBATCH --time=02:00:00
 #SBATCH --output=logs/generate_corr_plots_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
@@ -48,8 +54,8 @@ EOT
 
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
-        read seed env <<< $combination
-        echo "python generate_rew_correlation_plot.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --noise-level 0.75 &" >> $sbatch_script
+        read seed env noise_level <<< $combination
+        echo "python rlhf/generate_rew_correlation_plot.py --algorithm sac --environment $env --seed $seed --n-feedback 10000 --noise-level $noise_level &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

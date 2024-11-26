@@ -3,14 +3,17 @@ import os
 import pickle
 import re
 from pathlib import Path
-from typing import Type, Union, List
-
+from typing import Type, Union, List, Iterator, Tuple
+import tempfile
+from itertools import chain
 import gymnasium as gym
 from gymnasium.wrappers.stateful_observation import FrameStackObservation
 from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper 
 from procgen import ProcgenGym3Env
+import highway_env
 from rl_zoo3.wrappers import Gym3ToGymnasium
+from rl_zoo3.utils import ppo_make_metaworld_env
 # necessary to import ale_py/procgen, otherwise it will not be found
 import ale_py
 import procgen
@@ -52,6 +55,102 @@ def predict_expert_value(
             dim=1,
             keepdim=True,
         )[0]
+
+def one_hot_vector(k, max_val):
+    vec = np.zeros(max_val)
+    np.put(vec,k,1)
+    return vec
+
+def get_state_dimensions(segments):
+    """Get dimensions from first state to initialize arrays."""
+    first_seg = segments[0]
+    first_state = first_seg[0]
+    state_dim = len(np.concatenate((
+        first_state[0].squeeze(0).flatten(),
+        np.expand_dims(first_state[1], 0) if first_state[1].ndim == 0 else first_state[1]
+    )))
+    return state_dim
+
+def count_total_states(segments):
+    """Count total number of states across all segments."""
+    return sum(len(seg) for seg in segments)
+
+def batch_generator(segments, batch_size):
+    """Generate batches of states and rewards from segments."""
+    current_batch_states = []
+    current_batch_rewards = []
+    
+    for seg in segments:
+        for state in seg:
+            # Process single state
+            obs = np.concatenate((
+                state[0].squeeze(0).flatten(),
+                np.expand_dims(state[1], 0) if state[1].ndim == 0 else state[1]
+            ))
+            reward = state[2]
+            
+            current_batch_states.append(obs)
+            current_batch_rewards.append(reward)
+            
+            if len(current_batch_states) == batch_size:
+                yield np.array(current_batch_states), np.array(current_batch_rewards)
+                current_batch_states = []
+                current_batch_rewards = []
+    
+    # Return any remaining states
+    if current_batch_states:
+        yield np.array(current_batch_states), np.array(current_batch_rewards)
+
+def memory_efficient_clustering(segments, n_feedback):
+    """Perform memory-efficient clustering on segments."""
+    # Initialize KMeans
+    state_dim = get_state_dimensions(segments)
+    total_states = count_total_states(segments)
+    kmeans = MiniBatchKMeans(
+        n_clusters=n_feedback,
+        batch_size=n_feedback,
+        random_state=42
+    )
+    
+    # First pass: Train KMeans
+    print("Training KMeans...")
+    for states_batch, _ in batch_generator(segments, n_feedback):
+        kmeans.partial_fit(states_batch)
+    
+    # Initialize cluster statistics
+    cluster_sums = np.zeros((n_feedback, state_dim))
+    cluster_reward_sums = np.zeros(n_feedback)
+    cluster_counts = np.zeros(n_feedback)
+    
+    # Second pass: Compute cluster statistics
+    print("Computing cluster statistics...")
+    for states_batch, rewards_batch in batch_generator(segments, n_feedback):
+        # Get cluster assignments for this batch
+        batch_clusters = kmeans.predict(states_batch)
+        
+        # Update cluster statistics
+        for i in range(n_feedback):
+            mask = batch_clusters == i
+            if np.any(mask):
+                cluster_sums[i] += np.sum(states_batch[mask], axis=0)
+                cluster_reward_sums[i] += np.sum(rewards_batch[mask])
+                cluster_counts[i] += np.sum(mask)
+    
+    # Compute final cluster representatives and rewards
+    cluster_representatives = []
+    cluster_rewards = []
+    
+    for i in range(n_feedback):
+        if cluster_counts[i] > 0:
+            rep = cluster_sums[i] / cluster_counts[i]
+            reward = cluster_reward_sums[i] / cluster_counts[i]
+            if not np.any(np.isnan(rep)):
+                cluster_representatives.append(rep)
+                cluster_rewards.append(reward)
+    
+    return (np.array(cluster_representatives), 
+            np.array(cluster_rewards),
+            kmeans)
 
 def create_segments(arr, start_indices, done_indices, segment_length):
     """
@@ -217,10 +316,12 @@ def generate_feedback(
     total_steps_factor: int = 50,
     n_feedback: int = 100,
     segment_len: int = 50,
+    oversampling_factor: int = 1.5,
     min_segment_len: int = 25,
     algorithm: str = "sac",
     device: str = "cuda",
-    binning_type: str = "width"
+    action_one_hot: bool = False,
+    binning_type: str = "width",
 ) -> dict:
     """Generate agent's observations and feedback in the training environment."""
     feedback_id = f"{algorithm}_{environment_name.replace('/', '-')}"
@@ -231,7 +332,7 @@ def generate_feedback(
     print(f"Generating feedback for: {feedback_id}")
 
     # Adaptive oversampling
-    oversampling_factor = 1.5
+    oversampling_factor = oversampling_factor
     target_n_feedback = int(n_feedback * oversampling_factor)
 
     checkpoint_files = [
@@ -245,6 +346,9 @@ def generate_feedback(
     gamma = expert_models[0][0].gamma
 
     checkpoint_files = ["random"] + sorted(checkpoint_files, key=lambda x: int(re.search(r'\d+', x).group()))
+
+    if action_one_hot:
+        one_hot_dim = environment.action_space.n # only works for discrete spaces
 
     print(f"""
     Feedback Generation Debug Info:
@@ -288,20 +392,23 @@ def generate_feedback(
                 state_copies.append(environment.save_state(observation=observation))
 
             if model is not None:
-                actions, _ = model.predict(norm_env.normalize_obs(observation) if norm_env else observation, deterministic=True)
+                action, _ = model.predict(norm_env.normalize_obs(observation) if norm_env else observation, deterministic=True)
             else:
-                actions = environment.action_space.sample()
+                action = environment.action_space.sample()
             
-            next_observation, reward, terminated, truncated, _ = environment.step(actions)
+            next_observation, reward, terminated, truncated, _ = environment.step(action)
             done = terminated or truncated
 
-            feedback.append((np.expand_dims(observation, axis=0), actions, reward, done))
+            if action_one_hot:
+                action = one_hot_vector(action, one_hot_dim)
+
+            feedback.append((np.expand_dims(observation, axis=0), action, reward, done))
 
             observation = next_observation if not done else environment.reset()[0]
 
         segments.extend(create_segments(feedback, final_segment_indices, np.where([f[3] for f in feedback])[0], segment_len))
 
-        print(f"Generated segments: {len(segments)} of target {target_n_feedback}")
+        print(f"Generated segments: {len(segments)} of target {target_n_feedback} (Oversampling Factor: {oversampling_factor})")
     
     opt_gaps = []
     for seg in segments:
@@ -343,6 +450,10 @@ def generate_feedback(
                 action, _ = expert_model.predict(exp_norm_env.normalize_obs(obs) if exp_norm_env else obs, deterministic=True)
                 new_obs, rew, terminated, truncated, _ = environment.step(action)
                 done = terminated or truncated
+
+                if action_one_hot:
+                    action = one_hot_vector(action, one_hot_dim)
+                
                 demo.append((np.expand_dims(obs, axis=0), action, rew, done, exp_model_index))
                 obs = new_obs
     
@@ -363,9 +474,10 @@ def generate_feedback(
             corrections.append((segments[i], best_demo))
             improvements.append(best_demo_return - original_return)
         else:
-            demos.append(None)
-            corrections.append(None)
-            improvements.append(0)
+            # if the correction is worse..turn it around
+            demos.append(segments[i])
+            corrections.append((best_demo, segments[i]))
+            improvements.append(original_return - best_demo_return)
 
         if i % 100 == 0:
             print(f"Generated demos: {len(demos)} of target {target_n_feedback}")
@@ -408,50 +520,44 @@ def generate_feedback(
 
     print("[INFO] Successfully generated demonstrative/corrective feedback")
 
-    # The rest of the clustering and description generation code remains the same
-    all_obs = []
-    all_rewards = []
-    for seg in segments:
-        obs = np.array([np.concatenate((s[0].squeeze(0).flatten(), np.expand_dims(s[1], 0) if s[1].ndim == 0 else s[1])) for s in seg])
-        rewards = np.array([s[2] for s in seg])
-        all_obs.append(obs)
-        all_rewards.append(rewards)
-    states = np.concatenate(all_obs, axis=0)
-    rewards = np.concatenate(all_rewards, axis=0)
+    demo_data = {
+        'demos': demos,
+        'corrections': corrections
+    }
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as tmp:
+        pickle.dump(demo_data, tmp)
+        demo_file = tmp.name
 
-    batch_size = min(1000, len(states) // 100)  # Adaptive batch size
-    kmeans = MiniBatchKMeans(n_clusters=n_feedback, batch_size=batch_size, random_state=42)
-    kmeans.fit(states)
-    cluster_assignments = kmeans.predict(states)
+    # Remove demos and corrections from memory - they'll be garbage collected
+    del demos
+    del corrections
+    del demo_data
 
-    cluster_representatives = []
-    cluster_rewards = []
-    for i in range(n_feedback):
-        cluster_mask = cluster_assignments == i
-        cluster_states = states[cluster_mask]
-        cluster_state_rewards = rewards[cluster_mask]
-        if len(cluster_states) > 0 and not np.any(np.isnan(np.mean(cluster_states, axis=0))):
-            cluster_representatives.append(np.mean(cluster_states, axis=0))
-            cluster_rewards.append(np.mean(cluster_state_rewards))
-    cluster_representatives = np.array(cluster_representatives)
-    cluster_rewards = np.array(cluster_rewards)
+    cluster_representatives, cluster_rewards, kmeans = memory_efficient_clustering(
+        segments=segments,
+        n_feedback=n_feedback
+    )
 
-    obs_dim = segments[0][0][0].squeeze(0).shape[0]
+    obs_dim = np.prod(segments[0][0][0].squeeze(0).shape)
     cluster_descriptions = [
         (rep[:obs_dim], rep[obs_dim:], reward) 
         for rep, reward in zip(cluster_representatives, cluster_rewards)
     ]
     tolerance = np.std(cluster_rewards) / 10.
     descr_preferences = get_preference_pairs_descript(cluster_descriptions, cluster_rewards, n_feedback, tolerance=tolerance)
-
-    print("[INFO] Successfully generated descriptive feedback")
     
+    # After clustering is done, restore demos and corrections
+    with open(demo_file, 'rb') as f:
+        demo_data = pickle.load(f)
+    os.unlink(demo_file)  # Clean up temporary file
+    
+    # Prepare final feedback dictionary
     return {
         "segments": segments,
         "ratings": ratings,
         "preferences": preferences,
-        "demos": demos,
-        "corrections": corrections,
+        "demos": demo_data['demos'],
+        "corrections": demo_data['corrections'],
         "description": cluster_descriptions,
         "description_preference": descr_preferences,
         "opt_gaps": opt_gaps
@@ -466,6 +572,8 @@ def main():
     parser.add_argument("--n-feedback", type=int, default=int(1000), help="How many feedback instances should be generated")
     parser.add_argument("--seed", type=int, default=1337, help="TODO: Seed for env and stuff")
     parser.add_argument("--segment-len", type=int, default=50, help="How long is the segment we generate feedback for")
+    parser.add_argument("--min-segment-len", type=int, default=None, help="(Optional: Min. segment len, default: segment_len / 2")
+    parser.add_argument("--oversampling_factor", type=float, default=1.5, help="Oversampling segments to enable succesful corrections")
     parser.add_argument("--save-folder", type=str, default="feedback", help="Where to save the feedback")
     parser.add_argument("--top-n-models", type=int, default=3)
     args = parser.parse_args()
@@ -503,6 +611,9 @@ def main():
         environment = SaveResetEnvWrapper(TransformObservation(environment, lambda obs: obs.squeeze(-1), environment.observation_space))
     elif "MiniGrid" in args.environment:
         environment = SaveResetEnvWrapper(FlatObsWrapper(gym.make(args.environment)))
+    elif "metaworld" in args.environment:
+        environment_name = args.environment.replace("metaworld-", "")
+        environment = SaveResetEnvWrapper(ppo_make_metaworld_env(environment_name, args.seed))
     else:
         environment = SaveResetEnvWrapper(gym.make(args.environment))
 
@@ -521,6 +632,8 @@ def main():
     
     model_class = PPO if args.algorithm == "ppo" else SAC
 
+    is_discrete_action = isinstance(environment.action_space, gym.spaces.Discrete)
+
     feedback = generate_feedback(
         model_class,
         expert_models,
@@ -529,9 +642,12 @@ def main():
         total_steps_factor=args.n_steps_factor,
         n_feedback=args.n_feedback,
         segment_len=args.segment_len,
+        min_segment_len=args.min_segment_len if args.min_segment_len else args.segment_len // 2,
+        oversampling_factor=args.oversampling_factor,
         checkpoints_path=checkpoints_path,
         algorithm=args.algorithm,
         device=device,
+        action_one_hot=is_discrete_action,
     )
 
     debug_feedback_output(feedback)

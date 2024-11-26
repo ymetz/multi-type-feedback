@@ -17,7 +17,7 @@ import gymnasium as gym
 single_reward_loss = nn.MSELoss()
 
 def calculate_mse_loss(network: LightningModule, batch: Tensor):
-    """Calculate the mean squared erro loss for the reward."""
+    """Calculate the mean squared error loss for the reward."""
     return mse_loss(network(batch[0]), batch[1].unsqueeze(1), reduction="sum")
 
 def calculate_mle_loss(network: LightningModule, batch: Tensor):
@@ -100,7 +100,10 @@ class LightningNetwork(LightningModule):
         self.learning_rate = learning_rate
         self.ensemble_count = ensemble_count
         obs_space, action_space = input_spaces
-        input_dim = obs_space.shape[-1] + action_space.shape[-1]
+
+        action_is_discrete = isinstance(action_space, gym.spaces.Discrete)
+        
+        input_dim = np.prod(obs_space.shape) + (np.prod(action_space.shape) if not action_is_discrete else action_space.n)
 
         # Initialize the network
         layers_unit = [input_dim] + [hidden_dim] * (layer_num - 1)
@@ -147,6 +150,10 @@ class LightningNetwork(LightningModule):
         """Do a forward pass through the neural network (inference)."""
         # observations: (batch_size, segment_length, obs_dim)
         # actions: (batch_size, segment_length, action_dim)
+
+        if len(observations.shape) > 3: # needs to be done to support the 2d spaces of highway-env, probably better do in in env wrapper
+            observations = observations.flatten(start_dim=2)
+        
         batch_size, segment_length, obs_dim = observations.shape
         _, _, action_dim = actions.shape
 
@@ -254,13 +261,12 @@ class LightningCnnNetwork(LightningModule):
     def compute_flattened_size(self, observation_space, cnn_channels):
         with torch.no_grad():
             sample_input = torch.zeros(self.ensemble_count, *observation_space).squeeze(-1)
-            sample_output = self.conv_layers(sample_input).flatten()
+            sample_output = self.conv_layers(sample_input).flatten(start_dim=1)
             return sample_output.shape[-1]
 
     def forward(self, observations, actions):
         # observations: (batch_size, segment_length, channels, height, width)
         # actions: (batch_size, segment_length, action_dim)
-        print(observations.shape)
         batch_size, segment_length, channels, height, width = observations.shape
         _, _, action_dim = actions.shape
 
@@ -277,9 +283,8 @@ class LightningCnnNetwork(LightningModule):
         act = F.relu(act)
 
         # Concatenate processed observations and actions
-        x = torch.cat((x, act), dim=1)
-        print("X SHAPE", x.shape)
-        x = self.fc(x)  # Shape: (batch_size * segment_length, output_dim)
+        output = torch.cat((x, act), dim=1)
+        output = self.fc(output)  # Shape: (batch_size * segment_length, output_dim)
 
         # Reshape back to (batch_size, segment_length, output_dim)
         output = output.reshape(batch_size, segment_length, -1)

@@ -603,6 +603,51 @@ procgen-maze-v0:
 
 procgen-miner-v0:
     <<: *procgen-defaults
-    
-    
-    
+
+highway-v0: &highway-defaults
+    policy: 'MlpPolicy'
+    policy_kwargs: "dict(
+        net_arch=dict(pi=[256, 256], vf=[256, 256])
+    )"
+    n_envs: 32
+    batch_size: 64
+    n_steps: 128
+    n_epochs: 10
+    learning_rate: !!float 5e-4
+    gamma: 0.8
+    n_timesteps: !!float 1e5
+
+highway-fast-v0:
+    <<: *highway-defaults
+
+roundabout-v0:
+    <<: *highway-defaults
+
+merge-v0:
+    <<: *highway-defaults
+
+metaworld-sweep-into-v2: &metaworld-defaults
+    normalize: true
+    policy: 'MlpPolicy'
+    policy_kwargs: "dict(
+        net_arch=dict(pi=[256, 256, 256], vf=[256, 256, 256])
+    )"
+    batch_size: 64
+    gamma: 0.99
+    learning_rate: !!float 3e-4
+    n_envs: 16
+    n_steps: 256
+    ent_coef: 0.0
+    n_epochs: 20
+    clip_range: 0.4
+    gae_lambda: 0.92
+    n_timesteps: !!float 2e6
+
+metaworld-button-press-v2:
+    <<: *metaworld-defaults
+
+metaworld-pick-place-v2:
+    <<: *metaworld-defaults
+
+#metaworld-pick-out-of-hole-v2:
+#    <<: *metaworld-defaults

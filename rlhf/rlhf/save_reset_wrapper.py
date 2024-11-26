@@ -65,8 +65,9 @@ class SaveResetEnvWrapper(gym.Wrapper):
         elif isinstance(self.unwrapped, Gym3ToGymnasium):
             self.unwrapped.env.set_state(state)
         else:
-            # Something else
-            self.unwrapped = state
+            # Other environments
+            for attr, value in vars(state).items():
+                setattr(self.unwrapped, attr, value)
         return obs
 
     def reset(self, **kwargs):

@@ -8,6 +8,11 @@ from collections import OrderedDict
 from pathlib import Path
 from pprint import pprint
 import procgen
+
+# metaworld support
+import metaworld
+from rl_zoo3.utils import make_vec_metaworld_env
+
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import gymnasium as gym
@@ -543,6 +548,8 @@ class ExperimentManager:
 
     @staticmethod
     def entry_point(env_id: str) -> str:
+        if "metaworld" in env_id:
+            return env_id
         return str(gym.envs.registry[env_id].entry_point)
 
     @staticmethod
@@ -626,7 +633,9 @@ class ExperimentManager:
         ):
             self.monitor_kwargs = dict(info_keywords=("is_success",))
 
-        spec = gym.spec(self.env_name.gym_id)
+        print(self.env_name)
+        if "metaworld" not in self.env_name:
+            spec = gym.spec(self.env_name.gym_id)
 
         # Define make_env here, so it works with subprocesses
         # when the registry was modified with `--gym-packages`
@@ -644,7 +653,16 @@ class ExperimentManager:
             env = VecExtractDictObs(env, "rgb")
             env = VecMonitor(env)
             env.seed = lambda x: print("Trying to call seed with", x)
-            
+        elif "metaworld" in self.env_name:
+            env = make_vec_metaworld_env(
+                self.env_name,
+                n_envs=n_envs, 
+                monitor_dir=log_dir,
+                wrapper_class=self.env_wrapper,
+                vec_env_cls=self.vec_env_class,  # type: ignore[arg-type]
+                vec_env_kwargs=self.vec_env_kwargs,
+                monitor_kwargs=self.monitor_kwargs,
+                seed=self.seed)
         else:
             env = make_vec_env(
                 make_env,

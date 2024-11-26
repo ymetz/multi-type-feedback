@@ -166,8 +166,8 @@ def train() -> None:
     env_id = args.env
     registered_envs = set(gym.envs.registry.keys())
 
-    # If the environment is not found, suggest the closest match
-    if env_id not in registered_envs:
+    # If the environment is not found, suggest the closest match (except for metaworld which cannot be registered
+    if env_id not in registered_envs and "metaworld" not in env_id:
         try:
             closest_match = difflib.get_close_matches(env_id, registered_envs, n=1)[0]
         except IndexError:

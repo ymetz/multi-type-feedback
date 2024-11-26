@@ -25,11 +25,13 @@ from gymnasium.wrappers.stateful_observation import FrameStackObservation
 from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper 
 from procgen import ProcgenGym3Env
+import highway_env
 from rl_zoo3.wrappers import Gym3ToGymnasium
 from stable_baselines3.common.vec_env import VecExtractDictObs
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 import ale_py
 import minigrid
+from rl_zoo3.utils import ppo_make_metaworld_env
 
 import wandb
 from rlhf.datatypes import FeedbackDataset, FeedbackType, SegmentT
@@ -47,6 +49,12 @@ discount_factors = {
     'ALE/Enduro-v5': 0.99,
     'ALE/Pong-v5': 0.99,
     'Humanoid-v5': 0.99,
+    'highway-v0': 0.99,
+    'merge-v0': 0.99,
+    'roundabout-v0': 0.99,
+    'metaworld-sweep-into-v2': 0.99,
+    'metaworld-button-press-v2': 0.99,
+    'metaworld-pick-place-v2': 0.99
 }
 
 script_path = Path(__file__).parents[1].resolve()
@@ -76,7 +84,7 @@ def truncated_uniform_vectorized(mean, width, low=0, upp=9):
     
     return result[0] if scalar_input else result
 
-def truncated_gaussian_vectorized(mean, width, low=0, upp=9):
+def truncated_gaussian_vectorized(mean, width, low=0, upp=9, min_width=1e-8):
     # Handle scalar inputs
     scalar_input = np.isscalar(mean) and np.isscalar(width)
     mean = np.atleast_1d(mean)
@@ -89,6 +97,8 @@ def truncated_gaussian_vectorized(mean, width, low=0, upp=9):
     # Calculate parameters for truncated normal distribution
     a = (lower - mean) / (width/4)  # 4 sigma range
     b = (upper - mean) / (width/4)
+
+    print(a,b)
     
     # Generate samples from truncated normal distribution
     result = truncnorm.rvs(a, b, loc=mean, scale=width/4, size=mean.shape)
@@ -130,8 +140,8 @@ class FeedbackDataset(Dataset):
 
                 if len_obs < segment_len:
                     pad_size = segment_len - len_obs
-                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.size()[1:])], dim=0)
-                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.size()[1:])], dim=0)
+                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.shape[1:])], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.shape[1:])], dim=0)
                 
                 self.targets.append((obs, actions))
             
@@ -166,12 +176,12 @@ class FeedbackDataset(Dataset):
 
                 if len_obs < segment_len:
                     pad_size = segment_len - len_obs
-                    obs = torch.cat([obs, torch.zeros(pad_size, obs.size()[1:])], dim=0)
-                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.size()[1:])], dim=0)
+                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.shape[1:])], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.shape[1:])], dim=0)
                 if len_obs2 < segment_len:
                     pad_size = segment_len - len_obs2
-                    obs2 = torch.cat([obs2, torch.zeros(pad_size, *obs2.size()[1:])], dim=0)
-                    actions2 = torch.cat([actions2, torch.zeros(pad_size, *actions2.size()[1:])], dim=0)
+                    obs2 = torch.cat([obs2, torch.zeros(pad_size, *obs2.shape[1:])], dim=0)
+                    actions2 = torch.cat([actions2, torch.zeros(pad_size, *actions2.shape[1:])], dim=0)
                 
                 # add noise and recompute preferences
                 if noise_level > 0:
@@ -207,28 +217,32 @@ class FeedbackDataset(Dataset):
                 random_data = pickle.load(random_file)
             
             for demo in feedback_data["demos"]:
-                obs = torch.vstack([torch.as_tensor(p[0]).float() for p in demo])
-                actions = torch.vstack([torch.as_tensor(p[1]).float() for p in demo])
+                obs = np.vstack([p[0] for p in demo])
+                actions = np.vstack([p[1] for p in demo])
 
                 if noise_level > 0.0:
-                    # Get the shape of the actions tensor
-                    num_actions, action_dim = actions.shape
-                    
-                    # Calculate how many actions to replace
-                    num_replace = int(num_actions * noise_level)
-                    
-                    # Randomly select indices to replace
-                    replace_indices = np.random.choice(num_actions, num_replace, replace=False)
-                    
-                    # Create a new tensor to store the modified actions
-                    new_actions = actions.clone()
-                    
-                    # Replace selected actions with random actions from the environment
-                    for idx in replace_indices:
-                        random_action = env.action_space.sample()
-                        new_actions[idx] = torch.as_tensor(random_action).float()
 
-                    actions = new_actions
+                    obs_min, obs_max = np.min(obs, axis=0), np.max(obs, axis=0)
+                    obs_std = np.std(obs, axis=0)
+                    acts_min, acts_max = np.min(actions, axis=0), np.max(actions, axis=0)
+                    acts_std = np.std(actions, axis=0)
+                    
+                    obs = truncated_gaussian_vectorized(
+                        mean=obs, 
+                        width=np.array(noise_level) * obs_std, 
+                        low=obs_min,
+                        upp=obs_max,
+                    )
+                    
+                    actions = truncated_gaussian_vectorized(
+                        mean=actions, 
+                        width=np.array(noise_level) * acts_std, 
+                        low=acts_min,
+                        upp=acts_max,
+                    )
+
+                obs = torch.as_tensor(obs).float()
+                actions = torch.as_tensor(actions).float()
 
                 # just use a random segment as the opposite
                 rand_index = random.randrange(0, len(random_data["segments"]))
@@ -241,12 +255,12 @@ class FeedbackDataset(Dataset):
 
                 if len_obs < segment_len:
                     pad_size = segment_len - len_obs
-                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.size()[1:])], dim=0)
-                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.size()[1:])], dim=0)
+                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.shape[1:])], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.shape[1:])], dim=0)
                 if len_obs_rand < segment_len:
                     pad_size = segment_len - len_obs_rand
-                    obs_rand = torch.cat([obs_rand, torch.zeros(pad_size, *obs_rand.size()[1:])], dim=0)
-                    actions_rand = torch.cat([actions_rand, torch.zeros(pad_size, *actions_rand.size()[1:])], dim=0)
+                    obs_rand = torch.cat([obs_rand, torch.zeros(pad_size, *obs_rand.shape[1:])], dim=0)
+                    actions_rand = torch.cat([actions_rand, torch.zeros(pad_size, *actions_rand.shape[1:])], dim=0)
                 
                 self.targets.append(((obs_rand, actions_rand), (obs, actions)))
                 self.preds.append(1) # assume that the demonstration is optimal, maybe add confidence value (based on regret)
@@ -270,12 +284,12 @@ class FeedbackDataset(Dataset):
 
                 if len_obs < segment_len:
                     pad_size = segment_len - len_obs
-                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.size()[1:])], dim=0)
-                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.size()[1:])], dim=0)
+                    obs = torch.cat([obs, torch.zeros(pad_size, *obs.shape[1:])], dim=0)
+                    actions = torch.cat([actions, torch.zeros(pad_size, *actions.shape[1:])], dim=0)
                 if len_obs2 < segment_len:
                     pad_size = segment_len - len_obs2
-                    obs2 = torch.cat([obs2, torch.zeros(pad_size, *obs2.size()[1:])], dim=0)
-                    actions2 = torch.cat([actions2, torch.zeros(pad_size, *actions2.size()[1:])], dim=0)
+                    obs2 = torch.cat([obs2, torch.zeros(pad_size, *obs2.shape[1:])], dim=0)
+                    actions2 = torch.cat([actions2, torch.zeros(pad_size, *actions2.shape[1:])], dim=0)
             
                 # add noise and recompute preferences
                 if noise_level > 0.0:
@@ -552,6 +566,9 @@ def main():
         environment = TransformObservation(environment, lambda obs: obs.squeeze(-1), environment.observation_space)
     elif "MiniGrid" in args.environment:
         environment = FlatObsWrapper(gym.make(args.environment))
+    elif "metaworld" in args.environment:
+        environment_name = args.environment.replace("metaworld-", "")
+        environment = ppo_make_metaworld_env(environment_name, args.seed)
     else:
         environment = gym.make(args.environment)
     
