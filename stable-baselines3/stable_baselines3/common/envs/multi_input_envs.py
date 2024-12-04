@@ -92,7 +92,9 @@ class SimpleMultiObsEnv(gym.Env):
 
         for i in range(num_col):
             for j in range(num_row):
-                self.state_mapping.append({"vec": col_vecs[i], "img": row_imgs[j].reshape(self.img_size)})
+                self.state_mapping.append(
+                    {"vec": col_vecs[i], "img": row_imgs[j].reshape(self.img_size)}
+                )
 
     def get_state_mapping(self) -> Dict[str, np.ndarray]:
         """
@@ -156,7 +158,13 @@ class SimpleMultiObsEnv(gym.Env):
 
         self.log = f"Went {self.action2str[action]} in state {prev_state}, got to state {self.state}"
 
-        return self.get_state_mapping(), reward, terminated, truncated, {"got_to_end": got_to_end}
+        return (
+            self.get_state_mapping(),
+            reward,
+            terminated,
+            truncated,
+            {"got_to_end": got_to_end},
+        )
 
     def render(self, mode: str = "human") -> None:
         """
@@ -166,7 +174,9 @@ class SimpleMultiObsEnv(gym.Env):
         """
         print(self.log)
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[Dict[str, np.ndarray], Dict]:
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[Dict] = None
+    ) -> Tuple[Dict[str, np.ndarray], Dict]:
         """
         Resets the environment state and step count and returns reset observation.
 

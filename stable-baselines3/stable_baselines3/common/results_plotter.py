@@ -29,7 +29,9 @@ def rolling_window(array: np.ndarray, window: int) -> np.ndarray:
     return np.lib.stride_tricks.as_strided(array, shape=shape, strides=strides)
 
 
-def window_func(var_1: np.ndarray, var_2: np.ndarray, window: int, func: Callable) -> Tuple[np.ndarray, np.ndarray]:
+def window_func(
+    var_1: np.ndarray, var_2: np.ndarray, window: int, func: Callable
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Apply a function to the rolling window of 2 arrays
 
@@ -69,7 +71,10 @@ def ts2xy(data_frame: pd.DataFrame, x_axis: str) -> Tuple[np.ndarray, np.ndarray
 
 
 def plot_curves(
-    xy_list: List[Tuple[np.ndarray, np.ndarray]], x_axis: str, title: str, figsize: Tuple[int, int] = (8, 2)
+    xy_list: List[Tuple[np.ndarray, np.ndarray]],
+    x_axis: str,
+    title: str,
+    figsize: Tuple[int, int] = (8, 2),
 ) -> None:
     """
     plot the curves
@@ -99,7 +104,11 @@ def plot_curves(
 
 
 def plot_results(
-    dirs: List[str], num_timesteps: Optional[int], x_axis: str, task_name: str, figsize: Tuple[int, int] = (8, 2)
+    dirs: List[str],
+    num_timesteps: Optional[int],
+    x_axis: str,
+    task_name: str,
+    figsize: Tuple[int, int] = (8, 2),
 ) -> None:
     """
     Plot the results using csv files from ``Monitor`` wrapper.

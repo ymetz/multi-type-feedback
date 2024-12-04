@@ -10,10 +10,18 @@ from gymnasium import spaces
 import stable_baselines3 as sb3
 from stable_baselines3 import A2C
 from stable_baselines3.common.atari_wrappers import MaxAndSkipEnv
-from stable_baselines3.common.env_util import is_wrapped, make_atari_env, make_vec_env, unwrap_wrapper
+from stable_baselines3.common.env_util import (
+    is_wrapped,
+    make_atari_env,
+    make_vec_env,
+    unwrap_wrapper,
+)
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.noise import OrnsteinUhlenbeckActionNoise, VectorizedActionNoise
+from stable_baselines3.common.noise import (
+    OrnsteinUhlenbeckActionNoise,
+    VectorizedActionNoise,
+)
 from stable_baselines3.common.utils import (
     check_shape_equal,
     get_parameters_by_name,
@@ -30,7 +38,14 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 @pytest.mark.parametrize("vec_env_cls", [None, SubprocVecEnv])
 @pytest.mark.parametrize("wrapper_class", [None, gym.wrappers.RecordEpisodeStatistics])
 def test_make_vec_env(env_id, n_envs, vec_env_cls, wrapper_class):
-    env = make_vec_env(env_id, n_envs, vec_env_cls=vec_env_cls, wrapper_class=wrapper_class, monitor_dir=None, seed=0)
+    env = make_vec_env(
+        env_id,
+        n_envs,
+        vec_env_cls=vec_env_cls,
+        wrapper_class=wrapper_class,
+        monitor_dir=None,
+        seed=0,
+    )
 
     assert env.num_envs == n_envs
 
@@ -65,7 +80,13 @@ def test_make_vec_env_func_checker():
 @pytest.mark.parametrize("terminal_on_life_loss", [True, False])
 @pytest.mark.parametrize("clip_reward", [True])
 def test_make_atari_env(
-    env_id, noop_max, action_repeat_probability, frame_skip, screen_size, terminal_on_life_loss, clip_reward
+    env_id,
+    noop_max,
+    action_repeat_probability,
+    frame_skip,
+    screen_size,
+    terminal_on_life_loss,
+    clip_reward,
 ):
     n_envs = 2
     wrapper_kwargs = {
@@ -87,7 +108,9 @@ def test_make_atari_env(
     assert venv.num_envs == n_envs
 
     needs_fire_reset = env_id == "BreakoutNoFrameskip-v4"
-    expected_frame_number_low = frame_skip * 2 if needs_fire_reset else 0  # FIRE - UP on reset
+    expected_frame_number_low = (
+        frame_skip * 2 if needs_fire_reset else 0
+    )  # FIRE - UP on reset
     expected_frame_number_high = expected_frame_number_low + noop_max
     expected_shape = (n_envs, screen_size, screen_size, 1)
 
@@ -97,7 +120,9 @@ def test_make_atari_env(
         assert expected_frame_number_low <= frame_number <= expected_frame_number_high
     assert obs.shape == expected_shape
 
-    new_obs, reward, _, _ = venv.step([venv.action_space.sample() for _ in range(n_envs)])
+    new_obs, reward, _, _ = venv.step(
+        [venv.action_space.sample() for _ in range(n_envs)]
+    )
 
     new_frame_numbers = [env.unwrapped.ale.getEpisodeFrameNumber() for env in venv.envs]
     for frame_number, new_frame_number in zip(frame_numbers, new_frame_numbers):
@@ -108,23 +133,46 @@ def test_make_atari_env(
 
 
 def test_vec_env_kwargs():
-    env = make_vec_env("MountainCarContinuous-v0", n_envs=1, seed=0, env_kwargs={"goal_velocity": 0.11})
+    env = make_vec_env(
+        "MountainCarContinuous-v0", n_envs=1, seed=0, env_kwargs={"goal_velocity": 0.11}
+    )
     assert env.get_attr("goal_velocity")[0] == 0.11
 
 
 def test_vec_env_wrapper_kwargs():
-    env = make_vec_env("MountainCarContinuous-v0", n_envs=1, seed=0, wrapper_class=MaxAndSkipEnv, wrapper_kwargs={"skip": 3})
+    env = make_vec_env(
+        "MountainCarContinuous-v0",
+        n_envs=1,
+        seed=0,
+        wrapper_class=MaxAndSkipEnv,
+        wrapper_kwargs={"skip": 3},
+    )
     assert env.get_attr("_skip")[0] == 3
 
 
 def test_vec_env_monitor_kwargs():
-    env = make_vec_env("MountainCarContinuous-v0", n_envs=1, seed=0, monitor_kwargs={"allow_early_resets": False})
+    env = make_vec_env(
+        "MountainCarContinuous-v0",
+        n_envs=1,
+        seed=0,
+        monitor_kwargs={"allow_early_resets": False},
+    )
     assert env.get_attr("allow_early_resets")[0] is False
 
-    env = make_atari_env("BreakoutNoFrameskip-v4", n_envs=1, seed=0, monitor_kwargs={"allow_early_resets": False})
+    env = make_atari_env(
+        "BreakoutNoFrameskip-v4",
+        n_envs=1,
+        seed=0,
+        monitor_kwargs={"allow_early_resets": False},
+    )
     assert env.get_attr("allow_early_resets")[0] is False
 
-    env = make_vec_env("MountainCarContinuous-v0", n_envs=1, seed=0, monitor_kwargs={"allow_early_resets": True})
+    env = make_vec_env(
+        "MountainCarContinuous-v0",
+        n_envs=1,
+        seed=0,
+        monitor_kwargs={"allow_early_resets": True},
+    )
     assert env.get_attr("allow_early_resets")[0] is True
 
     env = make_atari_env(
@@ -299,7 +347,9 @@ def test_evaluate_policy_monitors(vec_env_class):
             env = wrapper_class(env)
         else:
             if with_monitor:
-                env = vec_env_class([lambda: wrapper_class(Monitor(gym.make(env_id)))] * n_envs)
+                env = vec_env_class(
+                    [lambda: wrapper_class(Monitor(gym.make(env_id)))] * n_envs
+                )
             else:
                 env = vec_env_class([lambda: wrapper_class(gym.make(env_id))] * n_envs)
         return env
@@ -334,13 +384,19 @@ def test_evaluate_policy_monitors(vec_env_class):
     episode_rewards, episode_lengths = evaluate_policy(
         model, eval_env, n_eval_episodes, return_episode_rewards=True, warn=False
     )
-    assert all(map(lambda length: length == 1, episode_lengths)), "AlwaysDoneWrapper did not fix episode lengths to one"
+    assert all(
+        map(lambda length: length == 1, episode_lengths)
+    ), "AlwaysDoneWrapper did not fix episode lengths to one"
     eval_env.close()
 
     # Should get longer episodes with with Monitor (true episodes)
     eval_env = make_eval_env(with_monitor=True, wrapper_class=AlwaysDoneWrapper)
-    episode_rewards, episode_lengths = evaluate_policy(model, eval_env, n_eval_episodes, return_episode_rewards=True)
-    assert all(map(lambda length: length > 1, episode_lengths)), "evaluate_policy did not get episode lengths from Monitor"
+    episode_rewards, episode_lengths = evaluate_policy(
+        model, eval_env, n_eval_episodes, return_episode_rewards=True
+    )
+    assert all(
+        map(lambda length: length > 1, episode_lengths)
+    ), "evaluate_policy did not get episode lengths from Monitor"
     eval_env.close()
 
 
@@ -395,7 +451,9 @@ def test_get_parameters_by_name():
 
 def test_polyak():
     param1, param2 = th.nn.Parameter(th.ones((5, 5))), th.nn.Parameter(th.zeros((5, 5)))
-    target1, target2 = th.nn.Parameter(th.ones((5, 5))), th.nn.Parameter(th.zeros((5, 5)))
+    target1, target2 = th.nn.Parameter(th.ones((5, 5))), th.nn.Parameter(
+        th.zeros((5, 5))
+    )
     tau = 0.1
     polyak_update([param1], [param2], tau)
     with th.no_grad():
@@ -582,11 +640,31 @@ def test_check_shape_equal():
     with pytest.raises(AssertionError):
         check_shape_equal(space1, space2)
 
-    space1 = spaces.Dict({"key1": spaces.Box(low=0, high=1, shape=(2, 2)), "key2": spaces.Box(low=0, high=1, shape=(2, 2))})
-    space2 = spaces.Dict({"key1": spaces.Box(low=-1, high=2, shape=(2, 2)), "key2": spaces.Box(low=-1, high=2, shape=(2, 2))})
+    space1 = spaces.Dict(
+        {
+            "key1": spaces.Box(low=0, high=1, shape=(2, 2)),
+            "key2": spaces.Box(low=0, high=1, shape=(2, 2)),
+        }
+    )
+    space2 = spaces.Dict(
+        {
+            "key1": spaces.Box(low=-1, high=2, shape=(2, 2)),
+            "key2": spaces.Box(low=-1, high=2, shape=(2, 2)),
+        }
+    )
     check_shape_equal(space1, space2)
 
-    space1 = spaces.Dict({"key1": spaces.Box(low=0, high=1, shape=(2, 2)), "key2": spaces.Box(low=0, high=1, shape=(2, 2))})
-    space2 = spaces.Dict({"key1": spaces.Box(low=-1, high=2, shape=(3, 3)), "key2": spaces.Box(low=-1, high=2, shape=(2, 2))})
+    space1 = spaces.Dict(
+        {
+            "key1": spaces.Box(low=0, high=1, shape=(2, 2)),
+            "key2": spaces.Box(low=0, high=1, shape=(2, 2)),
+        }
+    )
+    space2 = spaces.Dict(
+        {
+            "key1": spaces.Box(low=-1, high=2, shape=(3, 3)),
+            "key2": spaces.Box(low=-1, high=2, shape=(2, 2)),
+        }
+    )
     with pytest.raises(AssertionError):
         check_shape_equal(space1, space2)

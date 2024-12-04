@@ -1,4 +1,5 @@
 import tensorflow as tf
+
 from . import common
 
 
@@ -37,10 +38,9 @@ class Masksembles2D(tf.keras.layers.Layer):
     def build(self, input_shape):
         channels = input_shape[-1]
         masks = common.generation_wrapper(channels, self.n, self.scale)
-        self.masks = self.add_weight("masks",
-                                     shape=masks.shape,
-                                     trainable=False,
-                                     dtype="float32")
+        self.masks = self.add_weight(
+            "masks", shape=masks.shape, trainable=False, dtype="float32"
+        )
         self.masks.assign(masks)
 
     def call(self, inputs, training=False):
@@ -90,10 +90,9 @@ class Masksembles1D(tf.keras.layers.Layer):
     def build(self, input_shape):
         channels = input_shape[-1]
         masks = common.generation_wrapper(channels, self.n, self.scale)
-        self.masks = self.add_weight("masks",
-                                     shape=masks.shape,
-                                     trainable=False,
-                                     dtype="float32")
+        self.masks = self.add_weight(
+            "masks", shape=masks.shape, trainable=False, dtype="float32"
+        )
         self.masks.assign(masks)
 
     def call(self, inputs, training=False):

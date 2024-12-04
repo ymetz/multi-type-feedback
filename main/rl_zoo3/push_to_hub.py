@@ -13,7 +13,11 @@ import yaml
 from huggingface_hub import HfApi, Repository
 from huggingface_hub.repocard import metadata_save
 from huggingface_sb3 import EnvironmentName, ModelName, ModelRepoId
-from huggingface_sb3.push_to_hub import _evaluate_agent, _generate_replay, generate_metadata
+from huggingface_sb3.push_to_hub import (
+    _evaluate_agent,
+    _generate_replay,
+    generate_metadata,
+)
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecEnv, unwrap_vec_normalize
@@ -27,7 +31,9 @@ from rl_zoo3.utils import StoreDict, create_test_env, get_model_path
 msg = Printer()
 
 
-def save_model_card(repo_dir: Path, generated_model_card: str, metadata: Dict[str, Any]) -> None:
+def save_model_card(
+    repo_dir: Path, generated_model_card: str, metadata: Dict[str, Any]
+) -> None:
     """Saves a model card for the repository.
 
     :param repo_dir: repository directory
@@ -240,11 +246,15 @@ def package_to_hub(
             archive.write(monitor_file, arcname=monitor_file.split(os.sep)[-1])
 
     # Step 3: Evaluate the agent
-    mean_reward, std_reward = _evaluate_agent(model, eval_env, n_eval_episodes, is_deterministic, repo_local_path)
+    mean_reward, std_reward = _evaluate_agent(
+        model, eval_env, n_eval_episodes, is_deterministic, repo_local_path
+    )
 
     # Step 4: Generate a video
     if generate_video:
-        _generate_replay(model, eval_env, video_length, is_deterministic, repo_local_path)
+        _generate_replay(
+            model, eval_env, video_length, is_deterministic, repo_local_path
+        )
         # Cleanup files after generation
         # TODO: upstream to huggingface sb3
         video_path = Path("test.mp4")
@@ -271,27 +281,71 @@ def package_to_hub(
     msg.info(f"Pushing repo {repo_name} to the Hugging Face Hub")
     repo.push_to_hub(commit_message=commit_message)
 
-    msg.info(f"Your model is pushed to the hub. You can view your model here: {repo_url}")
+    msg.info(
+        f"Your model is pushed to the hub. You can view your model here: {repo_url}"
+    )
     return repo_url
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", help="Environment ID", type=EnvironmentName, required=True)
-    parser.add_argument("-f", "--folder", help="Log folder", type=str, required=True)
-    parser.add_argument("--algo", help="RL Algorithm", type=str, required=True, choices=list(ALGOS.keys()))
-    parser.add_argument("-n", "--n-timesteps", help="Number of timesteps for the video recording", default=1000, type=int)
-    parser.add_argument("--num-threads", help="Number of threads for PyTorch (-1 to use default)", default=-1, type=int)
-    parser.add_argument("--n-envs", help="Number of environments", default=1, type=int)
-    parser.add_argument("--exp-id", help="Experiment ID (default: 0: latest, -1: no exp folder)", default=0, type=int)
-    parser.add_argument("--verbose", help="Verbose mode (0: no output, 1: INFO)", default=1, type=int)
     parser.add_argument(
-        "--no-render", action="store_true", default=False, help="Do not render the environment (useful for tests)"
+        "--env", help="Environment ID", type=EnvironmentName, required=True
     )
-    parser.add_argument("--deterministic", action="store_true", default=False, help="Use deterministic actions")
-    parser.add_argument("--device", help="PyTorch device to be use (ex: cpu, cuda...)", default="auto", type=str)
+    parser.add_argument("-f", "--folder", help="Log folder", type=str, required=True)
     parser.add_argument(
-        "--load-best", action="store_true", default=False, help="Load best model instead of last model if available"
+        "--algo",
+        help="RL Algorithm",
+        type=str,
+        required=True,
+        choices=list(ALGOS.keys()),
+    )
+    parser.add_argument(
+        "-n",
+        "--n-timesteps",
+        help="Number of timesteps for the video recording",
+        default=1000,
+        type=int,
+    )
+    parser.add_argument(
+        "--num-threads",
+        help="Number of threads for PyTorch (-1 to use default)",
+        default=-1,
+        type=int,
+    )
+    parser.add_argument("--n-envs", help="Number of environments", default=1, type=int)
+    parser.add_argument(
+        "--exp-id",
+        help="Experiment ID (default: 0: latest, -1: no exp folder)",
+        default=0,
+        type=int,
+    )
+    parser.add_argument(
+        "--verbose", help="Verbose mode (0: no output, 1: INFO)", default=1, type=int
+    )
+    parser.add_argument(
+        "--no-render",
+        action="store_true",
+        default=False,
+        help="Do not render the environment (useful for tests)",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        default=False,
+        help="Use deterministic actions",
+    )
+    parser.add_argument(
+        "--device",
+        help="PyTorch device to be use (ex: cpu, cuda...)",
+        default="auto",
+        type=str,
+    )
+    parser.add_argument(
+        "--load-best",
+        action="store_true",
+        default=False,
+        help="Load best model instead of last model if available",
     )
     parser.add_argument(
         "--load-checkpoint",
@@ -305,14 +359,40 @@ if __name__ == "__main__":
         default=False,
         help="Load last checkpoint instead of last model if available",
     )
-    parser.add_argument("--stochastic", action="store_true", default=False, help="Use stochastic actions")
+    parser.add_argument(
+        "--stochastic",
+        action="store_true",
+        default=False,
+        help="Use stochastic actions",
+    )
     parser.add_argument("--seed", help="Random generator seed", type=int, default=0)
     parser.add_argument(
-        "--env-kwargs", type=str, nargs="+", action=StoreDict, help="Optional keyword argument to pass to the env constructor"
+        "--env-kwargs",
+        type=str,
+        nargs="+",
+        action=StoreDict,
+        help="Optional keyword argument to pass to the env constructor",
     )
-    parser.add_argument("-orga", "--organization", help="Huggingface hub organization", type=str, required=True)
-    parser.add_argument("-name", "--repo-name", help="Huggingface hub repository name, by default 'algo-env'", type=str)
-    parser.add_argument("-m", "--commit-message", help="Commit message", default="Initial commit", type=str)
+    parser.add_argument(
+        "-orga",
+        "--organization",
+        help="Huggingface hub organization",
+        type=str,
+        required=True,
+    )
+    parser.add_argument(
+        "-name",
+        "--repo-name",
+        help="Huggingface hub repository name, by default 'algo-env'",
+        type=str,
+    )
+    parser.add_argument(
+        "-m",
+        "--commit-message",
+        help="Commit message",
+        default="Initial commit",
+        type=str,
+    )
 
     args = parser.parse_args()
     env_name: EnvironmentName = args.env
@@ -392,7 +472,13 @@ if __name__ == "__main__":
     # Note: we assume that we push models using the same machine (same python version)
     # that trained them, if not, we would need to pass custom object as in enjoy.py
     custom_objects: Dict[str, Any] = {}
-    model = ALGOS[algo].load(model_path, env=eval_env, custom_objects=custom_objects, device=args.device, **kwargs)
+    model = ALGOS[algo].load(
+        model_path,
+        env=eval_env,
+        custom_objects=custom_objects,
+        device=args.device,
+        **kwargs,
+    )
 
     # Deterministic by default except for atari games
     stochastic = args.stochastic or (is_atari or is_minigrid) and not args.deterministic

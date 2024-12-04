@@ -13,7 +13,9 @@ class DictObsVecEnv(VecEnv):
     def __init__(self):
         self.num_envs = 4
         self.action_space = spaces.Discrete(2)
-        self.observation_space = spaces.Dict({"rgb": spaces.Box(low=0.0, high=255.0, shape=(86, 86), dtype=np.float32)})
+        self.observation_space = spaces.Dict(
+            {"rgb": spaces.Box(low=0.0, high=255.0, shape=(86, 86), dtype=np.float32)}
+        )
         self.n_steps = 0
         self.max_steps = 5
         self.render_mode = None
@@ -26,7 +28,12 @@ class DictObsVecEnv(VecEnv):
         done = self.n_steps >= self.max_steps
         if done:
             infos = [
-                {"terminal_observation": {"rgb": np.zeros((86, 86), dtype=np.float32)}, "TimeLimit.truncated": True}
+                {
+                    "terminal_observation": {
+                        "rgb": np.zeros((86, 86), dtype=np.float32)
+                    },
+                    "TimeLimit.truncated": True,
+                }
                 for _ in range(self.num_envs)
             ]
         else:
@@ -71,7 +78,9 @@ def test_extract_dict_obs():
     assert env.reset().shape == (4, 86, 86)
 
     for _ in range(10):
-        obs, _, dones, infos = env.step([env.action_space.sample() for _ in range(env.num_envs)])
+        obs, _, dones, infos = env.step(
+            [env.action_space.sample() for _ in range(env.num_envs)]
+        )
         assert obs.shape == (4, 86, 86)
         for idx, info in enumerate(infos):
             if "terminal_observation" in info:

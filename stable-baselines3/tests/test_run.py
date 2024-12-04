@@ -4,7 +4,10 @@ import pytest
 
 from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckActionNoise
+from stable_baselines3.common.noise import (
+    NormalActionNoise,
+    OrnsteinUhlenbeckActionNoise,
+)
 
 normal_action_noise = NormalActionNoise(np.zeros(1), 0.1 * np.ones(1))
 
@@ -32,14 +35,18 @@ def test_deterministic_pg(model_class, action_noise):
 
 @pytest.mark.parametrize("env_id", ["CartPole-v1", "Pendulum-v1"])
 def test_a2c(env_id):
-    model = A2C("MlpPolicy", env_id, seed=0, policy_kwargs=dict(net_arch=[16]), verbose=1)
+    model = A2C(
+        "MlpPolicy", env_id, seed=0, policy_kwargs=dict(net_arch=[16]), verbose=1
+    )
     model.learn(total_timesteps=64)
 
 
 @pytest.mark.parametrize("model_class", [A2C, PPO])
 @pytest.mark.parametrize("normalize_advantage", [False, True])
 def test_advantage_normalization(model_class, normalize_advantage):
-    model = model_class("MlpPolicy", "CartPole-v1", n_steps=64, normalize_advantage=normalize_advantage)
+    model = model_class(
+        "MlpPolicy", "CartPole-v1", n_steps=64, normalize_advantage=normalize_advantage
+    )
     model.learn(64)
 
 
@@ -133,7 +140,9 @@ def test_train_freq(tmp_path, train_freq):
     model.learn(total_timesteps=150)
 
 
-@pytest.mark.parametrize("train_freq", ["4", ("1", "episode"), "non_sense", (1, "close")])
+@pytest.mark.parametrize(
+    "train_freq", ["4", ("1", "episode"), "non_sense", (1, "close")]
+)
 def test_train_freq_fail(train_freq):
     with pytest.raises(ValueError):
         model = SAC(
@@ -219,7 +228,9 @@ def test_ppo_warnings():
         PPO("MlpPolicy", "Pendulum-v1", n_steps=1)
 
     # batch_size of 1 is allowed when normalize_advantage=False
-    model = PPO("MlpPolicy", "Pendulum-v1", n_steps=1, batch_size=1, normalize_advantage=False)
+    model = PPO(
+        "MlpPolicy", "Pendulum-v1", n_steps=1, batch_size=1, normalize_advantage=False
+    )
     model.learn(4)
 
     # Truncated mini-batch
@@ -227,7 +238,9 @@ def test_ppo_warnings():
     # torch.std(some_length_1_tensor) == NaN
     # advantage normalization is automatically deactivated
     # in that case
-    with pytest.warns(UserWarning, match="there will be a truncated mini-batch of size 1"):
+    with pytest.warns(
+        UserWarning, match="there will be a truncated mini-batch of size 1"
+    ):
         model = PPO("MlpPolicy", "Pendulum-v1", n_steps=64, batch_size=63, verbose=1)
         model.learn(64)
 

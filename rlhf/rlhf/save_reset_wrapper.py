@@ -1,10 +1,12 @@
-import gymnasium as gym
-from gymnasium.envs.mujoco import MujocoEnv
-from rl_zoo3.wrappers import Gym3ToGymnasium
-from ale_py import AtariEnv
-from minigrid.minigrid_env import MiniGridEnv
 import copy
+
+import gymnasium as gym
 import numpy as np
+from ale_py import AtariEnv
+from gymnasium.envs.mujoco import MujocoEnv
+from minigrid.minigrid_env import MiniGridEnv
+from rl_zoo3.wrappers import Gym3ToGymnasium
+
 
 class SaveResetEnvWrapper(gym.Wrapper):
     def __init__(self, env):
@@ -18,7 +20,10 @@ class SaveResetEnvWrapper(gym.Wrapper):
         """
         if isinstance(self.unwrapped, MujocoEnv):
             # MuJoCo environment
-            state = {"qpos": np.copy(self.unwrapped.data.qpos), "qval": np.copy(self.unwrapped.data.qvel)}
+            state = {
+                "qpos": np.copy(self.unwrapped.data.qpos),
+                "qval": np.copy(self.unwrapped.data.qvel),
+            }
         elif isinstance(self.unwrapped, AtariEnv):
             state = self.unwrapped.clone_state()
         elif isinstance(self.unwrapped, MiniGridEnv):
@@ -28,7 +33,7 @@ class SaveResetEnvWrapper(gym.Wrapper):
                 "carrying": self.unwrapped.carrying,
                 "agent_pos": self.unwrapped.agent_pos,
                 "agent_dir": self.unwrapped.agent_dir,
-                "mission": self.unwrapped.mission
+                "mission": self.unwrapped.mission,
             }
         elif isinstance(self.unwrapped, Gym3ToGymnasium):
             state = self.unwrapped.env.get_state()
@@ -46,7 +51,9 @@ class SaveResetEnvWrapper(gym.Wrapper):
         Returns the observation
         """
         if state_and_obs is None:
-            raise ValueError("The provided state is None. Please provide a valid state.")
+            raise ValueError(
+                "The provided state is None. Please provide a valid state."
+            )
 
         obs = state_and_obs["observation"]
         state = state_and_obs["state"]

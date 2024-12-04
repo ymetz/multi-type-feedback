@@ -53,7 +53,9 @@ def test_save_load(tmp_path, model_class):
     model.learn(total_timesteps=500)
 
     env.reset()
-    observations = np.concatenate([env.step([env.action_space.sample()])[0] for _ in range(10)], axis=0)
+    observations = np.concatenate(
+        [env.step([env.action_space.sample()])[0] for _ in range(10)], axis=0
+    )
 
     # Get parameters of different objects
     # deepcopy to avoid referencing to tensors we are about to modify
@@ -62,7 +64,9 @@ def test_save_load(tmp_path, model_class):
     # Test different error cases of set_parameters.
     # Test that invalid object names throw errors
     invalid_object_params = deepcopy(original_params)
-    invalid_object_params["I_should_not_be_a_valid_object"] = "and_I_am_an_invalid_tensor"
+    invalid_object_params["I_should_not_be_a_valid_object"] = (
+        "and_I_am_an_invalid_tensor"
+    )
     with pytest.raises(ValueError):
         model.set_parameters(invalid_object_params, exact_match=True)
     with pytest.raises(ValueError):
@@ -96,7 +100,8 @@ def test_save_load(tmp_path, model_class):
         else:
             # Again, skip the last item in state-dict
             random_params[object_name] = OrderedDict(
-                (param_name, th.rand_like(param)) for param_name, param in list(params.items())[:-1]
+                (param_name, th.rand_like(param))
+                for param_name, param in list(params.items())[:-1]
             )
 
     # Update model parameters with the new random values
@@ -134,7 +139,9 @@ def test_save_load(tmp_path, model_class):
 
     # Check if the model loads as expected for every possible choice of device:
     for device in ["auto", "cpu", "cuda"]:
-        model = model_class.load(str(tmp_path / "test_save.zip"), env=env, device=device)
+        model = model_class.load(
+            str(tmp_path / "test_save.zip"), env=env, device=device
+        )
 
         # check if the model was loaded to the correct device
         assert model.device.type == get_device(device).type
@@ -149,9 +156,12 @@ def test_save_load(tmp_path, model_class):
             if "optim" in object_name:
                 continue
             for key in params[object_name]:
-                assert new_params[object_name][key].device.type == get_device(device).type
+                assert (
+                    new_params[object_name][key].device.type == get_device(device).type
+                )
                 assert th.allclose(
-                    params[object_name][key].to("cpu"), new_params[object_name][key].to("cpu")
+                    params[object_name][key].to("cpu"),
+                    new_params[object_name][key].to("cpu"),
                 ), "Model parameters not the same after save and load."
 
         # check if model still selects the same actions
@@ -221,7 +231,9 @@ def test_set_env(tmp_path, model_class):
     del model
     # Check that we can keep the number of timesteps after loading
     # Here the env kept its state so we don't have to reset
-    model = model_class.load(tmp_path / "test_save.zip", env=current_env, force_reset=False)
+    model = model_class.load(
+        tmp_path / "test_save.zip", env=current_env, force_reset=False
+    )
     assert model._last_obs is not None
     model.learn(total_timesteps=64, reset_num_timesteps=False)
     assert model.num_timesteps == 3 * 64
@@ -284,7 +296,12 @@ def test_exclude_include_saved_params(tmp_path, model_class):
 
 
 def test_save_load_pytorch_var(tmp_path):
-    model = SAC("MlpPolicy", "Pendulum-v1", seed=3, policy_kwargs=dict(net_arch=[64], n_critics=1))
+    model = SAC(
+        "MlpPolicy",
+        "Pendulum-v1",
+        seed=3,
+        policy_kwargs=dict(net_arch=[64], n_critics=1),
+    )
     model.learn(200)
     save_path = str(tmp_path / "sac_pendulum")
     model.save(save_path)
@@ -301,7 +318,13 @@ def test_save_load_pytorch_var(tmp_path):
     assert not th.allclose(log_ent_coef_before, log_ent_coef_after)
 
     # With a fixed entropy coef
-    model = SAC("MlpPolicy", "Pendulum-v1", seed=3, ent_coef=0.01, policy_kwargs=dict(net_arch=[64], n_critics=1))
+    model = SAC(
+        "MlpPolicy",
+        "Pendulum-v1",
+        seed=3,
+        ent_coef=0.01,
+        policy_kwargs=dict(net_arch=[64], n_critics=1),
+    )
     model.learn(200)
     save_path = str(tmp_path / "sac_pendulum")
     model.save(save_path)
@@ -336,7 +359,9 @@ def test_save_load_env_cnn(tmp_path, model_class):
     model = model_class("CnnPolicy", env, **kwargs).learn(100)
     model.save(tmp_path / "test_save")
     # Test loading with env and continuing training
-    model = model_class.load(str(tmp_path / "test_save.zip"), env=env, **kwargs).learn(100)
+    model = model_class.load(str(tmp_path / "test_save.zip"), env=env, **kwargs).learn(
+        100
+    )
     # clear file from os
     os.remove(tmp_path / "test_save.zip")
 
@@ -345,7 +370,9 @@ def test_save_load_env_cnn(tmp_path, model_class):
         del model.policy.pi_features_extractor
         model.save(tmp_path / "test_save")
         with pytest.warns(UserWarning):
-            model_class.load(str(tmp_path / "test_save.zip"), env=env, **kwargs).learn(100)
+            model_class.load(str(tmp_path / "test_save.zip"), env=env, **kwargs).learn(
+                100
+            )
         os.remove(tmp_path / "test_save.zip")
 
 
@@ -354,7 +381,11 @@ def test_save_load_replay_buffer(tmp_path, model_class):
     path = pathlib.Path(tmp_path / "logs/replay_buffer.pkl")
     path.parent.mkdir(exist_ok=True, parents=True)  # to not raise a warning
     model = model_class(
-        "MlpPolicy", select_env(model_class), buffer_size=1000, policy_kwargs=dict(net_arch=[64]), learning_starts=200
+        "MlpPolicy",
+        select_env(model_class),
+        buffer_size=1000,
+        policy_kwargs=dict(net_arch=[64]),
+        learning_starts=200,
     )
     model.learn(300)
     old_replay_buffer = deepcopy(model.replay_buffer)
@@ -372,7 +403,9 @@ def test_save_load_replay_buffer(tmp_path, model_class):
     assert np.allclose(old_replay_buffer.rewards, model.replay_buffer.rewards)
     assert np.allclose(old_replay_buffer.dones, model.replay_buffer.dones)
     assert np.allclose(old_replay_buffer.timeouts, model.replay_buffer.timeouts)
-    infos = [[{"TimeLimit.truncated": truncated}] for truncated in old_replay_buffer.timeouts]
+    infos = [
+        [{"TimeLimit.truncated": truncated}] for truncated in old_replay_buffer.timeouts
+    ]
 
     # test extending replay buffer
     model.replay_buffer.extend(
@@ -422,7 +455,9 @@ def test_warn_buffer(recwarn, model_class, optimize_memory_usage):
     if optimize_memory_usage:
         assert len(recwarn) == 1
         warning = recwarn.pop(UserWarning)
-        assert "The last trajectory in the replay buffer will be truncated" in str(warning.message)
+        assert "The last trajectory in the replay buffer will be truncated" in str(
+            warning.message
+        )
     else:
         assert len(recwarn) == 0
 
@@ -450,9 +485,13 @@ def test_save_load_policy(tmp_path, model_class, policy_str, use_sde):
             # Avoid memory error when using replay buffer
             # Reduce the size of the features
             kwargs = dict(
-                buffer_size=250, learning_starts=100, policy_kwargs=dict(features_extractor_kwargs=dict(features_dim=32))
+                buffer_size=250,
+                learning_starts=100,
+                policy_kwargs=dict(features_extractor_kwargs=dict(features_dim=32)),
             )
-        env = FakeImageEnv(screen_height=40, screen_width=40, n_channels=2, discrete=model_class == DQN)
+        env = FakeImageEnv(
+            screen_height=40, screen_width=40, n_channels=2, discrete=model_class == DQN
+        )
 
     if use_sde:
         kwargs["use_sde"] = True
@@ -464,7 +503,9 @@ def test_save_load_policy(tmp_path, model_class, policy_str, use_sde):
     model.learn(total_timesteps=300)
 
     env.reset()
-    observations = np.concatenate([env.step([env.action_space.sample()])[0] for _ in range(10)], axis=0)
+    observations = np.concatenate(
+        [env.step([env.action_space.sample()])[0] for _ in range(10)], axis=0
+    )
 
     policy = model.policy
     policy_class = policy.__class__
@@ -477,7 +518,9 @@ def test_save_load_policy(tmp_path, model_class, policy_str, use_sde):
     params = deepcopy(policy.state_dict())
 
     # Modify all parameters to be random values
-    random_params = {param_name: th.rand_like(param) for param_name, param in params.items()}
+    random_params = {
+        param_name: th.rand_like(param) for param_name, param in params.items()
+    }
 
     # Update model parameters with the new random values
     policy.load_state_dict(random_params)
@@ -485,7 +528,9 @@ def test_save_load_policy(tmp_path, model_class, policy_str, use_sde):
     new_params = policy.state_dict()
     # Check that all params are different now
     for k in params:
-        assert not th.allclose(params[k], new_params[k]), "Parameters did not change as expected."
+        assert not th.allclose(
+            params[k], new_params[k]
+        ), "Parameters did not change as expected."
 
     params = new_params
 
@@ -512,7 +557,9 @@ def test_save_load_policy(tmp_path, model_class, policy_str, use_sde):
 
     # Check that all params are the same as before save load procedure now
     for key in params:
-        assert th.allclose(params[key], new_params[key]), "Policy parameters not the same after save and load."
+        assert th.allclose(
+            params[key], new_params[key]
+        ), "Policy parameters not the same after save and load."
 
     # check if model still selects the same actions
     new_selected_actions, _ = policy.predict(observations, deterministic=True)
@@ -550,7 +597,9 @@ def test_save_load_q_net(tmp_path, model_class, policy_str):
                 learning_starts=100,
                 policy_kwargs=dict(features_extractor_kwargs=dict(features_dim=32)),
             )
-        env = FakeImageEnv(screen_height=40, screen_width=40, n_channels=2, discrete=model_class == DQN)
+        env = FakeImageEnv(
+            screen_height=40, screen_width=40, n_channels=2, discrete=model_class == DQN
+        )
 
     env = DummyVecEnv([lambda: env])
 
@@ -559,7 +608,9 @@ def test_save_load_q_net(tmp_path, model_class, policy_str):
     model.learn(total_timesteps=300)
 
     env.reset()
-    observations = np.concatenate([env.step([env.action_space.sample()])[0] for _ in range(10)], axis=0)
+    observations = np.concatenate(
+        [env.step([env.action_space.sample()])[0] for _ in range(10)], axis=0
+    )
 
     q_net = model.q_net
     q_net_class = q_net.__class__
@@ -568,7 +619,9 @@ def test_save_load_q_net(tmp_path, model_class, policy_str):
     params = deepcopy(q_net.state_dict())
 
     # Modify all parameters to be random values
-    random_params = {param_name: th.rand_like(param) for param_name, param in params.items()}
+    random_params = {
+        param_name: th.rand_like(param) for param_name, param in params.items()
+    }
 
     # Update model parameters with the new random values
     q_net.load_state_dict(random_params)
@@ -576,7 +629,9 @@ def test_save_load_q_net(tmp_path, model_class, policy_str):
     new_params = q_net.state_dict()
     # Check that all params are different now
     for k in params:
-        assert not th.allclose(params[k], new_params[k]), "Parameters did not change as expected."
+        assert not th.allclose(
+            params[k], new_params[k]
+        ), "Parameters did not change as expected."
 
     params = new_params
 
@@ -595,7 +650,9 @@ def test_save_load_q_net(tmp_path, model_class, policy_str):
 
     # Check that all params are the same as before save load procedure now
     for key in params:
-        assert th.allclose(params[key], new_params[key]), "Policy parameters not the same after save and load."
+        assert th.allclose(
+            params[key], new_params[key]
+        ), "Policy parameters not the same after save and load."
 
     # check if model still selects the same actions
     new_selected_actions, _ = q_net.predict(observations, deterministic=True)
@@ -636,11 +693,19 @@ def test_open_file_str_pathlib(tmp_path, pathtype):
         save_to_pkl(fp1, "foo")
     assert fp1.closed
     with warnings.catch_warnings(record=True) as record:
-        assert load_from_pkl(open_path(pathtype(f"{tmp_path}/t2"), "r", suffix="pkl")) == "foo"
+        assert (
+            load_from_pkl(open_path(pathtype(f"{tmp_path}/t2"), "r", suffix="pkl"))
+            == "foo"
+        )
     assert len(record) == 0
 
     with warnings.catch_warnings(record=True) as record:
-        assert load_from_pkl(open_path(pathtype(f"{tmp_path}/t2"), "r", suffix="pkl", verbose=2)) == "foo"
+        assert (
+            load_from_pkl(
+                open_path(pathtype(f"{tmp_path}/t2"), "r", suffix="pkl", verbose=2)
+            )
+            == "foo"
+        )
     assert len(record) == 1
 
     fp = pathlib.Path(f"{tmp_path}/t2").open("w")
@@ -804,7 +869,9 @@ def test_save_load_net_arch_none(tmp_path):
     Test that the model is loaded correctly when net_arch is manually set to None.
     See GH#1928
     """
-    PPO("MlpPolicy", "CartPole-v1", policy_kwargs=dict(net_arch=None)).save(tmp_path / "ppo.zip")
+    PPO("MlpPolicy", "CartPole-v1", policy_kwargs=dict(net_arch=None)).save(
+        tmp_path / "ppo.zip"
+    )
     model = PPO.load(tmp_path / "ppo.zip")
     # None has been replaced by the default net arch
     assert model.policy.net_arch is not None

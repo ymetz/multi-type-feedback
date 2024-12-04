@@ -24,17 +24,36 @@ from stable_baselines3.common.torch_layers import create_mlp
 )
 @pytest.mark.parametrize("model_class", [A2C, PPO])
 def test_flexible_mlp(model_class, net_arch):
-    if isinstance(net_arch, list) and len(net_arch) > 0 and isinstance(net_arch[0], dict):
+    if (
+        isinstance(net_arch, list)
+        and len(net_arch) > 0
+        and isinstance(net_arch[0], dict)
+    ):
         with pytest.warns(UserWarning):
-            _ = model_class("MlpPolicy", "CartPole-v1", policy_kwargs=dict(net_arch=net_arch), n_steps=64).learn(300)
+            _ = model_class(
+                "MlpPolicy",
+                "CartPole-v1",
+                policy_kwargs=dict(net_arch=net_arch),
+                n_steps=64,
+            ).learn(300)
     else:
-        _ = model_class("MlpPolicy", "CartPole-v1", policy_kwargs=dict(net_arch=net_arch), n_steps=64).learn(300)
+        _ = model_class(
+            "MlpPolicy",
+            "CartPole-v1",
+            policy_kwargs=dict(net_arch=net_arch),
+            n_steps=64,
+        ).learn(300)
 
 
 @pytest.mark.parametrize("net_arch", [[], [4], [4, 4], dict(qf=[8], pi=[8, 4])])
 @pytest.mark.parametrize("model_class", [SAC, TD3])
 def test_custom_offpolicy(model_class, net_arch):
-    _ = model_class("MlpPolicy", "Pendulum-v1", policy_kwargs=dict(net_arch=net_arch), learning_starts=100).learn(300)
+    _ = model_class(
+        "MlpPolicy",
+        "Pendulum-v1",
+        policy_kwargs=dict(net_arch=net_arch),
+        learning_starts=100,
+    ).learn(300)
 
 
 @pytest.mark.parametrize("model_class", [A2C, DQN, PPO, SAC, TD3])
@@ -52,8 +71,12 @@ def test_custom_optimizer(model_class, optimizer_kwargs):
     elif model_class in {A2C, PPO}:
         kwargs = dict(n_steps=64)
 
-    policy_kwargs = dict(optimizer_class=th.optim.AdamW, optimizer_kwargs=optimizer_kwargs, net_arch=[32])
-    _ = model_class("MlpPolicy", env_id, policy_kwargs=policy_kwargs, **kwargs).learn(300)
+    policy_kwargs = dict(
+        optimizer_class=th.optim.AdamW, optimizer_kwargs=optimizer_kwargs, net_arch=[32]
+    )
+    _ = model_class("MlpPolicy", env_id, policy_kwargs=policy_kwargs, **kwargs).learn(
+        300
+    )
 
 
 def test_tf_like_rmsprop_optimizer():
@@ -63,7 +86,9 @@ def test_tf_like_rmsprop_optimizer():
 
 def test_dqn_custom_policy():
     policy_kwargs = dict(optimizer_class=RMSpropTFLike, net_arch=[32])
-    _ = DQN("MlpPolicy", "CartPole-v1", policy_kwargs=policy_kwargs, learning_starts=100).learn(300)
+    _ = DQN(
+        "MlpPolicy", "CartPole-v1", policy_kwargs=policy_kwargs, learning_starts=100
+    ).learn(300)
 
 
 def test_create_mlp():
@@ -98,7 +123,13 @@ def test_create_mlp():
     # Using pre-linear and post-linear modules
     pre_linear = [nn.BatchNorm1d]
     post_linear = [nn.LayerNorm]
-    net = create_mlp(6, 2, net_arch=[8, 12], pre_linear_modules=pre_linear, post_linear_modules=post_linear)
+    net = create_mlp(
+        6,
+        2,
+        net_arch=[8, 12],
+        pre_linear_modules=pre_linear,
+        post_linear_modules=post_linear,
+    )
     # assert net == [nn.BatchNorm1d(6), nn.Linear(6, 8), nn.LayerNorm(8), nn.ReLU()
     #  nn.BatchNorm1d(6), nn.Linear(8, 12), nn.LayerNorm(12), nn.ReLU(),
     # nn.BatchNorm1d(12),  nn.Linear(12, 2)] # Last layer does not have post_linear

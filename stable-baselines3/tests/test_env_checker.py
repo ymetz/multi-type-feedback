@@ -12,7 +12,9 @@ class ActionDictTestEnv(gym.Env):
     metadata = {"render_modes": ["human"]}
     render_mode = None
 
-    action_space = spaces.Dict({"position": spaces.Discrete(1), "velocity": spaces.Discrete(1)})
+    action_space = spaces.Dict(
+        {"position": spaces.Discrete(1), "velocity": spaces.Discrete(1)}
+    )
     observation_space = spaces.Box(low=-1.0, high=2.0, shape=(3,), dtype=np.float32)
 
     def step(self, action):
@@ -64,7 +66,12 @@ def test_check_env_sequence_obs():
     [
         # Above upper bound
         (
-            spaces.Box(low=np.array([0.0, 0.0, 0.0]), high=np.array([2.0, 1.0, 1.0]), shape=(3,), dtype=np.float32),
+            spaces.Box(
+                low=np.array([0.0, 0.0, 0.0]),
+                high=np.array([2.0, 1.0, 1.0]),
+                shape=(3,),
+                dtype=np.float32,
+            ),
             np.array([1.0, 1.5, 0.5], dtype=np.float32),
             r"Expected: 0\.0 <= obs\[1] <= 1\.0, actual value: 1\.5",
         ),
@@ -77,7 +84,12 @@ def test_check_env_sequence_obs():
         ),
         # Below lower bound
         (
-            spaces.Box(low=np.array([0.0, -10.0, 0.0]), high=np.array([2.0, 1.0, 1.0]), shape=(3,), dtype=np.float32),
+            spaces.Box(
+                low=np.array([0.0, -10.0, 0.0]),
+                high=np.array([2.0, 1.0, 1.0]),
+                shape=(3,),
+                dtype=np.float32,
+            ),
             np.array([-1.0, 1.5, 0.5], dtype=np.float32),
             r"Expected: 0\.0 <= obs\[0] <= 2\.0, actual value: -1\.0",
         ),
@@ -101,7 +113,9 @@ def test_check_env_sequence_obs():
         ),
         # Wrong shape (dict obs)
         (
-            spaces.Dict({"obs": spaces.Box(low=-1.0, high=2.0, shape=(3,), dtype=np.float32)}),
+            spaces.Dict(
+                {"obs": spaces.Box(low=-1.0, high=2.0, shape=(3,), dtype=np.float32)}
+            ),
             {"obs": np.array([[1.0, 1.5, 0.5], [1.0, 1.5, 0.5]], dtype=np.float32)},
             r"Error while checking key=obs.*Expected: \(3,\), actual shape: \(2, 3\)",
         ),
@@ -162,7 +176,9 @@ class LimitedStepsTestEnv(gym.Env):
         self._steps_called = 0
         self._terminated = False
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[int, Dict]:
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[Dict] = None
+    ) -> Tuple[int, Dict]:
         super().reset(seed=seed)
 
         self._steps_called = 0

@@ -53,7 +53,9 @@ def clone_batch_norm_stats(batch_norm: nn.BatchNorm1d) -> (th.Tensor, th.Tensor)
     return batch_norm.bias.clone(), batch_norm.running_mean.clone()
 
 
-def clone_dqn_batch_norm_stats(model: DQN) -> (th.Tensor, th.Tensor, th.Tensor, th.Tensor):
+def clone_dqn_batch_norm_stats(
+    model: DQN,
+) -> (th.Tensor, th.Tensor, th.Tensor, th.Tensor):
     """
     Clone the bias and running mean from the Q-network and target network.
 
@@ -64,14 +66,25 @@ def clone_dqn_batch_norm_stats(model: DQN) -> (th.Tensor, th.Tensor, th.Tensor, 
     q_net_bias, q_net_running_mean = clone_batch_norm_stats(q_net_batch_norm)
 
     q_net_target_batch_norm = model.policy.q_net_target.features_extractor.batch_norm
-    q_net_target_bias, q_net_target_running_mean = clone_batch_norm_stats(q_net_target_batch_norm)
+    q_net_target_bias, q_net_target_running_mean = clone_batch_norm_stats(
+        q_net_target_batch_norm
+    )
 
     return q_net_bias, q_net_running_mean, q_net_target_bias, q_net_target_running_mean
 
 
 def clone_td3_batch_norm_stats(
     model: TD3,
-) -> (th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor, th.Tensor):
+) -> (
+    th.Tensor,
+    th.Tensor,
+    th.Tensor,
+    th.Tensor,
+    th.Tensor,
+    th.Tensor,
+    th.Tensor,
+    th.Tensor,
+):
     """
     Clone the bias and running mean from the actor and critic networks and actor-target and critic-target networks.
 
@@ -85,10 +98,14 @@ def clone_td3_batch_norm_stats(
     critic_bias, critic_running_mean = clone_batch_norm_stats(critic_batch_norm)
 
     actor_target_batch_norm = model.actor_target.features_extractor.batch_norm
-    actor_target_bias, actor_target_running_mean = clone_batch_norm_stats(actor_target_batch_norm)
+    actor_target_bias, actor_target_running_mean = clone_batch_norm_stats(
+        actor_target_batch_norm
+    )
 
     critic_target_batch_norm = model.critic_target.features_extractor.batch_norm
-    critic_target_bias, critic_target_running_mean = clone_batch_norm_stats(critic_target_batch_norm)
+    critic_target_bias, critic_target_running_mean = clone_batch_norm_stats(
+        critic_target_batch_norm
+    )
 
     return (
         actor_bias,
@@ -118,9 +135,18 @@ def clone_sac_batch_norm_stats(
     critic_bias, critic_running_mean = clone_batch_norm_stats(critic_batch_norm)
 
     critic_target_batch_norm = model.critic_target.features_extractor.batch_norm
-    critic_target_bias, critic_target_running_mean = clone_batch_norm_stats(critic_target_batch_norm)
+    critic_target_bias, critic_target_running_mean = clone_batch_norm_stats(
+        critic_target_batch_norm
+    )
 
-    return (actor_bias, actor_running_mean, critic_bias, critic_running_mean, critic_target_bias, critic_target_running_mean)
+    return (
+        actor_bias,
+        actor_running_mean,
+        critic_bias,
+        critic_running_mean,
+        critic_target_bias,
+        critic_target_running_mean,
+    )
 
 
 def clone_on_policy_batch_norm(model: Union[A2C, PPO]) -> (th.Tensor, th.Tensor):
@@ -140,7 +166,9 @@ def test_dqn_train_with_batch_norm():
     model = DQN(
         "MlpPolicy",
         "CartPole-v1",
-        policy_kwargs=dict(net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor),
+        policy_kwargs=dict(
+            net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor
+        ),
         learning_starts=0,
         seed=1,
         tau=0.0,  # do not clone the target
@@ -181,7 +209,9 @@ def test_td3_train_with_batch_norm():
     model = TD3(
         "MlpPolicy",
         "Pendulum-v1",
-        policy_kwargs=dict(net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor),
+        policy_kwargs=dict(
+            net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor
+        ),
         learning_starts=0,
         tau=0,  # do not copy the target
         seed=1,
@@ -230,7 +260,9 @@ def test_sac_train_with_batch_norm():
     model = SAC(
         "MlpPolicy",
         "Pendulum-v1",
-        policy_kwargs=dict(net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor),
+        policy_kwargs=dict(
+            net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor
+        ),
         learning_starts=0,
         tau=0,  # do not copy the target
         seed=1,
@@ -261,7 +293,9 @@ def test_sac_train_with_batch_norm():
 
     assert ~th.isclose(critic_bias_before, critic_bias_after).all()
     # Running stat should be copied even when tau=0
-    assert th.isclose(critic_running_mean_before, critic_target_running_mean_before).all()
+    assert th.isclose(
+        critic_running_mean_before, critic_target_running_mean_before
+    ).all()
 
     assert th.isclose(critic_target_bias_before, critic_target_bias_after).all()
     # Running stat should be copied even when tau=0
@@ -274,7 +308,9 @@ def test_a2c_ppo_train_with_batch_norm(model_class, env_id):
     model = model_class(
         "MlpPolicy",
         env_id,
-        policy_kwargs=dict(net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor),
+        policy_kwargs=dict(
+            net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor
+        ),
         seed=1,
     )
 
@@ -301,7 +337,9 @@ def test_offpolicy_collect_rollout_batch_norm(model_class):
     model = model_class(
         "MlpPolicy",
         env_id,
-        policy_kwargs=dict(net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor),
+        policy_kwargs=dict(
+            net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor
+        ),
         learning_starts=learning_starts,
         seed=1,
         gradient_steps=0,
@@ -315,7 +353,9 @@ def test_offpolicy_collect_rollout_batch_norm(model_class):
     batch_norm_stats_after = clone_helper(model)
 
     # No change in batch norm params
-    for param_before, param_after in zip(batch_norm_stats_before, batch_norm_stats_after):
+    for param_before, param_after in zip(
+        batch_norm_stats_before, batch_norm_stats_after
+    ):
         assert th.isclose(param_before, param_after).all()
 
 
@@ -325,7 +365,9 @@ def test_a2c_ppo_collect_rollouts_with_batch_norm(model_class, env_id):
     model = model_class(
         "MlpPolicy",
         env_id,
-        policy_kwargs=dict(net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor),
+        policy_kwargs=dict(
+            net_arch=[16, 16], features_extractor_class=FlattenBatchNormDropoutExtractor
+        ),
         seed=1,
         n_steps=64,
     )
@@ -335,7 +377,12 @@ def test_a2c_ppo_collect_rollouts_with_batch_norm(model_class, env_id):
     total_timesteps, callback = model._setup_learn(total_timesteps=2 * 64)
 
     for _ in range(2):
-        model.collect_rollouts(model.get_env(), callback, model.rollout_buffer, n_rollout_steps=model.n_steps)
+        model.collect_rollouts(
+            model.get_env(),
+            callback,
+            model.rollout_buffer,
+            n_rollout_steps=model.n_steps,
+        )
 
     bias_after, running_mean_after = clone_on_policy_batch_norm(model)
 
@@ -364,7 +411,9 @@ def test_predict_with_dropout_batch_norm(model_class, env_id):
         features_extractor_class=FlattenBatchNormDropoutExtractor,
         net_arch=[16, 16],
     )
-    model = model_class("MlpPolicy", env_id, policy_kwargs=policy_kwargs, verbose=1, **model_kwargs)
+    model = model_class(
+        "MlpPolicy", env_id, policy_kwargs=policy_kwargs, verbose=1, **model_kwargs
+    )
 
     batch_norm_stats_before = clone_helper(model)
 
@@ -378,5 +427,7 @@ def test_predict_with_dropout_batch_norm(model_class, env_id):
     batch_norm_stats_after = clone_helper(model)
 
     # No change in batch norm params
-    for param_before, param_after in zip(batch_norm_stats_before, batch_norm_stats_after):
+    for param_before, param_after in zip(
+        batch_norm_stats_before, batch_norm_stats_after
+    ):
         assert th.isclose(param_before, param_after).all()

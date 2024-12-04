@@ -22,7 +22,13 @@ except ImportError:
     SummaryWriter = None  # type: ignore[misc, assignment]
 
 from stable_baselines3.common.logger import Logger, configure
-from stable_baselines3.common.type_aliases import GymEnv, Schedule, TensorDict, TrainFreq, TrainFrequencyUnit
+from stable_baselines3.common.type_aliases import (
+    GymEnv,
+    Schedule,
+    TensorDict,
+    TrainFreq,
+    TrainFrequencyUnit,
+)
 
 
 def set_random_seed(seed: int, using_cuda: bool = False) -> None:
@@ -173,7 +179,11 @@ def get_latest_run_id(log_path: str = "", log_name: str = "") -> int:
     for path in glob.glob(os.path.join(log_path, f"{glob.escape(log_name)}_[0-9]*")):
         file_name = path.split(os.sep)[-1]
         ext = file_name.split("_")[-1]
-        if log_name == "_".join(file_name.split("_")[:-1]) and ext.isdigit() and int(ext) > max_run_id:
+        if (
+            log_name == "_".join(file_name.split("_")[:-1])
+            and ext.isdigit()
+            and int(ext) > max_run_id
+        ):
             max_run_id = int(ext)
     return max_run_id
 
@@ -198,7 +208,9 @@ def configure_logger(
     save_path, format_strings = None, ["stdout"]
 
     if tensorboard_log is not None and SummaryWriter is None:
-        raise ImportError("Trying to log data to tensorboard but tensorboard is not installed.")
+        raise ImportError(
+            "Trying to log data to tensorboard but tensorboard is not installed."
+        )
 
     if tensorboard_log is not None and SummaryWriter is not None:
         latest_run_id = get_latest_run_id(tensorboard_log, tb_log_name)
@@ -215,7 +227,9 @@ def configure_logger(
     return configure(save_path, format_strings=format_strings)
 
 
-def check_for_correct_spaces(env: GymEnv, observation_space: spaces.Space, action_space: spaces.Space) -> None:
+def check_for_correct_spaces(
+    env: GymEnv, observation_space: spaces.Space, action_space: spaces.Space
+) -> None:
     """
     Checks that the environment has same spaces as provided ones. Used by BaseAlgorithm to check if
     spaces match after loading the model with given env.
@@ -228,9 +242,13 @@ def check_for_correct_spaces(env: GymEnv, observation_space: spaces.Space, actio
     :param action_space: Action space to check against
     """
     if observation_space != env.observation_space:
-        raise ValueError(f"Observation spaces do not match: {observation_space} != {env.observation_space}")
+        raise ValueError(
+            f"Observation spaces do not match: {observation_space} != {env.observation_space}"
+        )
     if action_space != env.action_space:
-        raise ValueError(f"Action spaces do not match: {action_space} != {env.action_space}")
+        raise ValueError(
+            f"Action spaces do not match: {action_space} != {env.action_space}"
+        )
 
 
 def check_shape_equal(space1: spaces.Space, space2: spaces.Space) -> None:
@@ -244,14 +262,18 @@ def check_shape_equal(space1: spaces.Space, space2: spaces.Space) -> None:
     """
     if isinstance(space1, spaces.Dict):
         assert isinstance(space2, spaces.Dict), "spaces must be of the same type"
-        assert space1.spaces.keys() == space2.spaces.keys(), "spaces must have the same keys"
+        assert (
+            space1.spaces.keys() == space2.spaces.keys()
+        ), "spaces must have the same keys"
         for key in space1.spaces.keys():
             check_shape_equal(space1.spaces[key], space2.spaces[key])
     elif isinstance(space1, spaces.Box):
         assert space1.shape == space2.shape, "spaces must have the same shape"
 
 
-def is_vectorized_box_observation(observation: np.ndarray, observation_space: spaces.Box) -> bool:
+def is_vectorized_box_observation(
+    observation: np.ndarray, observation_space: spaces.Box
+) -> bool:
     """
     For box observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -268,11 +290,15 @@ def is_vectorized_box_observation(observation: np.ndarray, observation_space: sp
         raise ValueError(
             f"Error: Unexpected observation shape {observation.shape} for "
             + f"Box environment, please use {observation_space.shape} "
-            + "or (n_env, {}) for the observation shape.".format(", ".join(map(str, observation_space.shape)))
+            + "or (n_env, {}) for the observation shape.".format(
+                ", ".join(map(str, observation_space.shape))
+            )
         )
 
 
-def is_vectorized_discrete_observation(observation: Union[int, np.ndarray], observation_space: spaces.Discrete) -> bool:
+def is_vectorized_discrete_observation(
+    observation: Union[int, np.ndarray], observation_space: spaces.Discrete
+) -> bool:
     """
     For discrete observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -281,7 +307,9 @@ def is_vectorized_discrete_observation(observation: Union[int, np.ndarray], obse
     :param observation_space: the observation space
     :return: whether the given observation is vectorized or not
     """
-    if isinstance(observation, int) or observation.shape == ():  # A numpy array of a number, has shape empty tuple '()'
+    if (
+        isinstance(observation, int) or observation.shape == ()
+    ):  # A numpy array of a number, has shape empty tuple '()'
         return False
     elif len(observation.shape) == 1:
         return True
@@ -292,7 +320,9 @@ def is_vectorized_discrete_observation(observation: Union[int, np.ndarray], obse
         )
 
 
-def is_vectorized_multidiscrete_observation(observation: np.ndarray, observation_space: spaces.MultiDiscrete) -> bool:
+def is_vectorized_multidiscrete_observation(
+    observation: np.ndarray, observation_space: spaces.MultiDiscrete
+) -> bool:
     """
     For multidiscrete observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -303,7 +333,9 @@ def is_vectorized_multidiscrete_observation(observation: np.ndarray, observation
     """
     if observation.shape == (len(observation_space.nvec),):
         return False
-    elif len(observation.shape) == 2 and observation.shape[1] == len(observation_space.nvec):
+    elif len(observation.shape) == 2 and observation.shape[1] == len(
+        observation_space.nvec
+    ):
         return True
     else:
         raise ValueError(
@@ -313,7 +345,9 @@ def is_vectorized_multidiscrete_observation(observation: np.ndarray, observation
         )
 
 
-def is_vectorized_multibinary_observation(observation: np.ndarray, observation_space: spaces.MultiBinary) -> bool:
+def is_vectorized_multibinary_observation(
+    observation: np.ndarray, observation_space: spaces.MultiBinary
+) -> bool:
     """
     For multibinary observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -324,7 +358,10 @@ def is_vectorized_multibinary_observation(observation: np.ndarray, observation_s
     """
     if observation.shape == observation_space.shape:
         return False
-    elif len(observation.shape) == len(observation_space.shape) + 1 and observation.shape[1:] == observation_space.shape:
+    elif (
+        len(observation.shape) == len(observation_space.shape) + 1
+        and observation.shape[1:] == observation_space.shape
+    ):
         return True
     else:
         raise ValueError(
@@ -334,7 +371,9 @@ def is_vectorized_multibinary_observation(observation: np.ndarray, observation_s
         )
 
 
-def is_vectorized_dict_observation(observation: np.ndarray, observation_space: spaces.Dict) -> bool:
+def is_vectorized_dict_observation(
+    observation: np.ndarray, observation_space: spaces.Dict
+) -> bool:
     """
     For dict observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -378,7 +417,9 @@ def is_vectorized_dict_observation(observation: np.ndarray, observation_space: s
         )
 
 
-def is_vectorized_observation(observation: Union[int, np.ndarray], observation_space: spaces.Space) -> bool:
+def is_vectorized_observation(
+    observation: Union[int, np.ndarray], observation_space: spaces.Space
+) -> bool:
     """
     For every observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -401,7 +442,9 @@ def is_vectorized_observation(observation: Union[int, np.ndarray], observation_s
             return is_vec_obs_func(observation, observation_space)  # type: ignore[operator]
     else:
         # for-else happens if no break is called
-        raise ValueError(f"Error: Cannot determine if the observation is vectorized with the space type {observation_space}.")
+        raise ValueError(
+            f"Error: Cannot determine if the observation is vectorized with the space type {observation_space}."
+        )
 
 
 def safe_mean(arr: Union[np.ndarray, list, deque]) -> float:
@@ -415,7 +458,9 @@ def safe_mean(arr: Union[np.ndarray, list, deque]) -> float:
     return np.nan if len(arr) == 0 else float(np.mean(arr))  # type: ignore[arg-type]
 
 
-def get_parameters_by_name(model: th.nn.Module, included_names: Iterable[str]) -> List[th.Tensor]:
+def get_parameters_by_name(
+    model: th.nn.Module, included_names: Iterable[str]
+) -> List[th.Tensor]:
     """
     Extract parameters from the state dict of ``model``
     if the name contains one of the strings in ``included_names``.
@@ -425,7 +470,11 @@ def get_parameters_by_name(model: th.nn.Module, included_names: Iterable[str]) -
     :return: List of parameters values (Pytorch tensors)
         that matches the queried names.
     """
-    return [param for name, param in model.state_dict().items() if any([key in name for key in included_names])]
+    return [
+        param
+        for name, param in model.state_dict().items()
+        if any([key in name for key in included_names])
+    ]
 
 
 def zip_strict(*iterables: Iterable) -> Iterable:
@@ -473,7 +522,9 @@ def polyak_update(
             th.add(target_param.data, param.data, alpha=tau, out=target_param.data)
 
 
-def obs_as_tensor(obs: Union[np.ndarray, Dict[str, np.ndarray]], device: th.device) -> Union[th.Tensor, TensorDict]:
+def obs_as_tensor(
+    obs: Union[np.ndarray, Dict[str, np.ndarray]], device: th.device
+) -> Union[th.Tensor, TensorDict]:
     """
     Moves the observation to the given device.
 

@@ -10,7 +10,9 @@ from gym3.interop import _vt2space
 from gym3.types import multimap
 from gymnasium import spaces
 from gymnasium.core import ObsType
-from sb3_contrib.common.wrappers import TimeFeatureWrapper  # noqa: F401 (backward compatibility)
+from sb3_contrib.common.wrappers import (
+    TimeFeatureWrapper,
+)  # noqa: F401 (backward compatibility)
 from stable_baselines3.common.type_aliases import GymResetReturn, GymStepReturn, GymObs
 
 
@@ -26,7 +28,9 @@ class TruncatedOnSuccessWrapper(gym.Wrapper):
         self.n_successes = n_successes
         self.current_successes = 0
 
-    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> GymResetReturn:
+    def reset(
+        self, seed: Optional[int] = None, options: Optional[dict] = None
+    ) -> GymResetReturn:
         self.current_successes = 0
         assert options is None, "Options not supported for now"
         return self.env.reset(seed=seed)
@@ -60,10 +64,16 @@ class ActionNoiseWrapper(gym.Wrapper[ObsType, np.ndarray, ObsType, np.ndarray]):
         super().__init__(env)
         self.noise_std = noise_std
 
-    def step(self, action: np.ndarray) -> Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
+    def step(
+        self, action: np.ndarray
+    ) -> Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         assert isinstance(self.action_space, spaces.Box)
-        noise = np.random.normal(np.zeros_like(action), np.ones_like(action) * self.noise_std)
-        noisy_action = np.clip(action + noise, self.action_space.low, self.action_space.high)
+        noise = np.random.normal(
+            np.zeros_like(action), np.ones_like(action) * self.noise_std
+        )
+        noisy_action = np.clip(
+            action + noise, self.action_space.low, self.action_space.high
+        )
         return self.env.step(noisy_action)
 
 
@@ -84,7 +94,9 @@ class ActionSmoothingWrapper(gym.Wrapper):
         # self.alpha = self.smoothing_coef
         # self.beta = np.sqrt(1 - self.alpha ** 2) / (1 - self.alpha)
 
-    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> GymResetReturn:
+    def reset(
+        self, seed: Optional[int] = None, options: Optional[dict] = None
+    ) -> GymResetReturn:
         self.smoothed_action = None
         assert options is None, "Options not supported for now"
         return self.env.reset(seed=seed)
@@ -93,7 +105,10 @@ class ActionSmoothingWrapper(gym.Wrapper):
         if self.smoothed_action is None:
             self.smoothed_action = np.zeros_like(action)
         assert self.smoothed_action is not None
-        self.smoothed_action = self.smoothing_coef * self.smoothed_action + (1 - self.smoothing_coef) * action
+        self.smoothed_action = (
+            self.smoothing_coef * self.smoothed_action
+            + (1 - self.smoothing_coef) * action
+        )
         return self.env.step(self.smoothed_action)
 
 
@@ -112,7 +127,9 @@ class DelayedRewardWrapper(gym.Wrapper):
         self.current_step = 0
         self.accumulated_reward = 0.0
 
-    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> GymResetReturn:
+    def reset(
+        self, seed: Optional[int] = None, options: Optional[dict] = None
+    ) -> GymResetReturn:
         self.current_step = 0
         self.accumulated_reward = 0.0
         assert options is None, "Options not supported for now"
@@ -171,7 +188,9 @@ class HistoryWrapper(gym.Wrapper[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
     def _create_obs_from_history(self) -> np.ndarray:
         return np.concatenate((self.obs_history, self.action_history))
 
-    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, Dict]:
+    def reset(
+        self, seed: Optional[int] = None, options: Optional[dict] = None
+    ) -> Tuple[np.ndarray, Dict]:
         # Flush the history
         self.obs_history[...] = 0
         self.action_history[...] = 0
@@ -187,7 +206,9 @@ class HistoryWrapper(gym.Wrapper[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
         self.obs_history = np.roll(self.obs_history, shift=-last_ax_size, axis=-1)
         self.obs_history[..., -obs.shape[-1] :] = obs
 
-        self.action_history = np.roll(self.action_history, shift=-action.shape[-1], axis=-1)
+        self.action_history = np.roll(
+            self.action_history, shift=-action.shape[-1], axis=-1
+        )
         self.action_history[..., -action.shape[-1] :] = action
         return self._create_obs_from_history(), reward, terminated, truncated, info
 
@@ -236,7 +257,9 @@ class HistoryWrapperObsDict(gym.Wrapper):
     def _create_obs_from_history(self) -> np.ndarray:
         return np.concatenate((self.obs_history, self.action_history))
 
-    def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[Dict[str, np.ndarray], Dict]:
+    def reset(
+        self, seed: Optional[int] = None, options: Optional[dict] = None
+    ) -> Tuple[Dict[str, np.ndarray], Dict]:
         # Flush the history
         self.obs_history[...] = 0
         self.action_history[...] = 0
@@ -249,7 +272,9 @@ class HistoryWrapperObsDict(gym.Wrapper):
 
         return obs_dict, info
 
-    def step(self, action) -> Tuple[Dict[str, np.ndarray], SupportsFloat, bool, bool, Dict]:
+    def step(
+        self, action
+    ) -> Tuple[Dict[str, np.ndarray], SupportsFloat, bool, bool, Dict]:
         obs_dict, reward, terminated, truncated, info = self.env.step(action)
         obs = obs_dict["observation"]
         last_ax_size = obs.shape[-1]
@@ -257,7 +282,9 @@ class HistoryWrapperObsDict(gym.Wrapper):
         self.obs_history = np.roll(self.obs_history, shift=-last_ax_size, axis=-1)
         self.obs_history[..., -obs.shape[-1] :] = obs
 
-        self.action_history = np.roll(self.action_history, shift=-action.shape[-1], axis=-1)
+        self.action_history = np.roll(
+            self.action_history, shift=-action.shape[-1], axis=-1
+        )
         self.action_history[..., -action.shape[-1] :] = action
 
         obs_dict["observation"] = self._create_obs_from_history()
@@ -325,7 +352,9 @@ class MaskVelocityWrapper(gym.ObservationWrapper):
             # Mask velocity
             self.mask[self.velocity_indices[env_id]] = 0.0
         except KeyError as e:
-            raise NotImplementedError(f"Velocity masking not implemented for {env_id}") from e
+            raise NotImplementedError(
+                f"Velocity masking not implemented for {env_id}"
+            ) from e
 
     def observation(self, observation: np.ndarray) -> np.ndarray:
         return observation * self.mask
@@ -341,7 +370,7 @@ class Gym3ToGymnasium(gym.Env):
         * `seed()` and `close() are ignored since gym3 environments do not require these methods
         * `reset()` is ignored if used before an episode is complete because gym3 environments
             reset automatically, if `reset()` was called before the end of an episode, a warning is printed
-    
+
     :param env: gym3 environment to adapt
     """
 
@@ -367,7 +396,13 @@ class Gym3ToGymnasium(gym.Env):
         rew, ob, first = self.env.observe()
         if first[0]:
             ob = prev_ob
-        return multimap(lambda x: x[0], ob), rew[0], first[0], first[0], self.env.get_info()[0]
+        return (
+            multimap(lambda x: x[0], ob),
+            rew[0],
+            first[0],
+            first[0],
+            self.env.get_info()[0],
+        )
 
     def render(self):
         # gym3 does not have a generic render method but the convention
@@ -423,8 +458,16 @@ class MetaWorldMonitor(gym.Wrapper):
                 else:
                     filename = filename + "." + MetaWorldMonitor.EXT
             self.file_handler = open(filename, "wt")
-            self.file_handler.write("#%s\n" % json.dumps({"t_start": self.t_start, "env_id": env.spec and env.spec.id}))
-            self.logger = csv.DictWriter(self.file_handler, fieldnames=("r", "l", "t", "s") + reset_keywords + info_keywords)
+            self.file_handler.write(
+                "#%s\n"
+                % json.dumps(
+                    {"t_start": self.t_start, "env_id": env.spec and env.spec.id}
+                )
+            )
+            self.logger = csv.DictWriter(
+                self.file_handler,
+                fieldnames=("r", "l", "t", "s") + reset_keywords + info_keywords,
+            )
             self.logger.writeheader()
             self.file_handler.flush()
 
@@ -438,7 +481,9 @@ class MetaWorldMonitor(gym.Wrapper):
         self.episode_lengths = []
         self.episode_times = []
         self.total_steps = 0
-        self.current_reset_info = {}  # extra info about the current episode, that was passed in during reset()
+        self.current_reset_info = (
+            {}
+        )  # extra info about the current episode, that was passed in during reset()
 
     def reset(self, **kwargs) -> GymObs:
         """
@@ -473,15 +518,18 @@ class MetaWorldMonitor(gym.Wrapper):
             raise RuntimeError("Tried to step environment that needs reset")
         observation, reward, terminated, truncated, info = self.env.step(action)
         self.rewards.append(reward)
-        self.episode_success = max(self.episode_success, info['success'])
-        
+        self.episode_success = max(self.episode_success, info["success"])
+
         if terminated:
             self.needs_reset = True
             ep_rew = sum(self.rewards)
             ep_len = len(self.rewards)
-            ep_info = {"r": round(ep_rew, 6), "l": ep_len, 
-                       "t": round(time.time() - self.t_start, 6), 
-                       "s": self.episode_success}
+            ep_info = {
+                "r": round(ep_rew, 6),
+                "l": ep_len,
+                "t": round(time.time() - self.t_start, 6),
+                "s": self.episode_success,
+            }
             for key in self.info_keywords:
                 ep_info[key] = info[key]
             self.episode_rewards.append(ep_rew)
@@ -534,5 +582,3 @@ class MetaWorldMonitor(gym.Wrapper):
         :return:
         """
         return self.episode_times
-
-        

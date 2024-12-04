@@ -4,7 +4,10 @@ from typing import Any, Dict, Generic, List, Mapping, Optional, Tuple, TypeVar, 
 import numpy as np
 from gymnasium import spaces
 
-from stable_baselines3.common.preprocessing import is_image_space, is_image_space_channels_first
+from stable_baselines3.common.preprocessing import (
+    is_image_space,
+    is_image_space_channels_first,
+)
 
 TObs = TypeVar("TObs", np.ndarray, Dict[str, np.ndarray])
 
@@ -35,21 +38,31 @@ class StackedObservations(Generic[TObs]):
         self.observation_space = observation_space
         if isinstance(observation_space, spaces.Dict):
             if not isinstance(channels_order, Mapping):
-                channels_order = {key: channels_order for key in observation_space.spaces.keys()}
+                channels_order = {
+                    key: channels_order for key in observation_space.spaces.keys()
+                }
             self.sub_stacked_observations = {
                 key: StackedObservations(num_envs, n_stack, subspace, channels_order[key])  # type: ignore[arg-type]
                 for key, subspace in observation_space.spaces.items()
             }
             self.stacked_observation_space = spaces.Dict(
-                {key: substack_obs.stacked_observation_space for key, substack_obs in self.sub_stacked_observations.items()}
+                {
+                    key: substack_obs.stacked_observation_space
+                    for key, substack_obs in self.sub_stacked_observations.items()
+                }
             )  # type: Union[spaces.Dict, spaces.Box] # make mypy happy
         elif isinstance(observation_space, spaces.Box):
             if isinstance(channels_order, Mapping):
-                raise TypeError("When the observation space is Box, channels_order can't be a dict.")
+                raise TypeError(
+                    "When the observation space is Box, channels_order can't be a dict."
+                )
 
-            self.channels_first, self.stack_dimension, self.stacked_shape, self.repeat_axis = self.compute_stacking(
-                n_stack, observation_space, channels_order
-            )
+            (
+                self.channels_first,
+                self.stack_dimension,
+                self.stacked_shape,
+                self.repeat_axis,
+            ) = self.compute_stacking(n_stack, observation_space, channels_order)
             low = np.repeat(observation_space.low, n_stack, axis=self.repeat_axis)
             high = np.repeat(observation_space.high, n_stack, axis=self.repeat_axis)
             self.stacked_observation_space = spaces.Box(
@@ -57,7 +70,9 @@ class StackedObservations(Generic[TObs]):
                 high=high,
                 dtype=observation_space.dtype,  # type: ignore[arg-type]
             )
-            self.stacked_obs = np.zeros((num_envs, *self.stacked_shape), dtype=observation_space.dtype)
+            self.stacked_obs = np.zeros(
+                (num_envs, *self.stacked_shape), dtype=observation_space.dtype
+            )
         else:
             raise TypeError(
                 f"StackedObservations only supports Box and Dict as observation spaces. {observation_space} was provided."
@@ -65,7 +80,9 @@ class StackedObservations(Generic[TObs]):
 
     @staticmethod
     def compute_stacking(
-        n_stack: int, observation_space: spaces.Box, channels_order: Optional[str] = None
+        n_stack: int,
+        observation_space: spaces.Box,
+        channels_order: Optional[str] = None,
     ) -> Tuple[bool, int, Tuple[int, ...], int]:
         """
         Calculates the parameters in order to stack observations
@@ -106,13 +123,20 @@ class StackedObservations(Generic[TObs]):
         :return: The stacked reset observation
         """
         if isinstance(observation, dict):
-            return {key: self.sub_stacked_observations[key].reset(obs) for key, obs in observation.items()}
+            return {
+                key: self.sub_stacked_observations[key].reset(obs)
+                for key, obs in observation.items()
+            }
 
         self.stacked_obs[...] = 0
         if self.channels_first:
-            self.stacked_obs[:, -observation.shape[self.stack_dimension] :, ...] = observation
+            self.stacked_obs[:, -observation.shape[self.stack_dimension] :, ...] = (
+                observation
+            )
         else:
-            self.stacked_obs[..., -observation.shape[self.stack_dimension] :] = observation
+            self.stacked_obs[..., -observation.shape[self.stack_dimension] :] = (
+                observation
+            )
         return self.stacked_obs
 
     def update(
@@ -134,7 +158,11 @@ class StackedObservations(Generic[TObs]):
             # to {key1: [{}, {terminal_obs: ...}], key2: [{}, {terminal_obs: ...}]}
             sub_infos = {
                 key: [
-                    {"terminal_observation": info["terminal_observation"][key]} if "terminal_observation" in info else {}
+                    (
+                        {"terminal_observation": info["terminal_observation"][key]}
+                        if "terminal_observation" in info
+                        else {}
+                    )
                     for info in infos
                 ]
                 for key in observations.keys()
@@ -143,14 +171,18 @@ class StackedObservations(Generic[TObs]):
             stacked_obs = {}
             stacked_infos = {}
             for key, obs in observations.items():
-                stacked_obs[key], stacked_infos[key] = self.sub_stacked_observations[key].update(obs, dones, sub_infos[key])
+                stacked_obs[key], stacked_infos[key] = self.sub_stacked_observations[
+                    key
+                ].update(obs, dones, sub_infos[key])
 
             # From {key1: [{}, {terminal_obs: ...}], key2: [{}, {terminal_obs: ...}]}
             # to [{}, {terminal_obs: {key1: ..., key2: ...}}]
             for key in stacked_infos.keys():
                 for env_idx in range(len(infos)):
                     if "terminal_observation" in infos[env_idx]:
-                        infos[env_idx]["terminal_observation"][key] = stacked_infos[key][env_idx]["terminal_observation"]
+                        infos[env_idx]["terminal_observation"][key] = stacked_infos[
+                            key
+                        ][env_idx]["terminal_observation"]
             return stacked_obs, infos
 
         shift = -observations.shape[self.stack_dimension]
@@ -164,10 +196,14 @@ class StackedObservations(Generic[TObs]):
                     else:
                         previous_stack = self.stacked_obs[env_idx, ..., :shift]
 
-                    new_terminal = np.concatenate((previous_stack, old_terminal), axis=self.repeat_axis)
+                    new_terminal = np.concatenate(
+                        (previous_stack, old_terminal), axis=self.repeat_axis
+                    )
                     infos[env_idx]["terminal_observation"] = new_terminal
                 else:
-                    warnings.warn("VecFrameStack wrapping a VecEnv without terminal_observation info")
+                    warnings.warn(
+                        "VecFrameStack wrapping a VecEnv without terminal_observation info"
+                    )
                 self.stacked_obs[env_idx] = 0
         if self.channels_first:
             self.stacked_obs[:, shift:, ...] = observations

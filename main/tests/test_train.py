@@ -15,7 +15,9 @@ ALGOS = ("ppo", "a2c", "dqn")
 # 'BreakoutNoFrameskip-v4'
 ENV_IDS = ("CartPole-v1",)
 
-experiments = {f"{algo}-{env_id}": (algo, env_id) for algo in ALGOS for env_id in ENV_IDS}
+experiments = {
+    f"{algo}-{env_id}": (algo, env_id) for algo in ALGOS for env_id in ENV_IDS
+}
 # Test for vecnormalize and frame-stack
 experiments["ppo-BipedalWalkerHardcore-v3"] = ("ppo", "BipedalWalkerHardcore-v3")
 # Test for SAC
@@ -87,7 +89,13 @@ def test_custom_yaml(tmp_path):
     _assert_eq(return_code, 0)
 
 
-@pytest.mark.parametrize("config_file", ["hyperparams.python.ppo_config_example", "hyperparams/python/ppo_config_example.py"])
+@pytest.mark.parametrize(
+    "config_file",
+    [
+        "hyperparams.python.ppo_config_example",
+        "hyperparams/python/ppo_config_example.py",
+    ],
+)
 def test_python_config_file(tmp_path, config_file):
     # Use the example python config file for training
     cmd = (

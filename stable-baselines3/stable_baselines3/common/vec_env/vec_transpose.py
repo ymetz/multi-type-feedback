@@ -4,8 +4,15 @@ from typing import Dict, Union
 import numpy as np
 from gymnasium import spaces
 
-from stable_baselines3.common.preprocessing import is_image_space, is_image_space_channels_first
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvStepReturn, VecEnvWrapper
+from stable_baselines3.common.preprocessing import (
+    is_image_space,
+    is_image_space_channels_first,
+)
+from stable_baselines3.common.vec_env.base_vec_env import (
+    VecEnv,
+    VecEnvStepReturn,
+    VecEnvWrapper,
+)
 
 
 class VecTransposeImage(VecEnvWrapper):
@@ -53,7 +60,9 @@ class VecTransposeImage(VecEnvWrapper):
         :return:
         """
         # Sanity checks
-        assert is_image_space(observation_space), "The observation space must be an image"
+        assert is_image_space(
+            observation_space
+        ), "The observation space must be an image"
         assert not is_image_space_channels_first(
             observation_space
         ), f"The observation space {key} must follow the channel last convention"
@@ -73,7 +82,9 @@ class VecTransposeImage(VecEnvWrapper):
             return np.transpose(image, (2, 0, 1))
         return np.transpose(image, (0, 3, 1, 2))
 
-    def transpose_observations(self, observations: Union[np.ndarray, Dict]) -> Union[np.ndarray, Dict]:
+    def transpose_observations(
+        self, observations: Union[np.ndarray, Dict]
+    ) -> Union[np.ndarray, Dict]:
         """
         Transpose (if needed) and return new observations.
 
@@ -101,7 +112,9 @@ class VecTransposeImage(VecEnvWrapper):
             if not done:
                 continue
             if "terminal_observation" in infos[idx]:
-                infos[idx]["terminal_observation"] = self.transpose_observations(infos[idx]["terminal_observation"])
+                infos[idx]["terminal_observation"] = self.transpose_observations(
+                    infos[idx]["terminal_observation"]
+                )
 
         assert isinstance(observations, (np.ndarray, dict))
         return self.transpose_observations(observations), rewards, dones, infos

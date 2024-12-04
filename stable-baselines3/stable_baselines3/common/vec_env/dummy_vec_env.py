@@ -6,9 +6,18 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Type
 import gymnasium as gym
 import numpy as np
 
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvIndices, VecEnvObs, VecEnvStepReturn
+from stable_baselines3.common.vec_env.base_vec_env import (
+    VecEnv,
+    VecEnvIndices,
+    VecEnvObs,
+    VecEnvStepReturn,
+)
 from stable_baselines3.common.vec_env.patch_gym import _patch_env
-from stable_baselines3.common.vec_env.util import copy_obs_dict, dict_to_obs, obs_space_info
+from stable_baselines3.common.vec_env.util import (
+    copy_obs_dict,
+    dict_to_obs,
+    obs_space_info,
+)
 
 
 class DummyVecEnv(VecEnv):
@@ -43,7 +52,12 @@ class DummyVecEnv(VecEnv):
         obs_space = env.observation_space
         self.keys, shapes, dtypes = obs_space_info(obs_space)
 
-        self.buf_obs = OrderedDict([(k, np.zeros((self.num_envs, *tuple(shapes[k])), dtype=dtypes[k])) for k in self.keys])
+        self.buf_obs = OrderedDict(
+            [
+                (k, np.zeros((self.num_envs, *tuple(shapes[k])), dtype=dtypes[k]))
+                for k in self.keys
+            ]
+        )
         self.buf_dones = np.zeros((self.num_envs,), dtype=bool)
         self.buf_rews = np.zeros((self.num_envs,), dtype=np.float32)
         self.buf_infos: List[Dict[str, Any]] = [{} for _ in range(self.num_envs)]
@@ -55,26 +69,41 @@ class DummyVecEnv(VecEnv):
     def step_wait(self) -> VecEnvStepReturn:
         # Avoid circular imports
         for env_idx in range(self.num_envs):
-            obs, self.buf_rews[env_idx], terminated, truncated, self.buf_infos[env_idx] = self.envs[env_idx].step(
-                self.actions[env_idx]
-            )
+            (
+                obs,
+                self.buf_rews[env_idx],
+                terminated,
+                truncated,
+                self.buf_infos[env_idx],
+            ) = self.envs[env_idx].step(self.actions[env_idx])
             # convert to SB3 VecEnv api
             self.buf_dones[env_idx] = terminated or truncated
             # See https://github.com/openai/gym/issues/3102
             # Gym 0.26 introduces a breaking change
-            self.buf_infos[env_idx]["TimeLimit.truncated"] = truncated and not terminated
+            self.buf_infos[env_idx]["TimeLimit.truncated"] = (
+                truncated and not terminated
+            )
 
             if self.buf_dones[env_idx]:
                 # save final observation where user can get it, then reset
                 self.buf_infos[env_idx]["terminal_observation"] = obs
                 obs, self.reset_infos[env_idx] = self.envs[env_idx].reset()
             self._save_obs(env_idx, obs)
-        return (self._obs_from_buf(), np.copy(self.buf_rews), np.copy(self.buf_dones), deepcopy(self.buf_infos))
+        return (
+            self._obs_from_buf(),
+            np.copy(self.buf_rews),
+            np.copy(self.buf_dones),
+            deepcopy(self.buf_infos),
+        )
 
     def reset(self) -> VecEnvObs:
         for env_idx in range(self.num_envs):
-            maybe_options = {"options": self._options[env_idx]} if self._options[env_idx] else {}
-            obs, self.reset_infos[env_idx] = self.envs[env_idx].reset(seed=self._seeds[env_idx], **maybe_options)
+            maybe_options = (
+                {"options": self._options[env_idx]} if self._options[env_idx] else {}
+            )
+            obs, self.reset_infos[env_idx] = self.envs[env_idx].reset(
+                seed=self._seeds[env_idx], **maybe_options
+            )
             self._save_obs(env_idx, obs)
         # Seeds and options are only used once
         self._reset_seeds()
@@ -117,18 +146,31 @@ class DummyVecEnv(VecEnv):
         target_envs = self._get_target_envs(indices)
         return [getattr(env_i, attr_name) for env_i in target_envs]
 
-    def set_attr(self, attr_name: str, value: Any, indices: VecEnvIndices = None) -> None:
+    def set_attr(
+        self, attr_name: str, value: Any, indices: VecEnvIndices = None
+    ) -> None:
         """Set attribute inside vectorized environments (see base class)."""
         target_envs = self._get_target_envs(indices)
         for env_i in target_envs:
             setattr(env_i, attr_name, value)
 
-    def env_method(self, method_name: str, *method_args, indices: VecEnvIndices = None, **method_kwargs) -> List[Any]:
+    def env_method(
+        self,
+        method_name: str,
+        *method_args,
+        indices: VecEnvIndices = None,
+        **method_kwargs,
+    ) -> List[Any]:
         """Call instance methods of vectorized environments."""
         target_envs = self._get_target_envs(indices)
-        return [getattr(env_i, method_name)(*method_args, **method_kwargs) for env_i in target_envs]
+        return [
+            getattr(env_i, method_name)(*method_args, **method_kwargs)
+            for env_i in target_envs
+        ]
 
-    def env_is_wrapped(self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None) -> List[bool]:
+    def env_is_wrapped(
+        self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None
+    ) -> List[bool]:
         """Check if worker environments are wrapped with a given wrapper"""
         target_envs = self._get_target_envs(indices)
         # Import here to avoid a circular import

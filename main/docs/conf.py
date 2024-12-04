@@ -170,7 +170,13 @@ latex_elements: Dict[str, str] = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, "RLZoo3.tex", "RL Baselines3 Zoo Documentation", "Stable Baselines3 Contributors", "manual"),
+    (
+        master_doc,
+        "RLZoo3.tex",
+        "RL Baselines3 Zoo Documentation",
+        "Stable Baselines3 Contributors",
+        "manual",
+    ),
 ]
 
 

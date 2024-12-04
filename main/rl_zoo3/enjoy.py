@@ -19,21 +19,62 @@ from rl_zoo3.utils import StoreDict, get_model_path
 
 def enjoy() -> None:  # noqa: C901
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", help="environment ID", type=EnvironmentName, default="CartPole-v1")
-    parser.add_argument("-f", "--folder", help="Log folder", type=str, default="rl-trained-agents")
-    parser.add_argument("--algo", help="RL Algorithm", default="ppo", type=str, required=False, choices=list(ALGOS.keys()))
-    parser.add_argument("-n", "--n-timesteps", help="number of timesteps", default=1000, type=int)
-    parser.add_argument("--num-threads", help="Number of threads for PyTorch (-1 to use default)", default=-1, type=int)
-    parser.add_argument("--n-envs", help="number of environments", default=1, type=int)
-    parser.add_argument("--exp-id", help="Experiment ID (default: 0: latest, -1: no exp folder)", default=0, type=int)
-    parser.add_argument("--verbose", help="Verbose mode (0: no output, 1: INFO)", default=1, type=int)
     parser.add_argument(
-        "--no-render", action="store_true", default=False, help="Do not render the environment (useful for tests)"
+        "--env", help="environment ID", type=EnvironmentName, default="CartPole-v1"
     )
-    parser.add_argument("--deterministic", action="store_true", default=False, help="Use deterministic actions")
-    parser.add_argument("--device", help="PyTorch device to be use (ex: cpu, cuda...)", default="auto", type=str)
     parser.add_argument(
-        "--load-best", action="store_true", default=False, help="Load best model instead of last model if available"
+        "-f", "--folder", help="Log folder", type=str, default="rl-trained-agents"
+    )
+    parser.add_argument(
+        "--algo",
+        help="RL Algorithm",
+        default="ppo",
+        type=str,
+        required=False,
+        choices=list(ALGOS.keys()),
+    )
+    parser.add_argument(
+        "-n", "--n-timesteps", help="number of timesteps", default=1000, type=int
+    )
+    parser.add_argument(
+        "--num-threads",
+        help="Number of threads for PyTorch (-1 to use default)",
+        default=-1,
+        type=int,
+    )
+    parser.add_argument("--n-envs", help="number of environments", default=1, type=int)
+    parser.add_argument(
+        "--exp-id",
+        help="Experiment ID (default: 0: latest, -1: no exp folder)",
+        default=0,
+        type=int,
+    )
+    parser.add_argument(
+        "--verbose", help="Verbose mode (0: no output, 1: INFO)", default=1, type=int
+    )
+    parser.add_argument(
+        "--no-render",
+        action="store_true",
+        default=False,
+        help="Do not render the environment (useful for tests)",
+    )
+    parser.add_argument(
+        "--deterministic",
+        action="store_true",
+        default=False,
+        help="Use deterministic actions",
+    )
+    parser.add_argument(
+        "--device",
+        help="PyTorch device to be use (ex: cpu, cuda...)",
+        default="auto",
+        type=str,
+    )
+    parser.add_argument(
+        "--load-best",
+        action="store_true",
+        default=False,
+        help="Load best model instead of last model if available",
     )
     parser.add_argument(
         "--load-checkpoint",
@@ -47,12 +88,22 @@ def enjoy() -> None:  # noqa: C901
         default=False,
         help="Load last checkpoint instead of last model if available",
     )
-    parser.add_argument("--stochastic", action="store_true", default=False, help="Use stochastic actions")
     parser.add_argument(
-        "--norm-reward", action="store_true", default=False, help="Normalize reward if applicable (trained with VecNormalize)"
+        "--stochastic",
+        action="store_true",
+        default=False,
+        help="Use stochastic actions",
+    )
+    parser.add_argument(
+        "--norm-reward",
+        action="store_true",
+        default=False,
+        help="Normalize reward if applicable (trained with VecNormalize)",
     )
     parser.add_argument("--seed", help="Random generator seed", type=int, default=0)
-    parser.add_argument("--reward-log", help="Where to log reward", default="", type=str)
+    parser.add_argument(
+        "--reward-log", help="Where to log reward", default="", type=str
+    )
     parser.add_argument(
         "--gym-packages",
         type=str,
@@ -61,10 +112,17 @@ def enjoy() -> None:  # noqa: C901
         help="Additional external Gym environment package modules to import",
     )
     parser.add_argument(
-        "--env-kwargs", type=str, nargs="+", action=StoreDict, help="Optional keyword argument to pass to the env constructor"
+        "--env-kwargs",
+        type=str,
+        nargs="+",
+        action=StoreDict,
+        help="Optional keyword argument to pass to the env constructor",
     )
     parser.add_argument(
-        "--custom-objects", action="store_true", default=False, help="Use custom objects to solve loading issues"
+        "--custom-objects",
+        action="store_true",
+        default=False,
+        help="Use custom objects to solve loading issues",
     )
     parser.add_argument(
         "-P",
@@ -99,7 +157,9 @@ def enjoy() -> None:  # noqa: C901
         if "rl-trained-agents" not in folder:
             raise e
         else:
-            print("Pretrained model not found, trying to download it from sb3 Huggingface hub: https://huggingface.co/sb3")
+            print(
+                "Pretrained model not found, trying to download it from sb3 Huggingface hub: https://huggingface.co/sb3"
+            )
             # Auto-download
             download_from_hub(
                 algo=algo,
@@ -137,7 +197,9 @@ def enjoy() -> None:  # noqa: C901
     is_minigrid = ExperimentManager.is_minigrid(env_name.gym_id)
 
     stats_path = os.path.join(log_path, env_name)
-    hyperparams, maybe_stats_path = get_saved_hyperparams(stats_path, norm_reward=args.norm_reward, test_mode=True)
+    hyperparams, maybe_stats_path = get_saved_hyperparams(
+        stats_path, norm_reward=args.norm_reward, test_mode=True
+    )
 
     # load env_kwargs if existing
     env_kwargs = {}
@@ -189,7 +251,9 @@ def enjoy() -> None:  # noqa: C901
     if "HerReplayBuffer" in hyperparams.get("replay_buffer_class", ""):
         kwargs["env"] = env
 
-    model = ALGOS[algo].load(model_path, custom_objects=custom_objects, device=args.device, **kwargs)
+    model = ALGOS[algo].load(
+        model_path, custom_objects=custom_objects, device=args.device, **kwargs
+    )
     obs = env.reset()
 
     # Deterministic by default except for atari games
@@ -264,10 +328,14 @@ def enjoy() -> None:  # noqa: C901
 
     if args.verbose > 0 and len(episode_rewards) > 0:
         print(f"{len(episode_rewards)} Episodes")
-        print(f"Mean reward: {np.mean(episode_rewards):.2f} +/- {np.std(episode_rewards):.2f}")
+        print(
+            f"Mean reward: {np.mean(episode_rewards):.2f} +/- {np.std(episode_rewards):.2f}"
+        )
 
     if args.verbose > 0 and len(episode_lengths) > 0:
-        print(f"Mean episode length: {np.mean(episode_lengths):.2f} +/- {np.std(episode_lengths):.2f}")
+        print(
+            f"Mean episode length: {np.mean(episode_lengths):.2f} +/- {np.std(episode_lengths):.2f}"
+        )
 
     env.close()
 

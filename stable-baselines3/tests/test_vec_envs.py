@@ -13,7 +13,12 @@ from gymnasium import spaces
 
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack, VecNormalize
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    SubprocVecEnv,
+    VecFrameStack,
+    VecNormalize,
+)
 
 N_ENVS = 3
 VEC_ENV_CLASSES = [DummyVecEnv, SubprocVecEnv]
@@ -119,7 +124,9 @@ def test_vecenv_custom_calls(vec_env_class, vec_env_wrapper):
     setattr_results = []
     # Set current_step to an arbitrary value
     for env_idx in range(N_ENVS):
-        setattr_results.append(vec_env.set_attr("current_step", env_idx, indices=env_idx))
+        setattr_results.append(
+            vec_env.set_attr("current_step", env_idx, indices=env_idx)
+        )
     # Retrieve the value for each environment
     getattr_results = vec_env.get_attr("current_step")
 
@@ -286,7 +293,9 @@ def check_vecenv_obs(obs, space):
         assert space.contains(value)
 
 
-@pytest.mark.parametrize("vec_env_class,space", itertools.product(VEC_ENV_CLASSES, SPACES.values()))
+@pytest.mark.parametrize(
+    "vec_env_class,space", itertools.product(VEC_ENV_CLASSES, SPACES.values())
+)
 def test_vecenv_single_space(vec_env_class, space):
     def obs_assert(obs):
         return check_vecenv_obs(obs, space)
@@ -517,11 +526,17 @@ def test_vec_deterministic(vec_env_class):
     assert np.allclose(new_obs, obs)
     vec_normalize.close()
     # Similar test but with make_vec_env
-    vec_env_1 = make_vec_env("Pendulum-v1", n_envs=N_ENVS, vec_env_cls=vec_env_class, seed=0)
-    vec_env_2 = make_vec_env("Pendulum-v1", n_envs=N_ENVS, vec_env_cls=vec_env_class, seed=0)
+    vec_env_1 = make_vec_env(
+        "Pendulum-v1", n_envs=N_ENVS, vec_env_cls=vec_env_class, seed=0
+    )
+    vec_env_2 = make_vec_env(
+        "Pendulum-v1", n_envs=N_ENVS, vec_env_cls=vec_env_class, seed=0
+    )
     assert np.allclose(vec_env_1.reset(), vec_env_2.reset())
     random_actions = [vec_env_1.action_space.sample() for _ in range(N_ENVS)]
-    assert np.allclose(vec_env_1.step(random_actions)[0], vec_env_2.step(random_actions)[0])
+    assert np.allclose(
+        vec_env_1.step(random_actions)[0], vec_env_2.step(random_actions)[0]
+    )
     vec_env_1.close()
     vec_env_2.close()
 
@@ -547,7 +562,9 @@ def test_vec_seeding(vec_env_class):
         # Seed with no argument
         vec_env.seed()
         obs = vec_env.reset()
-        _, rewards, _, _ = vec_env.step(np.array([vec_env.action_space.sample() for _ in range(n_envs)]))
+        _, rewards, _, _ = vec_env.step(
+            np.array([vec_env.action_space.sample() for _ in range(n_envs)])
+        )
         # Seed should be different per process
         assert not np.allclose(obs[0], obs[1])
         assert not np.allclose(rewards[0], rewards[1])

@@ -1,24 +1,25 @@
 """Module for instantiating a neural network."""
 
 # pylint: disable=arguments-differ
-from typing import Callable, Type, Union, Tuple
+from typing import Callable, Tuple, Type, Union
 
+import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.nn.functional import log_softmax, nll_loss
-from pytorch_lightning import LightningModule
 from masksembles.torch import Masksembles1D, Masksembles2D
+from pytorch_lightning import LightningModule
 from torch import Tensor, nn
-from torch.nn.functional import mse_loss
-import gymnasium as gym
+from torch.nn.functional import log_softmax, mse_loss, nll_loss
 
 # Loss functions
 single_reward_loss = nn.MSELoss()
 
+
 def calculate_mse_loss(network: LightningModule, batch: Tensor):
     """Calculate the mean squared error loss for the reward."""
     return mse_loss(network(batch[0]), batch[1].unsqueeze(1), reduction="sum")
+
 
 def calculate_mle_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
@@ -31,16 +32,22 @@ def calculate_mle_loss(network: LightningModule, batch: Tensor):
 
     return loss
 
+
 def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
-    (pair_obs, pair_actions), preferred_indices = batch  # preferred_indices: (batch_size,)
+    (
+        pair_obs,
+        pair_actions,
+    ), preferred_indices = batch  # preferred_indices: (batch_size,)
 
     # Unpack observations and actions for both trajectories
     obs1, obs2 = pair_obs[0], pair_actions[0]
     actions1, actions2 = pair_obs[1], pair_actions[1]
 
     # Compute network outputs
-    outputs1 = network(obs1, actions1)  # Shape: (batch_size, segment_length, output_dim)
+    outputs1 = network(
+        obs1, actions1
+    )  # Shape: (batch_size, segment_length, output_dim)
     outputs2 = network(obs2, actions2)
 
     # Sum over sequence dimension
@@ -87,7 +94,7 @@ class LightningNetwork(LightningModule):
         layer_num: int,
         output_dim: int,
         hidden_dim: int,
-        action_hidden_dim: int, # not used here
+        action_hidden_dim: int,  # not used here
         loss_function: Callable[[LightningModule, Tensor], Tensor],
         learning_rate: float,
         activation_function: Type[nn.Module] = nn.ReLU,
@@ -102,8 +109,10 @@ class LightningNetwork(LightningModule):
         obs_space, action_space = input_spaces
 
         action_is_discrete = isinstance(action_space, gym.spaces.Discrete)
-        
-        input_dim = np.prod(obs_space.shape) + (np.prod(action_space.shape) if not action_is_discrete else action_space.n)
+
+        input_dim = np.prod(obs_space.shape) + (
+            np.prod(action_space.shape) if not action_is_discrete else action_space.n
+        )
 
         # Initialize the network
         layers_unit = [input_dim] + [hidden_dim] * (layer_num - 1)
@@ -151,9 +160,11 @@ class LightningNetwork(LightningModule):
         # observations: (batch_size, segment_length, obs_dim)
         # actions: (batch_size, segment_length, action_dim)
 
-        if len(observations.shape) > 3: # needs to be done to support the 2d spaces of highway-env, probably better do in in env wrapper
+        if (
+            len(observations.shape) > 3
+        ):  # needs to be done to support the 2d spaces of highway-env, probably better do in in env wrapper
             observations = observations.flatten(start_dim=2)
-        
+
         batch_size, segment_length, obs_dim = observations.shape
         _, _, action_dim = actions.shape
 
@@ -162,7 +173,9 @@ class LightningNetwork(LightningModule):
         actions_flat = actions.reshape(-1, action_dim)
 
         # Concatenate observations and actions
-        batch = torch.cat((obs_flat, actions_flat), dim=1)  # Shape: (batch_size * segment_length, obs_dim + action_dim)
+        batch = torch.cat(
+            (obs_flat, actions_flat), dim=1
+        )  # Shape: (batch_size * segment_length, obs_dim + action_dim)
 
         # Pass through the network
         output = self.network(batch)  # Shape: (batch_size * segment_length, output_dim)
@@ -200,7 +213,7 @@ class LightningCnnNetwork(LightningModule):
         input_spaces: Tuple[gym.spaces.Space, gym.spaces.Space],
         layer_num: int,
         output_dim: int,
-        hidden_dim: int, # not used here
+        hidden_dim: int,  # not used here
         action_hidden_dim: int,
         loss_function: Callable[[LightningModule, Tensor], Tensor],
         learning_rate: float,
@@ -225,14 +238,18 @@ class LightningCnnNetwork(LightningModule):
 
         self.conv_layers = nn.Sequential(*layers)
         self.flatten = nn.Flatten()
-        
+
         # action input_layer
         action_shape = action_space.shape if action_space.shape else 1
         self.action_in = nn.Linear(action_shape, action_hidden_dim)
-        self.masksemble_out = Masksembles1D(channels=action_hidden_dim, n=self.ensemble_count, scale=1.8).float()
+        self.masksemble_out = Masksembles1D(
+            channels=action_hidden_dim, n=self.ensemble_count, scale=1.8
+        ).float()
 
         self.fc = nn.Linear(
-            self.compute_flattened_size(obs_space.shape, cnn_channels) + action_hidden_dim, output_dim
+            self.compute_flattened_size(obs_space.shape, cnn_channels)
+            + action_hidden_dim,
+            output_dim,
         )
 
         self.save_hyperparameters()
@@ -243,10 +260,14 @@ class LightningCnnNetwork(LightningModule):
     def residual_block(self, in_channels):
         return nn.Sequential(
             nn.ReLU(),
-            Masksembles2D(channels=in_channels, n=self.ensemble_count, scale=1.8).float(),
+            Masksembles2D(
+                channels=in_channels, n=self.ensemble_count, scale=1.8
+            ).float(),
             self.conv_layer(in_channels, in_channels),
             nn.ReLU(),
-            Masksembles2D(channels=in_channels, n=self.ensemble_count, scale=1.8).float(),
+            Masksembles2D(
+                channels=in_channels, n=self.ensemble_count, scale=1.8
+            ).float(),
             self.conv_layer(in_channels, in_channels),
         )
 
@@ -260,7 +281,9 @@ class LightningCnnNetwork(LightningModule):
 
     def compute_flattened_size(self, observation_space, cnn_channels):
         with torch.no_grad():
-            sample_input = torch.zeros(self.ensemble_count, *observation_space).squeeze(-1)
+            sample_input = torch.zeros(self.ensemble_count, *observation_space).squeeze(
+                -1
+            )
             sample_output = self.conv_layers(sample_input).flatten(start_dim=1)
             return sample_output.shape[-1]
 
@@ -271,7 +294,9 @@ class LightningCnnNetwork(LightningModule):
         _, _, action_dim = actions.shape
 
         # Process observations through convolutional layers
-        obs_flat = observations.reshape(batch_size * segment_length, channels, height, width)
+        obs_flat = observations.reshape(
+            batch_size * segment_length, channels, height, width
+        )
         x = self.conv_layers(obs_flat)
         x = self.flatten(x)
         x = F.relu(x)

@@ -22,7 +22,9 @@ from rl_zoo3.plots.score_normalization import normalize_score
 def restyle_boxplot(artist_dict, color, gray="#222222", linewidth=1, fliersize=5):
     """Take a drawn matplotlib boxplot and make it look nice."""
     for box in artist_dict["boxes"]:
-        box.update(dict(facecolor=color, zorder=0.9, edgecolor=gray, linewidth=linewidth))
+        box.update(
+            dict(facecolor=color, zorder=0.9, edgecolor=gray, linewidth=linewidth)
+        )
 
     for whisk in artist_dict["whiskers"]:
         whisk.update(dict(color=gray, linewidth=linewidth, linestyle="-"))
@@ -34,31 +36,113 @@ def restyle_boxplot(artist_dict, color, gray="#222222", linewidth=1, fliersize=5
         med.update(dict(color=gray, linewidth=linewidth))
 
     for fly in artist_dict["fliers"]:
-        fly.update(dict(markerfacecolor=gray, marker="d", markeredgecolor=gray, markersize=fliersize))
+        fly.update(
+            dict(
+                markerfacecolor=gray,
+                marker="d",
+                markeredgecolor=gray,
+                markersize=fliersize,
+            )
+        )
 
 
 def plot_from_file():  # noqa: C901
     parser = argparse.ArgumentParser("Gather results, plot them and create table")
-    parser.add_argument("-i", "--input", help="Input filename (numpy archive)", type=str)
-    parser.add_argument("-skip", "--skip-envs", help="Environments to skip", nargs="+", default=[], type=str)
-    parser.add_argument("--keep-envs", help="Envs to keep", nargs="+", default=[], type=str)
-    parser.add_argument("--skip-keys", help="Keys to skip", nargs="+", default=[], type=str)
-    parser.add_argument("--keep-keys", help="Keys to keep", nargs="+", default=[], type=str)
-    parser.add_argument("--no-million", action="store_true", default=False, help="Do not convert x-axis to million")
-    parser.add_argument("--skip-timesteps", action="store_true", default=False, help="Do not display learning curves")
+    parser.add_argument(
+        "-i", "--input", help="Input filename (numpy archive)", type=str
+    )
+    parser.add_argument(
+        "-skip",
+        "--skip-envs",
+        help="Environments to skip",
+        nargs="+",
+        default=[],
+        type=str,
+    )
+    parser.add_argument(
+        "--keep-envs", help="Envs to keep", nargs="+", default=[], type=str
+    )
+    parser.add_argument(
+        "--skip-keys", help="Keys to skip", nargs="+", default=[], type=str
+    )
+    parser.add_argument(
+        "--keep-keys", help="Keys to keep", nargs="+", default=[], type=str
+    )
+    parser.add_argument(
+        "--no-million",
+        action="store_true",
+        default=False,
+        help="Do not convert x-axis to million",
+    )
+    parser.add_argument(
+        "--skip-timesteps",
+        action="store_true",
+        default=False,
+        help="Do not display learning curves",
+    )
     parser.add_argument("-o", "--output", help="Output filename (image)", type=str)
     parser.add_argument("--format", help="Output format", type=str, default="svg")
-    parser.add_argument("-loc", "--legend-loc", help="The location of the legend.", type=str, default="best")
-    parser.add_argument("--figsize", help="Figure size, width, height in inches.", nargs=2, type=int, default=[6.4, 4.8])
+    parser.add_argument(
+        "-loc",
+        "--legend-loc",
+        help="The location of the legend.",
+        type=str,
+        default="best",
+    )
+    parser.add_argument(
+        "--figsize",
+        help="Figure size, width, height in inches.",
+        nargs=2,
+        type=int,
+        default=[6.4, 4.8],
+    )
     parser.add_argument("--fontsize", help="Font size", type=int, default=14)
     parser.add_argument("-l", "--labels", help="Custom labels", type=str, nargs="+")
-    parser.add_argument("-b", "--boxplot", help="Enable boxplot", action="store_true", default=False)
-    parser.add_argument("-r", "--rliable", help="Enable rliable plots", action="store_true", default=False)
-    parser.add_argument("-vs", "--versus", help="Enable probability of improvement plot", action="store_true", default=False)
-    parser.add_argument("-iqm", "--iqm", help="Enable IQM sample efficiency plot", action="store_true", default=False)
-    parser.add_argument("-ci", "--ci-size", help="Confidence interval size (for rliable)", type=float, default=0.95)
-    parser.add_argument("-latex", "--latex", help="Enable latex support", action="store_true", default=False)
-    parser.add_argument("--merge", help="Merge with other results files", nargs="+", default=[], type=str)
+    parser.add_argument(
+        "-b", "--boxplot", help="Enable boxplot", action="store_true", default=False
+    )
+    parser.add_argument(
+        "-r",
+        "--rliable",
+        help="Enable rliable plots",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "-vs",
+        "--versus",
+        help="Enable probability of improvement plot",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "-iqm",
+        "--iqm",
+        help="Enable IQM sample efficiency plot",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "-ci",
+        "--ci-size",
+        help="Confidence interval size (for rliable)",
+        type=float,
+        default=0.95,
+    )
+    parser.add_argument(
+        "-latex",
+        "--latex",
+        help="Enable latex support",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--merge",
+        help="Merge with other results files",
+        nargs="+",
+        default=[],
+        type=str,
+    )
 
     args = parser.parse_args()
 
@@ -98,7 +182,11 @@ def plot_from_file():  # noqa: C901
                     for new_key in results_2[key].keys():
                         results[key][new_key] = results_2[key][new_key]
 
-    keys = [key for key in results[next(iter(results.keys()))].keys() if key not in args.skip_keys]
+    keys = [
+        key
+        for key in results[next(iter(results.keys()))].keys()
+        if key not in args.skip_keys
+    ]
     print(f"keys: {keys}")
     if len(args.keep_keys) > 0:
         keys = [key for key in keys if key in args.keep_keys]
@@ -138,7 +226,9 @@ def plot_from_file():  # noqa: C901
 
                 plt.xticks(fontsize=13)
                 plt.plot(timesteps / divider, mean_, label=labels[key], linewidth=3)
-                plt.fill_between(timesteps / divider, mean_ + std_error, mean_ - std_error, alpha=0.5)
+                plt.fill_between(
+                    timesteps / divider, mean_ + std_error, mean_ - std_error, alpha=0.5
+                )
 
             plt.legend(fontsize=args.fontsize)
             plt.tight_layout()
@@ -185,11 +275,17 @@ def plot_from_file():  # noqa: C901
 
             # Normalize score, env key must match env_id
             if env in env_key_to_env_id:
-                algo_scores[-1] = normalize_score(algo_scores[-1], env_key_to_env_id[env])
+                algo_scores[-1] = normalize_score(
+                    algo_scores[-1], env_key_to_env_id[env]
+                )
                 if not skip_all_algos_dict:
-                    all_algo_scores[-1] = normalize_score(all_algo_scores[-1], env_key_to_env_id[env])
+                    all_algo_scores[-1] = normalize_score(
+                        all_algo_scores[-1], env_key_to_env_id[env]
+                    )
             elif env not in env_key_to_env_id and args.rliable:
-                warnings.warn(f"{env} not found for normalizing scores, you should update `env_key_to_env_id`")
+                warnings.warn(
+                    f"{env} not found for normalizing scores, you should update `env_key_to_env_id`"
+                )
 
         # Truncate to convert to matrix
         min_runs = min(len(algo_score) for algo_score in algo_scores)
@@ -198,11 +294,17 @@ def plot_from_file():  # noqa: C901
             # shape: (n_envs, n_runs) -> (n_runs, n_envs)
             normalized_score_dict[labels[key]] = np.array(algo_scores).T
             if not skip_all_algos_dict:
-                all_algo_scores = [all_algo_score[:, :min_runs] for all_algo_score in all_algo_scores]
+                all_algo_scores = [
+                    all_algo_score[:, :min_runs] for all_algo_score in all_algo_scores
+                ]
                 # (n_envs, n_eval, n_runs) -> (n_runs, n_envs, n_eval)
-                all_eval_normalized_scores_dict[labels[key]] = np.array(all_algo_scores).transpose((2, 0, 1))
+                all_eval_normalized_scores_dict[labels[key]] = np.array(
+                    all_algo_scores
+                ).transpose((2, 0, 1))
 
-    data_frame = pd.DataFrame(data=dict(Method=labels_df, Environment=envs_df, Score=scores))
+    data_frame = pd.DataFrame(
+        data=dict(Method=labels_df, Environment=envs_df, Score=scores)
+    )
 
     # Rliable plots, see https://github.com/google-research/rliable
     if args.rliable:
@@ -278,7 +380,10 @@ def plot_from_file():  # noqa: C901
         # algorithm_pairs = {.. , 'x,y': (score_x, score_y), ..}
         algorithm_pairs = {}
         for algo1, algo2 in algorithm_pairs_keys:
-            algorithm_pairs[f"{algo1}, {algo2}"] = (normalized_score_dict[algo1], normalized_score_dict[algo2])
+            algorithm_pairs[f"{algo1}, {algo2}"] = (
+                normalized_score_dict[algo1],
+                normalized_score_dict[algo2],
+            )
 
         if args.versus:
             average_probabilities, average_prob_cis = rly.get_interval_estimates(
@@ -306,10 +411,14 @@ def plot_from_file():  # noqa: C901
             eval_indices = np.arange(n_evals - 1)[::downsample_factor]
             eval_indices = np.concatenate((eval_indices, [n_evals - 1]))
             eval_indices_scores_dict = {
-                algorithm: score[:, :, eval_indices] for algorithm, score in all_eval_normalized_scores_dict.items()
+                algorithm: score[:, :, eval_indices]
+                for algorithm, score in all_eval_normalized_scores_dict.items()
             }
             iqm = lambda scores: np.array(  # noqa: E731
-                [metrics.aggregate_iqm(scores[..., eval_idx]) for eval_idx in range(scores.shape[-1])]
+                [
+                    metrics.aggregate_iqm(scores[..., eval_idx])
+                    for eval_idx in range(scores.shape[-1])
+                ]
             )
             iqm_scores, iqm_cis = rly.get_interval_estimates(
                 eval_indices_scores_dict,
@@ -326,7 +435,9 @@ def plot_from_file():  # noqa: C901
                 xlabel=r"Number of Evaluations",
                 ylabel="IQM Normalized Score",
             )
-            plt.gcf().canvas.manager.set_window_title("IQM Normalized Score - Sample Efficiency Curve")
+            plt.gcf().canvas.manager.set_window_title(
+                "IQM Normalized Score - Sample Efficiency Curve"
+            )
             plt.legend()
             plt.tight_layout()
 

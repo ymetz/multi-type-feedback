@@ -63,7 +63,12 @@ def test_sde_check():
 
 def test_only_sde_squashed():
     with pytest.raises(AssertionError, match="use_sde=True"):
-        PPO("MlpPolicy", "Pendulum-v1", use_sde=False, policy_kwargs=dict(squash_output=True))
+        PPO(
+            "MlpPolicy",
+            "Pendulum-v1",
+            use_sde=False,
+            policy_kwargs=dict(squash_output=True),
+        )
 
 
 @pytest.mark.parametrize("model_class", [SAC, A2C, PPO])

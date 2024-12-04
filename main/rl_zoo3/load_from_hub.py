@@ -92,7 +92,9 @@ def download_from_hub(
     shutil.copy(config_path, os.path.join(config_folder, "config.yml"))
     shutil.copy(env_kwargs, os.path.join(config_folder, "env_kwargs.yml"))
     if vec_normalize_stats is not None:
-        shutil.copy(vec_normalize_stats, os.path.join(config_folder, "vecnormalize.pkl"))
+        shutil.copy(
+            vec_normalize_stats, os.path.join(config_folder, "vecnormalize.pkl")
+        )
 
     # Extract monitor file and evaluation file
     with zipfile.ZipFile(train_eval_metrics, "r") as zip_ref:
@@ -101,15 +103,40 @@ def download_from_hub(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env", help="environment ID", type=EnvironmentName, required=True)
-    parser.add_argument("-f", "--folder", help="Log folder", type=str, required=True)
-    parser.add_argument("-orga", "--organization", help="Huggingface hub organization", default="sb3")
-    parser.add_argument("-name", "--repo-name", help="Huggingface hub repository name, by default 'algo-env_id'", type=str)
-    parser.add_argument("--algo", help="RL Algorithm", type=str, required=True, choices=list(ALGOS.keys()))
-    parser.add_argument("--exp-id", help="Experiment ID (default: 0: latest, -1: no exp folder)", default=0, type=int)
-    parser.add_argument("--verbose", help="Verbose mode (0: no output, 1: INFO)", default=1, type=int)
     parser.add_argument(
-        "--force", action="store_true", default=False, help="Allow overwritting exp folder if it already exist"
+        "--env", help="environment ID", type=EnvironmentName, required=True
+    )
+    parser.add_argument("-f", "--folder", help="Log folder", type=str, required=True)
+    parser.add_argument(
+        "-orga", "--organization", help="Huggingface hub organization", default="sb3"
+    )
+    parser.add_argument(
+        "-name",
+        "--repo-name",
+        help="Huggingface hub repository name, by default 'algo-env_id'",
+        type=str,
+    )
+    parser.add_argument(
+        "--algo",
+        help="RL Algorithm",
+        type=str,
+        required=True,
+        choices=list(ALGOS.keys()),
+    )
+    parser.add_argument(
+        "--exp-id",
+        help="Experiment ID (default: 0: latest, -1: no exp folder)",
+        default=0,
+        type=int,
+    )
+    parser.add_argument(
+        "--verbose", help="Verbose mode (0: no output, 1: INFO)", default=1, type=int
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Allow overwritting exp folder if it already exist",
     )
     args = parser.parse_args()
 

@@ -5,10 +5,18 @@ import torch as th
 from gymnasium import spaces
 
 from stable_baselines3 import A2C
-from stable_baselines3.common.buffers import DictReplayBuffer, DictRolloutBuffer, ReplayBuffer, RolloutBuffer
+from stable_baselines3.common.buffers import (
+    DictReplayBuffer,
+    DictRolloutBuffer,
+    ReplayBuffer,
+    RolloutBuffer,
+)
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.type_aliases import DictReplayBufferSamples, ReplayBufferSamples
+from stable_baselines3.common.type_aliases import (
+    DictReplayBufferSamples,
+    ReplayBufferSamples,
+)
 from stable_baselines3.common.utils import get_device
 from stable_baselines3.common.vec_env import VecNormalize
 
@@ -21,7 +29,9 @@ class DummyEnv(gym.Env):
     def __init__(self):
         self.action_space = spaces.Box(1, 5, (1,))
         self.observation_space = spaces.Box(1, 5, (1,))
-        self._observations = np.array([[1.0], [2.0], [3.0], [4.0], [5.0]], dtype=np.float32)
+        self._observations = np.array(
+            [[1.0], [2.0], [3.0], [4.0], [5.0]], dtype=np.float32
+        )
         self._rewards = [1, 2, 3, 4, 5]
         self._t = 0
         self._ep_length = 100
@@ -50,21 +60,30 @@ class DummyDictEnv(gym.Env):
         # Test for multi-dim action space
         self.action_space = spaces.Box(1, 5, shape=(10, 7))
         space = spaces.Box(1, 5, (1,))
-        self.observation_space = spaces.Dict({"observation": space, "achieved_goal": space, "desired_goal": space})
-        self._observations = np.array([[1.0], [2.0], [3.0], [4.0], [5.0]], dtype=np.float32)
+        self.observation_space = spaces.Dict(
+            {"observation": space, "achieved_goal": space, "desired_goal": space}
+        )
+        self._observations = np.array(
+            [[1.0], [2.0], [3.0], [4.0], [5.0]], dtype=np.float32
+        )
         self._rewards = [1, 2, 3, 4, 5]
         self._t = 0
         self._ep_length = 100
 
     def reset(self, seed=None, options=None):
         self._t = 0
-        obs = {key: self._observations[0] for key in self.observation_space.spaces.keys()}
+        obs = {
+            key: self._observations[0] for key in self.observation_space.spaces.keys()
+        }
         return obs, {}
 
     def step(self, action):
         self._t += 1
         index = self._t % len(self._observations)
-        obs = {key: self._observations[index] for key in self.observation_space.spaces.keys()}
+        obs = {
+            key: self._observations[index]
+            for key in self.observation_space.spaces.keys()
+        }
         terminated = False
         truncated = self._t >= self._ep_length
         reward = self._rewards[index]
@@ -84,7 +103,9 @@ def test_replay_buffer_normalization(replay_buffer_cls):
     env = make_vec_env(env)
     env = VecNormalize(env)
 
-    buffer = replay_buffer_cls(100, env.observation_space, env.action_space, device="cpu")
+    buffer = replay_buffer_cls(
+        100, env.observation_space, env.action_space, device="cpu"
+    )
 
     # Interact and store transitions
     env.reset()
@@ -109,7 +130,10 @@ def test_replay_buffer_normalization(replay_buffer_cls):
     assert np.allclose(sample.rewards.mean(0), np.zeros(1), atol=1)
 
 
-@pytest.mark.parametrize("replay_buffer_cls", [DictReplayBuffer, DictRolloutBuffer, ReplayBuffer, RolloutBuffer])
+@pytest.mark.parametrize(
+    "replay_buffer_cls",
+    [DictReplayBuffer, DictRolloutBuffer, ReplayBuffer, RolloutBuffer],
+)
 @pytest.mark.parametrize("device", ["cpu", "cuda", "auto"])
 def test_device_buffer(replay_buffer_cls, device):
     if device == "cuda" and not th.cuda.is_available():
@@ -123,7 +147,9 @@ def test_device_buffer(replay_buffer_cls, device):
     }[replay_buffer_cls]
     env = make_vec_env(env)
 
-    buffer = replay_buffer_cls(100, env.observation_space, env.action_space, device=device)
+    buffer = replay_buffer_cls(
+        100, env.observation_space, env.action_space, device=device
+    )
 
     # Interact and store transitions
     obs = env.reset()
@@ -161,13 +187,32 @@ def test_device_buffer(replay_buffer_cls, device):
 
 
 def test_custom_rollout_buffer():
-    A2C("MlpPolicy", "Pendulum-v1", rollout_buffer_class=RolloutBuffer, rollout_buffer_kwargs=dict())
+    A2C(
+        "MlpPolicy",
+        "Pendulum-v1",
+        rollout_buffer_class=RolloutBuffer,
+        rollout_buffer_kwargs=dict(),
+    )
 
     with pytest.raises(TypeError, match="unexpected keyword argument 'wrong_keyword'"):
-        A2C("MlpPolicy", "Pendulum-v1", rollout_buffer_class=RolloutBuffer, rollout_buffer_kwargs=dict(wrong_keyword=1))
+        A2C(
+            "MlpPolicy",
+            "Pendulum-v1",
+            rollout_buffer_class=RolloutBuffer,
+            rollout_buffer_kwargs=dict(wrong_keyword=1),
+        )
 
-    with pytest.raises(TypeError, match="got multiple values for keyword argument 'gamma'"):
-        A2C("MlpPolicy", "Pendulum-v1", rollout_buffer_class=RolloutBuffer, rollout_buffer_kwargs=dict(gamma=1))
+    with pytest.raises(
+        TypeError, match="got multiple values for keyword argument 'gamma'"
+    ):
+        A2C(
+            "MlpPolicy",
+            "Pendulum-v1",
+            rollout_buffer_class=RolloutBuffer,
+            rollout_buffer_kwargs=dict(gamma=1),
+        )
 
-    with pytest.raises(AssertionError, match="DictRolloutBuffer must be used with Dict obs space only"):
+    with pytest.raises(
+        AssertionError, match="DictRolloutBuffer must be used with Dict obs space only"
+    ):
         A2C("MlpPolicy", "Pendulum-v1", rollout_buffer_class=DictRolloutBuffer)

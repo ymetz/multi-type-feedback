@@ -4,7 +4,12 @@ from typing import List, Tuple
 import numpy as np
 from gymnasium import spaces
 
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvObs, VecEnvStepReturn, VecEnvWrapper
+from stable_baselines3.common.vec_env.base_vec_env import (
+    VecEnv,
+    VecEnvObs,
+    VecEnvStepReturn,
+    VecEnvWrapper,
+)
 
 
 class VecCheckNan(VecEnvWrapper):
@@ -18,7 +23,13 @@ class VecCheckNan(VecEnvWrapper):
     :param check_inf: Whether to check for +inf or -inf as well
     """
 
-    def __init__(self, venv: VecEnv, raise_exception: bool = False, warn_once: bool = True, check_inf: bool = True) -> None:
+    def __init__(
+        self,
+        venv: VecEnv,
+        raise_exception: bool = False,
+        warn_once: bool = True,
+        check_inf: bool = True,
+    ) -> None:
         super().__init__(venv)
         self.raise_exception = raise_exception
         self.warn_once = warn_once
@@ -38,7 +49,9 @@ class VecCheckNan(VecEnvWrapper):
 
     def step_wait(self) -> VecEnvStepReturn:
         observations, rewards, dones, infos = self.venv.step_wait()
-        self._check_val(event="step_wait", observations=observations, rewards=rewards, dones=dones)
+        self._check_val(
+            event="step_wait", observations=observations, rewards=rewards, dones=dones
+        )
         self._observations = observations
         return observations, rewards, dones, infos
 
@@ -96,7 +109,9 @@ class VecCheckNan(VecEnvWrapper):
             if event == "reset":
                 msg += "environment observation (at reset)"
             elif event == "step_wait":
-                msg += f"environment, Last given value was: \r\n\taction={self._actions}"
+                msg += (
+                    f"environment, Last given value was: \r\n\taction={self._actions}"
+                )
             elif event == "step_async":
                 msg += f"RL model, Last given value was: \r\n\tobservations={self._observations}"
             else:

@@ -1,7 +1,11 @@
 from copy import deepcopy
 from typing import Optional, Type, TypeVar
 
-from stable_baselines3.common.vec_env.base_vec_env import CloudpickleWrapper, VecEnv, VecEnvWrapper
+from stable_baselines3.common.vec_env.base_vec_env import (
+    CloudpickleWrapper,
+    VecEnv,
+    VecEnvWrapper,
+)
 from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
 from stable_baselines3.common.vec_env.stacked_observations import StackedObservations
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
@@ -16,7 +20,9 @@ from stable_baselines3.common.vec_env.vec_video_recorder import VecVideoRecorder
 VecEnvWrapperT = TypeVar("VecEnvWrapperT", bound=VecEnvWrapper)
 
 
-def unwrap_vec_wrapper(env: VecEnv, vec_wrapper_class: Type[VecEnvWrapperT]) -> Optional[VecEnvWrapperT]:
+def unwrap_vec_wrapper(
+    env: VecEnv, vec_wrapper_class: Type[VecEnvWrapperT]
+) -> Optional[VecEnvWrapperT]:
     """
     Retrieve a ``VecEnvWrapper`` object by recursively searching.
 

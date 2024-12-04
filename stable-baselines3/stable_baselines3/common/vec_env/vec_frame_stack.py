@@ -18,12 +18,19 @@ class VecFrameStack(VecEnvWrapper):
         Alternatively channels_order can be a dictionary which can be used with environments with Dict observation spaces
     """
 
-    def __init__(self, venv: VecEnv, n_stack: int, channels_order: Optional[Union[str, Mapping[str, str]]] = None) -> None:
+    def __init__(
+        self,
+        venv: VecEnv,
+        n_stack: int,
+        channels_order: Optional[Union[str, Mapping[str, str]]] = None,
+    ) -> None:
         assert isinstance(
             venv.observation_space, (spaces.Box, spaces.Dict)
         ), "VecFrameStack only works with gym.spaces.Box and gym.spaces.Dict observation spaces"
 
-        self.stacked_obs = StackedObservations(venv.num_envs, n_stack, venv.observation_space, channels_order)
+        self.stacked_obs = StackedObservations(
+            venv.num_envs, n_stack, venv.observation_space, channels_order
+        )
         observation_space = self.stacked_obs.stacked_observation_space
         super().__init__(venv, observation_space=observation_space)
 

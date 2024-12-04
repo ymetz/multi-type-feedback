@@ -17,7 +17,9 @@ def value_key(trial: FrozenTrial) -> float:
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--study-file", help="Path to a pickle file contained a saved study", type=str)
+parser.add_argument(
+    "-i", "--study-file", help="Path to a pickle file contained a saved study", type=str
+)
 parser.add_argument(
     "-f",
     "--folder",
@@ -25,9 +27,20 @@ parser.add_argument(
     type=str,
     default="logs/hyperparameter_jsons",
 )
-parser.add_argument("--study-name", help="Study name used during hyperparameter optimization", type=str)
-parser.add_argument("--storage", help="Database storage path used during hyperparameter optimization", type=str)
-parser.add_argument("--print-n-best-trials", help="Show final return values for n best trials", type=int, default=0)
+parser.add_argument(
+    "--study-name", help="Study name used during hyperparameter optimization", type=str
+)
+parser.add_argument(
+    "--storage",
+    help="Database storage path used during hyperparameter optimization",
+    type=str,
+)
+parser.add_argument(
+    "--print-n-best-trials",
+    help="Show final return values for n best trials",
+    type=int,
+    default=0,
+)
 parser.add_argument(
     "--save-n-best-hyperparameters",
     help="Save the hyperparameters for the n best trials that resulted in the best returns",
@@ -37,7 +50,9 @@ parser.add_argument(
 args = parser.parse_args()
 
 if args.study_name is None:
-    assert args.study_file is not None, "No --study-file, nor --study-name were provided."
+    assert (
+        args.study_file is not None
+    ), "No --study-file, nor --study-name were provided."
     with open(args.study_file, "rb") as f:
         study = pickle.load(f)
 

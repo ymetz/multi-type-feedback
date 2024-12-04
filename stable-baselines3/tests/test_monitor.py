@@ -14,7 +14,9 @@ def test_monitor(tmp_path):
     """
     env = gym.make("CartPole-v1")
     env.reset(seed=0)
-    monitor_file = os.path.join(str(tmp_path), f"stable_baselines-test-{uuid.uuid4()}.monitor.csv")
+    monitor_file = os.path.join(
+        str(tmp_path), f"stable_baselines-test-{uuid.uuid4()}.monitor.csv"
+    )
     monitor_env = Monitor(env, monitor_file)
     monitor_env.reset()
     total_steps = 1000
@@ -22,7 +24,9 @@ def test_monitor(tmp_path):
     ep_lengths = []
     ep_len, ep_reward = 0, 0
     for _ in range(total_steps):
-        _, reward, terminated, truncated, _ = monitor_env.step(monitor_env.action_space.sample())
+        _, reward, terminated, truncated, _ = monitor_env.step(
+            monitor_env.action_space.sample()
+        )
         ep_len += 1
         ep_reward += reward
         if terminated or truncated:
@@ -42,15 +46,24 @@ def test_monitor(tmp_path):
         assert first_line.startswith("#")
         metadata = json.loads(first_line[1:])
         assert metadata["env_id"] == "CartPole-v1"
-        assert set(metadata.keys()) == {"env_id", "t_start"}, "Incorrect keys in monitor metadata"
+        assert set(metadata.keys()) == {
+            "env_id",
+            "t_start",
+        }, "Incorrect keys in monitor metadata"
 
         last_logline = pandas.read_csv(file_handler, index_col=None)
-        assert set(last_logline.keys()) == {"l", "t", "r"}, "Incorrect keys in monitor logline"
+        assert set(last_logline.keys()) == {
+            "l",
+            "t",
+            "r",
+        }, "Incorrect keys in monitor logline"
     os.remove(monitor_file)
 
     # Check missing filename directories are created
     monitor_dir = os.path.join(str(tmp_path), "missing-dir")
-    monitor_file = os.path.join(monitor_dir, f"stable_baselines-test-{uuid.uuid4()}.monitor.csv")
+    monitor_file = os.path.join(
+        monitor_dir, f"stable_baselines-test-{uuid.uuid4()}.monitor.csv"
+    )
     assert os.path.exists(monitor_dir) is False
     _ = Monitor(env, monitor_file)
     assert os.path.exists(monitor_dir) is True
@@ -65,7 +78,9 @@ def test_monitor_load_results(tmp_path):
     tmp_path = str(tmp_path)
     env1 = gym.make("CartPole-v1")
     env1.reset(seed=0)
-    monitor_file1 = os.path.join(tmp_path, f"stable_baselines-test-{uuid.uuid4()}.monitor.csv")
+    monitor_file1 = os.path.join(
+        tmp_path, f"stable_baselines-test-{uuid.uuid4()}.monitor.csv"
+    )
     monitor_env1 = Monitor(env1, monitor_file1)
 
     monitor_files = get_monitor_files(tmp_path)
@@ -75,7 +90,9 @@ def test_monitor_load_results(tmp_path):
     monitor_env1.reset()
     episode_count1 = 0
     for _ in range(1000):
-        _, _, terminated, truncated, _ = monitor_env1.step(monitor_env1.action_space.sample())
+        _, _, terminated, truncated, _ = monitor_env1.step(
+            monitor_env1.action_space.sample()
+        )
         if terminated or truncated:
             episode_count1 += 1
             monitor_env1.reset()
@@ -85,7 +102,9 @@ def test_monitor_load_results(tmp_path):
 
     env2 = gym.make("CartPole-v1")
     env2.reset(seed=0)
-    monitor_file2 = os.path.join(tmp_path, f"stable_baselines-test-{uuid.uuid4()}.monitor.csv")
+    monitor_file2 = os.path.join(
+        tmp_path, f"stable_baselines-test-{uuid.uuid4()}.monitor.csv"
+    )
     monitor_env2 = Monitor(env2, monitor_file2)
     monitor_files = get_monitor_files(tmp_path)
     assert len(monitor_files) == 2
@@ -98,7 +117,9 @@ def test_monitor_load_results(tmp_path):
         monitor_env2 = Monitor(env2, monitor_file2, override_existing=False)
         monitor_env2.reset()
         for _ in range(1000):
-            _, _, terminated, truncated, _ = monitor_env2.step(monitor_env2.action_space.sample())
+            _, _, terminated, truncated, _ = monitor_env2.step(
+                monitor_env2.action_space.sample()
+            )
             if terminated or truncated:
                 episode_count2 += 1
                 monitor_env2.reset()

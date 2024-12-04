@@ -36,7 +36,10 @@ def tile_images(images_nhwc: Sequence[np.ndarray]) -> np.ndarray:  # pragma: no 
     new_height = int(np.ceil(np.sqrt(n_images)))
     # new_width was named W before
     new_width = int(np.ceil(float(n_images) / new_height))
-    img_nhwc = np.array(list(img_nhwc) + [img_nhwc[0] * 0 for _ in range(n_images, new_height * new_width)])
+    img_nhwc = np.array(
+        list(img_nhwc)
+        + [img_nhwc[0] * 0 for _ in range(n_images, new_height * new_width)]
+    )
     # img_HWhwc
     out_image = img_nhwc.reshape((new_height, new_width, height, width, n_channels))
     # img_HhWwc
@@ -74,7 +77,9 @@ class VecEnv(ABC):
         try:
             render_modes = self.get_attr("render_mode")
         except AttributeError:
-            warnings.warn("The `render_mode` attribute is not defined in your environment. It will be set to None.")
+            warnings.warn(
+                "The `render_mode` attribute is not defined in your environment. It will be set to None."
+            )
             render_modes = [None for _ in range(num_envs)]
 
         assert all(
@@ -158,7 +163,9 @@ class VecEnv(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def set_attr(self, attr_name: str, value: Any, indices: VecEnvIndices = None) -> None:
+    def set_attr(
+        self, attr_name: str, value: Any, indices: VecEnvIndices = None
+    ) -> None:
         """
         Set attribute inside vectorized environments.
 
@@ -170,7 +177,13 @@ class VecEnv(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def env_method(self, method_name: str, *method_args, indices: VecEnvIndices = None, **method_kwargs) -> List[Any]:
+    def env_method(
+        self,
+        method_name: str,
+        *method_args,
+        indices: VecEnvIndices = None,
+        **method_kwargs,
+    ) -> List[Any]:
         """
         Call instance methods of vectorized environments.
 
@@ -183,7 +196,9 @@ class VecEnv(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def env_is_wrapped(self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None) -> List[bool]:
+    def env_is_wrapped(
+        self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None
+    ) -> List[bool]:
         """
         Check if environments are wrapped with a given wrapper.
 
@@ -240,7 +255,9 @@ class VecEnv(ABC):
         mode = mode or self.render_mode
 
         if mode is None:
-            warnings.warn("You tried to call render() but no `render_mode` was passed to the env constructor.")
+            warnings.warn(
+                "You tried to call render() but no `render_mode` was passed to the env constructor."
+            )
             return None
 
         # mode == self.render_mode == "human"
@@ -394,13 +411,25 @@ class VecEnvWrapper(VecEnv):
     def get_attr(self, attr_name: str, indices: VecEnvIndices = None) -> List[Any]:
         return self.venv.get_attr(attr_name, indices)
 
-    def set_attr(self, attr_name: str, value: Any, indices: VecEnvIndices = None) -> None:
+    def set_attr(
+        self, attr_name: str, value: Any, indices: VecEnvIndices = None
+    ) -> None:
         return self.venv.set_attr(attr_name, value, indices)
 
-    def env_method(self, method_name: str, *method_args, indices: VecEnvIndices = None, **method_kwargs) -> List[Any]:
-        return self.venv.env_method(method_name, *method_args, indices=indices, **method_kwargs)
+    def env_method(
+        self,
+        method_name: str,
+        *method_args,
+        indices: VecEnvIndices = None,
+        **method_kwargs,
+    ) -> List[Any]:
+        return self.venv.env_method(
+            method_name, *method_args, indices=indices, **method_kwargs
+        )
 
-    def env_is_wrapped(self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None) -> List[bool]:
+    def env_is_wrapped(
+        self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None
+    ) -> List[bool]:
         return self.venv.env_is_wrapped(wrapper_class, indices=indices)
 
     def __getattr__(self, name: str) -> Any:
@@ -454,7 +483,9 @@ class VecEnvWrapper(VecEnv):
         all_attributes = self._get_all_attributes()
         if name in all_attributes and already_found:
             # this venv's attribute is being hidden because of a higher venv.
-            shadowed_wrapper_class: Optional[str] = f"{type(self).__module__}.{type(self).__name__}"
+            shadowed_wrapper_class: Optional[str] = (
+                f"{type(self).__module__}.{type(self).__name__}"
+            )
         elif name in all_attributes and not already_found:
             # we have found the first reference to the attribute. Now check for duplicates.
             shadowed_wrapper_class = self.venv.getattr_depth_check(name, True)

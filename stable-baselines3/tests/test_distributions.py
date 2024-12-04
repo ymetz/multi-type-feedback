@@ -43,7 +43,13 @@ def test_squashed_gaussian(model_class):
     """
     Test run with squashed Gaussian (notably entropy computation)
     """
-    model = model_class("MlpPolicy", "Pendulum-v1", use_sde=True, n_steps=64, policy_kwargs=dict(squash_output=True))
+    model = model_class(
+        "MlpPolicy",
+        "Pendulum-v1",
+        use_sde=True,
+        n_steps=64,
+        policy_kwargs=dict(squash_output=True),
+    )
     model.learn(500)
 
     gaussian_mean = th.rand(N_SAMPLES, N_ACTIONS)
@@ -98,7 +104,9 @@ def test_sde_distribution():
     n_actions = 1
     deterministic_actions = th.ones(N_SAMPLES, n_actions) * 0.1
     state = th.ones(N_SAMPLES, N_FEATURES) * 0.3
-    dist = StateDependentNoiseDistribution(n_actions, full_std=True, squash_output=False)
+    dist = StateDependentNoiseDistribution(
+        n_actions, full_std=True, squash_output=False
+    )
 
     set_random_seed(1)
     _, log_std = dist.proba_distribution_net(N_FEATURES)
@@ -124,7 +132,9 @@ def test_entropy(dist):
     # mean negative log likelihood == differential entropy
     set_random_seed(1)
     deterministic_actions = th.rand(1, N_ACTIONS).repeat(N_SAMPLES, 1)
-    _, log_std = dist.proba_distribution_net(N_FEATURES, log_std_init=th.log(th.tensor(0.2)))
+    _, log_std = dist.proba_distribution_net(
+        N_FEATURES, log_std_init=th.log(th.tensor(0.2))
+    )
 
     if isinstance(dist, DiagGaussianDistribution):
         dist = dist.proba_distribution(deterministic_actions, log_std)
@@ -164,11 +174,19 @@ def test_categorical(dist, CAT_ACTIONS):
     [
         BernoulliDistribution(N_ACTIONS).proba_distribution(th.rand(N_ACTIONS)),
         CategoricalDistribution(N_ACTIONS).proba_distribution(th.rand(N_ACTIONS)),
-        DiagGaussianDistribution(N_ACTIONS).proba_distribution(th.rand(N_ACTIONS), th.rand(N_ACTIONS)),
-        MultiCategoricalDistribution([N_ACTIONS, N_ACTIONS]).proba_distribution(th.rand(1, sum([N_ACTIONS, N_ACTIONS]))),
-        SquashedDiagGaussianDistribution(N_ACTIONS).proba_distribution(th.rand(N_ACTIONS), th.rand(N_ACTIONS)),
+        DiagGaussianDistribution(N_ACTIONS).proba_distribution(
+            th.rand(N_ACTIONS), th.rand(N_ACTIONS)
+        ),
+        MultiCategoricalDistribution([N_ACTIONS, N_ACTIONS]).proba_distribution(
+            th.rand(1, sum([N_ACTIONS, N_ACTIONS]))
+        ),
+        SquashedDiagGaussianDistribution(N_ACTIONS).proba_distribution(
+            th.rand(N_ACTIONS), th.rand(N_ACTIONS)
+        ),
         StateDependentNoiseDistribution(N_ACTIONS).proba_distribution(
-            th.rand(N_ACTIONS), th.rand([N_ACTIONS, N_ACTIONS]), th.rand([N_ACTIONS, N_ACTIONS])
+            th.rand(N_ACTIONS),
+            th.rand([N_ACTIONS, N_ACTIONS]),
+            th.rand([N_ACTIONS, N_ACTIONS]),
         ),
     ],
 )
@@ -184,8 +202,12 @@ def test_kl_divergence(dist_type):
     if isinstance(dist_type, CategoricalDistribution):
         dist1 = dist_type.proba_distribution(th.rand(N_ACTIONS).repeat(N_SAMPLES, 1))
         # deepcopy needed to assign new memory to new distribution instance
-        dist2 = deepcopy(dist_type).proba_distribution(th.rand(N_ACTIONS).repeat(N_SAMPLES, 1))
-    elif isinstance(dist_type, DiagGaussianDistribution) or isinstance(dist_type, SquashedDiagGaussianDistribution):
+        dist2 = deepcopy(dist_type).proba_distribution(
+            th.rand(N_ACTIONS).repeat(N_SAMPLES, 1)
+        )
+    elif isinstance(dist_type, DiagGaussianDistribution) or isinstance(
+        dist_type, SquashedDiagGaussianDistribution
+    ):
         mean_actions1 = th.rand(1).repeat(N_SAMPLES, 1)
         log_std1 = th.rand(1).repeat(N_SAMPLES, 1)
         mean_actions2 = th.rand(1).repeat(N_SAMPLES, 1)
@@ -196,15 +218,21 @@ def test_kl_divergence(dist_type):
         dist1 = dist_type.proba_distribution(th.rand(1).repeat(N_SAMPLES, 1))
         dist2 = deepcopy(dist_type).proba_distribution(th.rand(1).repeat(N_SAMPLES, 1))
     elif isinstance(dist_type, MultiCategoricalDistribution):
-        dist1 = dist_type.proba_distribution(th.rand(1, sum([N_ACTIONS, N_ACTIONS])).repeat(N_SAMPLES, 1))
-        dist2 = deepcopy(dist_type).proba_distribution(th.rand(1, sum([N_ACTIONS, N_ACTIONS])).repeat(N_SAMPLES, 1))
+        dist1 = dist_type.proba_distribution(
+            th.rand(1, sum([N_ACTIONS, N_ACTIONS])).repeat(N_SAMPLES, 1)
+        )
+        dist2 = deepcopy(dist_type).proba_distribution(
+            th.rand(1, sum([N_ACTIONS, N_ACTIONS])).repeat(N_SAMPLES, 1)
+        )
     elif isinstance(dist_type, StateDependentNoiseDistribution):
         dist1 = StateDependentNoiseDistribution(1)
         dist2 = deepcopy(dist1)
         state = th.rand(1, N_FEATURES).repeat(N_SAMPLES, 1)
         mean_actions1 = th.rand(1).repeat(N_SAMPLES, 1)
         mean_actions2 = th.rand(1).repeat(N_SAMPLES, 1)
-        _, log_std = dist1.proba_distribution_net(N_FEATURES, log_std_init=th.log(th.tensor(0.2)))
+        _, log_std = dist1.proba_distribution_net(
+            N_FEATURES, log_std_init=th.log(th.tensor(0.2))
+        )
         dist1.sample_weights(log_std, batch_size=N_SAMPLES)
         dist2.sample_weights(log_std, batch_size=N_SAMPLES)
         dist1 = dist1.proba_distribution(mean_actions1, log_std, state)
@@ -226,7 +254,10 @@ def test_kl_divergence(dist_type):
         actions = th.tensor([0.0, 1.0])
         ad_hoc_kl = th.sum(
             th.exp(dist1.distribution.log_prob(actions))
-            * (dist1.distribution.log_prob(actions) - dist2.distribution.log_prob(actions))
+            * (
+                dist1.distribution.log_prob(actions)
+                - dist2.distribution.log_prob(actions)
+            )
         )
 
         assert th.allclose(full_kl_div, ad_hoc_kl)

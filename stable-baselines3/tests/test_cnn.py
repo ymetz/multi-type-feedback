@@ -8,9 +8,18 @@ from gymnasium import spaces
 
 from stable_baselines3 import A2C, DQN, PPO, SAC, TD3
 from stable_baselines3.common.envs import FakeImageEnv
-from stable_baselines3.common.preprocessing import is_image_space, is_image_space_channels_first
+from stable_baselines3.common.preprocessing import (
+    is_image_space,
+    is_image_space_channels_first,
+)
 from stable_baselines3.common.utils import zip_strict
-from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack, VecNormalize, VecTransposeImage, is_vecenv_wrapped
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    VecFrameStack,
+    VecNormalize,
+    VecTransposeImage,
+    is_vecenv_wrapped,
+)
 
 
 @pytest.mark.parametrize("model_class", [A2C, PPO, SAC, TD3, DQN])
@@ -20,7 +29,12 @@ def test_cnn(tmp_path, model_class, share_features_extractor):
     # Fake grayscale with frameskip
     # Atari after preprocessing: 84x84x1, here we are using lower resolution
     # to check that the network handle it automatically
-    env = FakeImageEnv(screen_height=40, screen_width=40, n_channels=1, discrete=model_class not in {SAC, TD3})
+    env = FakeImageEnv(
+        screen_height=40,
+        screen_width=40,
+        n_channels=1,
+        discrete=model_class not in {SAC, TD3},
+    )
     if model_class in {A2C, PPO}:
         kwargs = dict(
             n_steps=64,
@@ -71,7 +85,11 @@ def test_cnn(tmp_path, model_class, share_features_extractor):
 def test_vec_transpose_skip(tmp_path, model_class):
     # Fake grayscale with frameskip
     env = FakeImageEnv(
-        screen_height=41, screen_width=40, n_channels=10, discrete=model_class not in {SAC, TD3}, channel_first=True
+        screen_height=41,
+        screen_width=40,
+        n_channels=10,
+        discrete=model_class not in {SAC, TD3},
+        channel_first=True,
     )
     env = DummyVecEnv([lambda: env])
     # Stack 5 frames so the observation is now (50, 40, 40) but the env is still channel first
@@ -112,13 +130,17 @@ def params_should_differ(params, other_params):
 
 
 def check_td3_feature_extractor_match(model):
-    for (key, actor_param), critic_param in zip(model.actor_target.named_parameters(), model.critic_target.parameters()):
+    for (key, actor_param), critic_param in zip(
+        model.actor_target.named_parameters(), model.critic_target.parameters()
+    ):
         if "features_extractor" in key:
             assert th.allclose(actor_param, critic_param), key
 
 
 def check_td3_feature_extractor_differ(model):
-    for (key, actor_param), critic_param in zip(model.actor_target.named_parameters(), model.critic_target.parameters()):
+    for (key, actor_param), critic_param in zip(
+        model.actor_target.named_parameters(), model.critic_target.parameters()
+    ):
         if "features_extractor" in key:
             assert not th.allclose(actor_param, critic_param), key
 
@@ -129,10 +151,19 @@ def test_features_extractor_target_net(model_class, share_features_extractor):
     if model_class == DQN and share_features_extractor:
         pytest.skip()
 
-    env = FakeImageEnv(screen_height=40, screen_width=40, n_channels=1, discrete=model_class not in {SAC, TD3})
+    env = FakeImageEnv(
+        screen_height=40,
+        screen_width=40,
+        n_channels=1,
+        discrete=model_class not in {SAC, TD3},
+    )
     # Avoid memory error when using replay buffer
     # Reduce the size of the features
-    kwargs = dict(buffer_size=250, learning_starts=100, policy_kwargs=dict(features_extractor_kwargs=dict(features_dim=32)))
+    kwargs = dict(
+        buffer_size=250,
+        learning_starts=100,
+        policy_kwargs=dict(features_extractor_kwargs=dict(features_dim=32)),
+    )
     if model_class != DQN:
         kwargs["policy_kwargs"]["share_features_extractor"] = share_features_extractor
 
@@ -146,9 +177,13 @@ def test_features_extractor_target_net(model_class, share_features_extractor):
 
     if share_features_extractor:
         # Check that the objects are the same and not just copied
-        assert id(model.policy.actor.features_extractor) == id(model.policy.critic.features_extractor)
+        assert id(model.policy.actor.features_extractor) == id(
+            model.policy.critic.features_extractor
+        )
         if model_class == TD3:
-            assert id(model.policy.actor_target.features_extractor) == id(model.policy.critic_target.features_extractor)
+            assert id(model.policy.actor_target.features_extractor) == id(
+                model.policy.critic_target.features_extractor
+            )
         # Actor and critic features extractor should be the same
         td3_features_extractor_check = check_td3_feature_extractor_match
     else:
@@ -156,10 +191,14 @@ def test_features_extractor_target_net(model_class, share_features_extractor):
         td3_features_extractor_check = check_td3_feature_extractor_differ
         # Check that the object differ
         if model_class != DQN:
-            assert id(model.policy.actor.features_extractor) != id(model.policy.critic.features_extractor)
+            assert id(model.policy.actor.features_extractor) != id(
+                model.policy.critic.features_extractor
+            )
 
         if model_class == TD3:
-            assert id(model.policy.actor_target.features_extractor) != id(model.policy.critic_target.features_extractor)
+            assert id(model.policy.actor_target.features_extractor) != id(
+                model.policy.critic_target.features_extractor
+            )
 
     # Critic and target should be equal at the beginning of training
     params_should_match(model.critic.parameters(), model.critic_target.parameters())
@@ -196,7 +235,9 @@ def test_features_extractor_target_net(model_class, share_features_extractor):
     params_should_match(original_target_param, model.critic_target.parameters())
 
     if model_class == TD3:
-        params_should_match(original_actor_target_param, model.actor_target.parameters())
+        params_should_match(
+            original_actor_target_param, model.actor_target.parameters()
+        )
         td3_features_extractor_check(model)
 
     # not the same for critic net (updated by gradient descent)
@@ -227,7 +268,9 @@ def test_features_extractor_target_net(model_class, share_features_extractor):
     params_should_match(original_param, model.critic.parameters())
 
     if model_class == TD3:
-        params_should_differ(original_actor_target_param, model.actor_target.parameters())
+        params_should_differ(
+            original_actor_target_param, model.actor_target.parameters()
+        )
 
         params_should_match(original_actor_param, model.actor.parameters())
 
@@ -242,7 +285,13 @@ def test_channel_first_env(tmp_path):
     # Create environment with transposed images (CxHxW).
     # If underlying CNN processes the data in wrong format,
     # it will raise an error of negative dimension sizes while creating convolutions
-    env = FakeImageEnv(screen_height=40, screen_width=40, n_channels=1, discrete=True, channel_first=True)
+    env = FakeImageEnv(
+        screen_height=40,
+        screen_width=40,
+        n_channels=1,
+        discrete=True,
+        channel_first=True,
+    )
 
     model = A2C("CnnPolicy", env, n_steps=100).learn(250)
 
@@ -295,7 +344,9 @@ def test_image_space_checks():
     assert is_image_space(channel_first_image_space, check_channels=False)
     assert is_image_space(channel_first_image_space, check_channels=True)
 
-    an_image_space_with_odd_channels = spaces.Box(0, 255, shape=(10, 10, 5), dtype=np.uint8)
+    an_image_space_with_odd_channels = spaces.Box(
+        0, 255, shape=(10, 10, 5), dtype=np.uint8
+    )
     assert is_image_space(an_image_space_with_odd_channels)
     # Should not pass if we check if channels are valid for an image
     assert not is_image_space(an_image_space_with_odd_channels, check_channels=True)

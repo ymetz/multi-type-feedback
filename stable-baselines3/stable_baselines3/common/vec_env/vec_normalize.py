@@ -9,7 +9,11 @@ from gymnasium import spaces
 from stable_baselines3.common import utils
 from stable_baselines3.common.preprocessing import is_image_space
 from stable_baselines3.common.running_mean_std import RunningMeanStd
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvStepReturn, VecEnvWrapper
+from stable_baselines3.common.vec_env.base_vec_env import (
+    VecEnv,
+    VecEnvStepReturn,
+    VecEnvWrapper,
+)
 
 
 class VecNormalize(VecEnvWrapper):
@@ -117,7 +121,9 @@ class VecNormalize(VecEnvWrapper):
 
         elif isinstance(self.observation_space, spaces.Box):
             if self.norm_obs_keys is not None:
-                raise ValueError("`norm_obs_keys` param is applicable only with `gym.spaces.Dict` observation spaces")
+                raise ValueError(
+                    "`norm_obs_keys` param is applicable only with `gym.spaces.Dict` observation spaces"
+                )
 
         else:
             raise ValueError(
@@ -146,7 +152,9 @@ class VecNormalize(VecEnvWrapper):
 
         :param state:"""
         # Backward compatibility
-        if "norm_obs_keys" not in state and isinstance(state["observation_space"], spaces.Dict):
+        if "norm_obs_keys" not in state and isinstance(
+            state["observation_space"], spaces.Dict
+        ):
             state["norm_obs_keys"] = list(state["observation_space"].spaces.keys())
         self.__dict__.update(state)
         assert "venv" not in state
@@ -161,7 +169,9 @@ class VecNormalize(VecEnvWrapper):
         :param venv:
         """
         if self.venv is not None:
-            raise ValueError("Trying to set venv of already initialized VecNormalize wrapper.")
+            raise ValueError(
+                "Trying to set venv of already initialized VecNormalize wrapper."
+            )
         self.venv = venv
         self.num_envs = venv.num_envs
         self.class_attributes = dict(inspect.getmembers(self.__class__))
@@ -201,7 +211,9 @@ class VecNormalize(VecEnvWrapper):
             if not done:
                 continue
             if "terminal_observation" in infos[idx]:
-                infos[idx]["terminal_observation"] = self.normalize_obs(infos[idx]["terminal_observation"])
+                infos[idx]["terminal_observation"] = self.normalize_obs(
+                    infos[idx]["terminal_observation"]
+                )
 
         self.returns[dones] = 0
         return obs, rewards, dones, infos
@@ -218,7 +230,11 @@ class VecNormalize(VecEnvWrapper):
         :param obs_rms: associated statistics
         :return: normalized observation
         """
-        return np.clip((obs - obs_rms.mean) / np.sqrt(obs_rms.var + self.epsilon), -self.clip_obs, self.clip_obs)
+        return np.clip(
+            (obs - obs_rms.mean) / np.sqrt(obs_rms.var + self.epsilon),
+            -self.clip_obs,
+            self.clip_obs,
+        )
 
     def _unnormalize_obs(self, obs: np.ndarray, obs_rms: RunningMeanStd) -> np.ndarray:
         """
@@ -229,7 +245,9 @@ class VecNormalize(VecEnvWrapper):
         """
         return (obs * np.sqrt(obs_rms.var + self.epsilon)) + obs_rms.mean
 
-    def normalize_obs(self, obs: Union[np.ndarray, Dict[str, np.ndarray]]) -> Union[np.ndarray, Dict[str, np.ndarray]]:
+    def normalize_obs(
+        self, obs: Union[np.ndarray, Dict[str, np.ndarray]]
+    ) -> Union[np.ndarray, Dict[str, np.ndarray]]:
         """
         Normalize observations using this VecNormalize's observations statistics.
         Calling this method does not update statistics.
@@ -241,7 +259,9 @@ class VecNormalize(VecEnvWrapper):
                 assert self.norm_obs_keys is not None
                 # Only normalize the specified keys
                 for key in self.norm_obs_keys:
-                    obs_[key] = self._normalize_obs(obs[key], self.obs_rms[key]).astype(np.float32)
+                    obs_[key] = self._normalize_obs(obs[key], self.obs_rms[key]).astype(
+                        np.float32
+                    )
             else:
                 assert isinstance(self.obs_rms, RunningMeanStd)
                 obs_ = self._normalize_obs(obs, self.obs_rms).astype(np.float32)
@@ -253,10 +273,16 @@ class VecNormalize(VecEnvWrapper):
         Calling this method does not update statistics.
         """
         if self.norm_reward:
-            reward = np.clip(reward / np.sqrt(self.ret_rms.var + self.epsilon), -self.clip_reward, self.clip_reward)
+            reward = np.clip(
+                reward / np.sqrt(self.ret_rms.var + self.epsilon),
+                -self.clip_reward,
+                self.clip_reward,
+            )
         return reward
 
-    def unnormalize_obs(self, obs: Union[np.ndarray, Dict[str, np.ndarray]]) -> Union[np.ndarray, Dict[str, np.ndarray]]:
+    def unnormalize_obs(
+        self, obs: Union[np.ndarray, Dict[str, np.ndarray]]
+    ) -> Union[np.ndarray, Dict[str, np.ndarray]]:
         # Avoid modifying by reference the original object
         obs_ = deepcopy(obs)
         if self.norm_obs:

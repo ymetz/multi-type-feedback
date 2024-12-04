@@ -29,7 +29,7 @@ def make_env(render_mode=None, render=False, **kwargs):
 def register_environments():
     for env_name in ENV_NAMES:
         register(
-            id=f'procgen-{env_name}-v0',
-            entry_point='procgen.gym_registration:make_env',
+            id=f"procgen-{env_name}-v0",
+            entry_point="procgen.gym_registration:make_env",
             kwargs={"env_name": env_name},
         )

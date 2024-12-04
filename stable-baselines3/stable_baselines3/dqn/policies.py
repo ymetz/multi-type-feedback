@@ -53,7 +53,9 @@ class QNetwork(BasePolicy):
         self.activation_fn = activation_fn
         self.features_dim = features_dim
         action_dim = int(self.action_space.n)  # number of actions
-        q_net = create_mlp(self.features_dim, action_dim, self.net_arch, self.activation_fn)
+        q_net = create_mlp(
+            self.features_dim, action_dim, self.net_arch, self.activation_fn
+        )
         self.q_net = nn.Sequential(*q_net)
 
     def forward(self, obs: PyTorchObs) -> th.Tensor:
@@ -65,7 +67,9 @@ class QNetwork(BasePolicy):
         """
         return self.q_net(self.extract_features(obs, self.features_extractor))
 
-    def _predict(self, observation: PyTorchObs, deterministic: bool = True) -> th.Tensor:
+    def _predict(
+        self, observation: PyTorchObs, deterministic: bool = True
+    ) -> th.Tensor:
         q_values = self(observation)
         # Greedy action
         action = q_values.argmax(dim=1).reshape(-1)
@@ -174,7 +178,9 @@ class DQNPolicy(BasePolicy):
 
     def make_q_net(self) -> QNetwork:
         # Make sure we always have separate networks for features extractors etc
-        net_args = self._update_features_extractor(self.net_args, features_extractor=None)
+        net_args = self._update_features_extractor(
+            self.net_args, features_extractor=None
+        )
         return QNetwork(**net_args).to(self.device)
 
     def forward(self, obs: PyTorchObs, deterministic: bool = True) -> th.Tensor:

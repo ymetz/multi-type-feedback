@@ -159,9 +159,15 @@ class MaxAndSkipEnv(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
     def __init__(self, env: gym.Env, skip: int = 4) -> None:
         super().__init__(env)
         # most recent raw observations (for max pooling across time steps)
-        assert env.observation_space.dtype is not None, "No dtype specified for the observation space"
-        assert env.observation_space.shape is not None, "No shape defined for the observation space"
-        self._obs_buffer = np.zeros((2, *env.observation_space.shape), dtype=env.observation_space.dtype)
+        assert (
+            env.observation_space.dtype is not None
+        ), "No dtype specified for the observation space"
+        assert (
+            env.observation_space.shape is not None
+        ), "No shape defined for the observation space"
+        self._obs_buffer = np.zeros(
+            (2, *env.observation_space.shape), dtype=env.observation_space.dtype
+        )
         self._skip = skip
 
     def step(self, action: int) -> AtariStepReturn:
@@ -225,7 +231,9 @@ class WarpFrame(gym.ObservationWrapper[np.ndarray, int, np.ndarray]):
         super().__init__(env)
         self.width = width
         self.height = height
-        assert isinstance(env.observation_space, spaces.Box), f"Expected Box space, got {env.observation_space}"
+        assert isinstance(
+            env.observation_space, spaces.Box
+        ), f"Expected Box space, got {env.observation_space}"
 
         self.observation_space = spaces.Box(
             low=0,
@@ -241,9 +249,13 @@ class WarpFrame(gym.ObservationWrapper[np.ndarray, int, np.ndarray]):
         :param frame: environment frame
         :return: the observation
         """
-        assert cv2 is not None, "OpenCV is not installed, you can do `pip install opencv-python`"
+        assert (
+            cv2 is not None
+        ), "OpenCV is not installed, you can do `pip install opencv-python`"
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
+        frame = cv2.resize(
+            frame, (self.width, self.height), interpolation=cv2.INTER_AREA
+        )
         return frame[:, :, None]
 
 

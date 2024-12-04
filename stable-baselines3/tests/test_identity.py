@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 
 from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
-from stable_baselines3.common.envs import IdentityEnv, IdentityEnvBox, IdentityEnvMultiBinary, IdentityEnvMultiDiscrete
+from stable_baselines3.common.envs import (
+    IdentityEnv,
+    IdentityEnvBox,
+    IdentityEnvMultiBinary,
+    IdentityEnvMultiDiscrete,
+)
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.noise import NormalActionNoise
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -11,7 +16,10 @@ DIM = 4
 
 
 @pytest.mark.parametrize("model_class", [A2C, PPO, DQN])
-@pytest.mark.parametrize("env", [IdentityEnv(DIM), IdentityEnvMultiDiscrete(DIM), IdentityEnvMultiBinary(DIM)])
+@pytest.mark.parametrize(
+    "env",
+    [IdentityEnv(DIM), IdentityEnvMultiDiscrete(DIM), IdentityEnvMultiBinary(DIM)],
+)
 def test_discrete(model_class, env):
     env_ = DummyVecEnv([lambda: env])
     kwargs = {}
@@ -40,7 +48,9 @@ def test_continuous(model_class):
 
     if model_class in [TD3]:
         n_actions = 1
-        action_noise = NormalActionNoise(mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions))
+        action_noise = NormalActionNoise(
+            mean=np.zeros(n_actions), sigma=0.1 * np.ones(n_actions)
+        )
         kwargs["action_noise"] = action_noise
     elif model_class in [A2C]:
         kwargs["policy_kwargs"]["log_std_init"] = -0.5

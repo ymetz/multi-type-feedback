@@ -67,10 +67,20 @@ def test_her(model_class, image_obs_space):
 @pytest.mark.parametrize("image_obs_space", [True, False])
 def test_multiprocessing(model_class, image_obs_space):
     def env_fn():
-        return BitFlippingEnv(n_bits=4, continuous=not (model_class == DQN), image_obs_space=image_obs_space)
+        return BitFlippingEnv(
+            n_bits=4,
+            continuous=not (model_class == DQN),
+            image_obs_space=image_obs_space,
+        )
 
     env = make_vec_env(env_fn, n_envs=2, vec_env_cls=SubprocVecEnv)
-    model = model_class("MultiInputPolicy", env, replay_buffer_class=HerReplayBuffer, buffer_size=int(2e4), train_freq=4)
+    model = model_class(
+        "MultiInputPolicy",
+        env,
+        replay_buffer_class=HerReplayBuffer,
+        buffer_size=int(2e4),
+        train_freq=4,
+    )
     model.learn(total_timesteps=150)
 
 
@@ -168,7 +178,9 @@ def test_save_load(tmp_path, model_class, use_sde):
     params = deepcopy(model.policy.state_dict())
 
     # Modify all parameters to be random values
-    random_params = {param_name: th.rand_like(param) for param_name, param in params.items()}
+    random_params = {
+        param_name: th.rand_like(param) for param_name, param in params.items()
+    }
 
     # Update model parameters with the new random values
     model.policy.load_state_dict(random_params)
@@ -176,7 +188,9 @@ def test_save_load(tmp_path, model_class, use_sde):
     new_params = model.policy.state_dict()
     # Check that all params are different now
     for k in params:
-        assert not th.allclose(params[k], new_params[k]), "Parameters did not change as expected."
+        assert not th.allclose(
+            params[k], new_params[k]
+        ), "Parameters did not change as expected."
 
     params = new_params
 
@@ -190,7 +204,12 @@ def test_save_load(tmp_path, model_class, use_sde):
     # test custom_objects
     # Load with custom objects
     custom_objects = dict(learning_rate=2e-5, dummy=1.0)
-    model_ = model_class.load(str(tmp_path / "test_save.zip"), env=env, custom_objects=custom_objects, verbose=2)
+    model_ = model_class.load(
+        str(tmp_path / "test_save.zip"),
+        env=env,
+        custom_objects=custom_objects,
+        verbose=2,
+    )
     assert model_.verbose == 2
     # Check that the custom object was taken into account
     assert model_.learning_rate == custom_objects["learning_rate"]
@@ -204,7 +223,9 @@ def test_save_load(tmp_path, model_class, use_sde):
 
     # Check that all params are the same as before save load procedure now
     for key in params:
-        assert th.allclose(params[key], new_params[key]), "Model parameters not the same after save and load."
+        assert th.allclose(
+            params[key], new_params[key]
+        ), "Model parameters not the same after save and load."
 
     # check if model still selects the same actions
     new_selected_actions, _ = model.predict(observations, deterministic=True)
@@ -214,7 +235,9 @@ def test_save_load(tmp_path, model_class, use_sde):
     model.learn(total_timesteps=150)
 
     # Test that the change of parameters works
-    model = model_class.load(str(tmp_path / "test_save.zip"), env=env, verbose=3, learning_rate=2.0)
+    model = model_class.load(
+        str(tmp_path / "test_save.zip"), env=env, verbose=3, learning_rate=2.0
+    )
     assert model.learning_rate == 2.0
     assert model.verbose == 3
 
@@ -267,22 +290,35 @@ def test_save_load_replay_buffer(n_envs, tmp_path, recwarn, truncate_last_trajec
 
     model.load_replay_buffer(path, truncate_last_traj=truncate_last_trajectory)
 
-    if truncate_last_trajectory and (old_replay_buffer.dones[old_replay_buffer.pos - 1] == 0).any():
+    if (
+        truncate_last_trajectory
+        and (old_replay_buffer.dones[old_replay_buffer.pos - 1] == 0).any()
+    ):
         assert len(recwarn) == 1
         warning = recwarn.pop(UserWarning)
-        assert "The last trajectory in the replay buffer will be truncated" in str(warning.message)
+        assert "The last trajectory in the replay buffer will be truncated" in str(
+            warning.message
+        )
     else:
         assert len(recwarn) == 0
 
     replay_buffer = model.replay_buffer
     pos = replay_buffer.pos
     for key in ["observation", "desired_goal", "achieved_goal"]:
-        assert np.allclose(old_replay_buffer.observations[key][:pos], replay_buffer.observations[key][:pos])
-        assert np.allclose(old_replay_buffer.next_observations[key][:pos], replay_buffer.next_observations[key][:pos])
+        assert np.allclose(
+            old_replay_buffer.observations[key][:pos],
+            replay_buffer.observations[key][:pos],
+        )
+        assert np.allclose(
+            old_replay_buffer.next_observations[key][:pos],
+            replay_buffer.next_observations[key][:pos],
+        )
     assert np.allclose(old_replay_buffer.actions[:pos], replay_buffer.actions[:pos])
     assert np.allclose(old_replay_buffer.rewards[:pos], replay_buffer.rewards[:pos])
     # we might change the last done of the last trajectory so we don't compare it
-    assert np.allclose(old_replay_buffer.dones[: pos - 1], replay_buffer.dones[: pos - 1])
+    assert np.allclose(
+        old_replay_buffer.dones[: pos - 1], replay_buffer.dones[: pos - 1]
+    )
 
     # test if continuing training works properly
     reset_num_timesteps = False if truncate_last_trajectory is False else True
@@ -355,7 +391,9 @@ def test_truncate_last_trajectory(n_envs, recwarn, n_steps, handle_timeout_termi
     for _ in range(n_steps):
         actions = np.random.rand(n_envs, n_bits)
         next_observations, rewards, dones, infos = venv.step(actions)
-        replay_buffer.add(observations, next_observations, actions, rewards, dones, infos)
+        replay_buffer.add(
+            observations, next_observations, actions, rewards, dones, infos
+        )
         observations = next_observations
 
     old_replay_buffer = deepcopy(replay_buffer)
@@ -372,7 +410,9 @@ def test_truncate_last_trajectory(n_envs, recwarn, n_steps, handle_timeout_termi
         # at least one episode in the replay buffer did not finish
         assert len(recwarn) == 1
         warning = recwarn.pop(UserWarning)
-        assert "The last trajectory in the replay buffer will be truncated" in str(warning.message)
+        assert "The last trajectory in the replay buffer will be truncated" in str(
+            warning.message
+        )
     else:
         # all episodes in the replay buffer are finished
         assert len(recwarn) == 0
@@ -389,45 +429,83 @@ def test_truncate_last_trajectory(n_envs, recwarn, n_steps, handle_timeout_termi
 
     # replay buffer should not have changed after truncate_last_trajectory (except dones[pos-1])
     for key in ["observation", "desired_goal", "achieved_goal"]:
-        assert np.allclose(old_replay_buffer.observations[key], replay_buffer.observations[key])
-        assert np.allclose(old_replay_buffer.next_observations[key], replay_buffer.next_observations[key])
+        assert np.allclose(
+            old_replay_buffer.observations[key], replay_buffer.observations[key]
+        )
+        assert np.allclose(
+            old_replay_buffer.next_observations[key],
+            replay_buffer.next_observations[key],
+        )
     assert np.allclose(old_replay_buffer.actions, replay_buffer.actions)
     assert np.allclose(old_replay_buffer.rewards, replay_buffer.rewards)
     # we might change the last done of the last trajectory so we don't compare it
-    assert np.allclose(old_replay_buffer.dones[: pos - 1], replay_buffer.dones[: pos - 1])
+    assert np.allclose(
+        old_replay_buffer.dones[: pos - 1], replay_buffer.dones[: pos - 1]
+    )
     assert np.allclose(old_replay_buffer.dones[pos:], replay_buffer.dones[pos:])
 
     for _ in range(10):
         actions = np.random.rand(n_envs, n_bits)
         next_observations, rewards, dones, infos = venv.step(actions)
-        replay_buffer.add(observations, next_observations, actions, rewards, dones, infos)
+        replay_buffer.add(
+            observations, next_observations, actions, rewards, dones, infos
+        )
         observations = next_observations
 
     # old oberservations must remain unchanged
     for key in ["observation", "desired_goal", "achieved_goal"]:
-        assert np.allclose(old_replay_buffer.observations[key][:pos], replay_buffer.observations[key][:pos])
-        assert np.allclose(old_replay_buffer.next_observations[key][:pos], replay_buffer.next_observations[key][:pos])
+        assert np.allclose(
+            old_replay_buffer.observations[key][:pos],
+            replay_buffer.observations[key][:pos],
+        )
+        assert np.allclose(
+            old_replay_buffer.next_observations[key][:pos],
+            replay_buffer.next_observations[key][:pos],
+        )
     assert np.allclose(old_replay_buffer.actions[:pos], replay_buffer.actions[:pos])
     assert np.allclose(old_replay_buffer.rewards[:pos], replay_buffer.rewards[:pos])
-    assert np.allclose(old_replay_buffer.dones[: pos - 1], replay_buffer.dones[: pos - 1])
+    assert np.allclose(
+        old_replay_buffer.dones[: pos - 1], replay_buffer.dones[: pos - 1]
+    )
 
     # new oberservations must differ from old observations
     end_pos = replay_buffer.pos
     for key in ["observation", "desired_goal", "achieved_goal"]:
-        assert not np.allclose(old_replay_buffer.observations[key][pos:end_pos], replay_buffer.observations[key][pos:end_pos])
         assert not np.allclose(
-            old_replay_buffer.next_observations[key][pos:end_pos], replay_buffer.next_observations[key][pos:end_pos]
+            old_replay_buffer.observations[key][pos:end_pos],
+            replay_buffer.observations[key][pos:end_pos],
         )
-    assert not np.allclose(old_replay_buffer.actions[pos:end_pos], replay_buffer.actions[pos:end_pos])
-    assert not np.allclose(old_replay_buffer.rewards[pos:end_pos], replay_buffer.rewards[pos:end_pos])
-    assert not np.allclose(old_replay_buffer.dones[pos - 1 : end_pos], replay_buffer.dones[pos - 1 : end_pos])
+        assert not np.allclose(
+            old_replay_buffer.next_observations[key][pos:end_pos],
+            replay_buffer.next_observations[key][pos:end_pos],
+        )
+    assert not np.allclose(
+        old_replay_buffer.actions[pos:end_pos], replay_buffer.actions[pos:end_pos]
+    )
+    assert not np.allclose(
+        old_replay_buffer.rewards[pos:end_pos], replay_buffer.rewards[pos:end_pos]
+    )
+    assert not np.allclose(
+        old_replay_buffer.dones[pos - 1 : end_pos],
+        replay_buffer.dones[pos - 1 : end_pos],
+    )
 
     # all entries with index >= replay_buffer.pos must remain unchanged
     for key in ["observation", "desired_goal", "achieved_goal"]:
-        assert np.allclose(old_replay_buffer.observations[key][end_pos:], replay_buffer.observations[key][end_pos:])
-        assert np.allclose(old_replay_buffer.next_observations[key][end_pos:], replay_buffer.next_observations[key][end_pos:])
-    assert np.allclose(old_replay_buffer.actions[end_pos:], replay_buffer.actions[end_pos:])
-    assert np.allclose(old_replay_buffer.rewards[end_pos:], replay_buffer.rewards[end_pos:])
+        assert np.allclose(
+            old_replay_buffer.observations[key][end_pos:],
+            replay_buffer.observations[key][end_pos:],
+        )
+        assert np.allclose(
+            old_replay_buffer.next_observations[key][end_pos:],
+            replay_buffer.next_observations[key][end_pos:],
+        )
+    assert np.allclose(
+        old_replay_buffer.actions[end_pos:], replay_buffer.actions[end_pos:]
+    )
+    assert np.allclose(
+        old_replay_buffer.rewards[end_pos:], replay_buffer.rewards[end_pos:]
+    )
     assert np.allclose(old_replay_buffer.dones[end_pos:], replay_buffer.dones[end_pos:])
 
 

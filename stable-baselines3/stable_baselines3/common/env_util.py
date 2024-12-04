@@ -9,7 +9,9 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv
 from stable_baselines3.common.vec_env.patch_gym import _patch_env
 
 
-def unwrap_wrapper(env: gym.Env, wrapper_class: Type[gym.Wrapper]) -> Optional[gym.Wrapper]:
+def unwrap_wrapper(
+    env: gym.Env, wrapper_class: Type[gym.Wrapper]
+) -> Optional[gym.Wrapper]:
     """
     Retrieve a ``VecEnvWrapper`` object by recursively searching.
 
@@ -105,7 +107,11 @@ def make_vec_env(
                 env.action_space.seed(seed + rank)
             # Wrap the env in a Monitor wrapper
             # to have additional training information
-            monitor_path = os.path.join(monitor_dir, str(rank)) if monitor_dir is not None else None
+            monitor_path = (
+                os.path.join(monitor_dir, str(rank))
+                if monitor_dir is not None
+                else None
+            )
             # Create the monitor folder if needed
             if monitor_path is not None and monitor_dir is not None:
                 os.makedirs(monitor_dir, exist_ok=True)
@@ -122,7 +128,9 @@ def make_vec_env(
         # Default: use a DummyVecEnv
         vec_env_cls = DummyVecEnv
 
-    vec_env = vec_env_cls([make_env(i + start_index) for i in range(n_envs)], **vec_env_kwargs)
+    vec_env = vec_env_cls(
+        [make_env(i + start_index) for i in range(n_envs)], **vec_env_kwargs
+    )
     # Prepare the seeds for the first reset
     vec_env.seed(seed)
     return vec_env

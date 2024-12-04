@@ -12,7 +12,9 @@ except ImportError:
     gym_installed = False
 
 
-def _patch_env(env: Union["gym.Env", gymnasium.Env]) -> gymnasium.Env:  # pragma: no cover
+def _patch_env(
+    env: Union["gym.Env", gymnasium.Env]
+) -> gymnasium.Env:  # pragma: no cover
     """
     Adapted from https://github.com/thu-ml/tianshou.
 
@@ -60,7 +62,9 @@ def _patch_env(env: Union["gym.Env", gymnasium.Env]) -> gymnasium.Env:  # pragma
     return shimmy.GymV21CompatibilityV0(env=env)
 
 
-def _convert_space(space: Union["gym.Space", gymnasium.Space]) -> gymnasium.Space:  # pragma: no cover
+def _convert_space(
+    space: Union["gym.Space", gymnasium.Space]
+) -> gymnasium.Space:  # pragma: no cover
     """
     Takes a space and patches it to return Gymnasium Space.
     This function takes the space object and returns a patched

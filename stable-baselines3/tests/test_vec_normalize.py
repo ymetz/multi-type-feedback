@@ -55,9 +55,15 @@ class DummyDictEnv(gym.Env):
         super().__init__()
         self.observation_space = spaces.Dict(
             {
-                "observation": spaces.Box(low=-20.0, high=20.0, shape=(4,), dtype=np.float32),
-                "achieved_goal": spaces.Box(low=-20.0, high=20.0, shape=(4,), dtype=np.float32),
-                "desired_goal": spaces.Box(low=-20.0, high=20.0, shape=(4,), dtype=np.float32),
+                "observation": spaces.Box(
+                    low=-20.0, high=20.0, shape=(4,), dtype=np.float32
+                ),
+                "achieved_goal": spaces.Box(
+                    low=-20.0, high=20.0, shape=(4,), dtype=np.float32
+                ),
+                "desired_goal": spaces.Box(
+                    low=-20.0, high=20.0, shape=(4,), dtype=np.float32
+                ),
             }
         )
         self.action_space = spaces.Box(low=-1, high=1, shape=(3,), dtype=np.float32)
@@ -73,7 +79,9 @@ class DummyDictEnv(gym.Env):
         terminated = np.random.rand() > 0.8
         return obs, reward, terminated, False, {}
 
-    def compute_reward(self, achieved_goal: np.ndarray, desired_goal: np.ndarray, _info) -> np.float32:
+    def compute_reward(
+        self, achieved_goal: np.ndarray, desired_goal: np.ndarray, _info
+    ) -> np.float32:
         distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
         return -(distance > 0).astype(np.float32)
 
@@ -268,7 +276,13 @@ def test_vec_env(tmp_path, make_gym_env):
     clip_reward = 5.0
 
     orig_venv = DummyVecEnv([make_gym_env])
-    norm_venv = VecNormalize(orig_venv, norm_obs=True, norm_reward=True, clip_obs=clip_obs, clip_reward=clip_reward)
+    norm_venv = VecNormalize(
+        orig_venv,
+        norm_obs=True,
+        norm_reward=True,
+        clip_obs=clip_obs,
+        clip_reward=clip_reward,
+    )
     assert orig_venv.render_mode is None
     assert norm_venv.render_mode is None
 
@@ -356,7 +370,9 @@ def test_normalize_dict_selected_keys():
         orig_obs = venv.get_original_obs()
 
         # "observation" is expected to be normalized
-        np.testing.assert_array_compare(operator.__ne__, obs["observation"], orig_obs["observation"])
+        np.testing.assert_array_compare(
+            operator.__ne__, obs["observation"], orig_obs["observation"]
+        )
         assert allclose(venv.normalize_obs(orig_obs), obs)
 
         # other keys are expected to be presented "as is"
@@ -365,10 +381,19 @@ def test_normalize_dict_selected_keys():
 
 def test_her_normalization():
     env = DummyVecEnv([make_dict_env])
-    env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.0, clip_reward=10.0)
+    env = VecNormalize(
+        env, norm_obs=True, norm_reward=True, clip_obs=10.0, clip_reward=10.0
+    )
 
     eval_env = DummyVecEnv([make_dict_env])
-    eval_env = VecNormalize(eval_env, training=False, norm_obs=True, norm_reward=False, clip_obs=10.0, clip_reward=10.0)
+    eval_env = VecNormalize(
+        eval_env,
+        training=False,
+        norm_obs=True,
+        norm_reward=False,
+        clip_obs=10.0,
+        clip_reward=10.0,
+    )
 
     model = SAC(
         "MultiInputPolicy",
@@ -395,12 +420,27 @@ def test_her_normalization():
 @pytest.mark.parametrize("model_class", [SAC, TD3])
 def test_offpolicy_normalization(model_class):
     env = DummyVecEnv([make_env])
-    env = VecNormalize(env, norm_obs=True, norm_reward=True, clip_obs=10.0, clip_reward=10.0)
+    env = VecNormalize(
+        env, norm_obs=True, norm_reward=True, clip_obs=10.0, clip_reward=10.0
+    )
 
     eval_env = DummyVecEnv([make_env])
-    eval_env = VecNormalize(eval_env, training=False, norm_obs=True, norm_reward=False, clip_obs=10.0, clip_reward=10.0)
+    eval_env = VecNormalize(
+        eval_env,
+        training=False,
+        norm_obs=True,
+        norm_reward=False,
+        clip_obs=10.0,
+        clip_reward=10.0,
+    )
 
-    model = model_class("MlpPolicy", env, verbose=1, learning_starts=100, policy_kwargs=dict(net_arch=[64]))
+    model = model_class(
+        "MlpPolicy",
+        env,
+        verbose=1,
+        learning_starts=100,
+        policy_kwargs=dict(net_arch=[64]),
+    )
 
     # Check that VecNormalize object is correctly updated
     assert model.get_vec_normalize_env() is env
@@ -419,7 +459,9 @@ def test_sync_vec_normalize(make_env):
 
     assert unwrap_vec_normalize(original_env) is None
 
-    env = VecNormalize(original_env, norm_obs=True, norm_reward=True, clip_obs=100.0, clip_reward=100.0)
+    env = VecNormalize(
+        original_env, norm_obs=True, norm_reward=True, clip_obs=100.0, clip_reward=100.0
+    )
 
     assert isinstance(unwrap_vec_normalize(env), VecNormalize)
 
@@ -428,7 +470,14 @@ def test_sync_vec_normalize(make_env):
         assert isinstance(unwrap_vec_normalize(env), VecNormalize)
 
     eval_env = DummyVecEnv([make_env])
-    eval_env = VecNormalize(eval_env, training=False, norm_obs=True, norm_reward=True, clip_obs=100.0, clip_reward=100.0)
+    eval_env = VecNormalize(
+        eval_env,
+        training=False,
+        norm_obs=True,
+        norm_reward=True,
+        clip_obs=100.0,
+        clip_reward=100.0,
+    )
 
     if not isinstance(env.observation_space, spaces.Dict):
         eval_env = VecFrameStack(eval_env, 1)
@@ -458,10 +507,14 @@ def test_sync_vec_normalize(make_env):
     sync_envs_normalization(env, eval_env)
     # Now they must be synced
     assert allclose(obs, eval_env.normalize_obs(original_obs))
-    assert allclose(env.normalize_reward(dummy_rewards), eval_env.normalize_reward(dummy_rewards))
+    assert allclose(
+        env.normalize_reward(dummy_rewards), eval_env.normalize_reward(dummy_rewards)
+    )
 
     # Check synchronization when only reward is normalized
-    env = VecNormalize(original_env, norm_obs=False, norm_reward=True, clip_reward=100.0)
+    env = VecNormalize(
+        original_env, norm_obs=False, norm_reward=True, clip_reward=100.0
+    )
     eval_env = DummyVecEnv([make_env])
     eval_env = VecNormalize(eval_env, training=False, norm_obs=False, norm_reward=False)
     env.reset()

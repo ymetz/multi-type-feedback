@@ -19,10 +19,25 @@ from rl_zoo3.utils import ALGOS, StoreDict
 
 def train() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--algo", help="RL Algorithm", default="ppo", type=str, required=False, choices=list(ALGOS.keys()))
+    parser.add_argument(
+        "--algo",
+        help="RL Algorithm",
+        default="ppo",
+        type=str,
+        required=False,
+        choices=list(ALGOS.keys()),
+    )
     parser.add_argument("--env", type=str, default="CartPole-v1", help="environment ID")
-    parser.add_argument("-tb", "--tensorboard-log", help="Tensorboard log dir", default="", type=str)
-    parser.add_argument("-i", "--trained-agent", help="Path to a pretrained agent to continue training", default="", type=str)
+    parser.add_argument(
+        "-tb", "--tensorboard-log", help="Tensorboard log dir", default="", type=str
+    )
+    parser.add_argument(
+        "-i",
+        "--trained-agent",
+        help="Path to a pretrained agent to continue training",
+        default="",
+        type=str,
+    )
     parser.add_argument(
         "--truncate-last-trajectory",
         help="When using HER with online sampling the last trajectory "
@@ -30,9 +45,25 @@ def train() -> None:
         default=True,
         type=bool,
     )
-    parser.add_argument("-n", "--n-timesteps", help="Overwrite the number of timesteps", default=-1, type=int)
-    parser.add_argument("--num-threads", help="Number of threads for PyTorch (-1 to use default)", default=-1, type=int)
-    parser.add_argument("--log-interval", help="Override log interval (default: -1, no change)", default=-1, type=int)
+    parser.add_argument(
+        "-n",
+        "--n-timesteps",
+        help="Overwrite the number of timesteps",
+        default=-1,
+        type=int,
+    )
+    parser.add_argument(
+        "--num-threads",
+        help="Number of threads for PyTorch (-1 to use default)",
+        default=-1,
+        type=int,
+    )
+    parser.add_argument(
+        "--log-interval",
+        help="Override log interval (default: -1, no change)",
+        default=-1,
+        type=int,
+    )
     parser.add_argument(
         "--eval-freq",
         help="Evaluate the agent every n steps (if negative, no evaluation). "
@@ -46,16 +77,47 @@ def train() -> None:
         "Disabled if no argument is passed.",
         type=str,
     )
-    parser.add_argument("--eval-episodes", help="Number of episodes to use for evaluation", default=5, type=int)
-    parser.add_argument("--n-eval-envs", help="Number of environments for evaluation", default=1, type=int)
-    parser.add_argument("--save-freq", help="Save the model every n steps (if negative, no checkpoint)", default=-1, type=int)
     parser.add_argument(
-        "--save-replay-buffer", help="Save the replay buffer too (when applicable)", action="store_true", default=False
+        "--eval-episodes",
+        help="Number of episodes to use for evaluation",
+        default=5,
+        type=int,
     )
-    parser.add_argument("-f", "--log-folder", help="Log folder", type=str, default="logs")
+    parser.add_argument(
+        "--n-eval-envs",
+        help="Number of environments for evaluation",
+        default=1,
+        type=int,
+    )
+    parser.add_argument(
+        "--save-freq",
+        help="Save the model every n steps (if negative, no checkpoint)",
+        default=-1,
+        type=int,
+    )
+    parser.add_argument(
+        "--save-replay-buffer",
+        help="Save the replay buffer too (when applicable)",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "-f", "--log-folder", help="Log folder", type=str, default="logs"
+    )
     parser.add_argument("--seed", help="Random generator seed", type=int, default=-1)
-    parser.add_argument("--vec-env", help="VecEnv type", type=str, default="dummy", choices=["dummy", "subproc"])
-    parser.add_argument("--device", help="PyTorch device to be use (ex: cpu, cuda...)", default="auto", type=str)
+    parser.add_argument(
+        "--vec-env",
+        help="VecEnv type",
+        type=str,
+        default="dummy",
+        choices=["dummy", "subproc"],
+    )
+    parser.add_argument(
+        "--device",
+        help="PyTorch device to be use (ex: cpu, cuda...)",
+        default="auto",
+        type=str,
+    )
     parser.add_argument(
         "--n-trials",
         help="Number of trials for optimizing hyperparameters. "
@@ -71,12 +133,24 @@ def train() -> None:
         default=None,
     )
     parser.add_argument(
-        "-optimize", "--optimize-hyperparameters", action="store_true", default=False, help="Run hyperparameters search"
+        "-optimize",
+        "--optimize-hyperparameters",
+        action="store_true",
+        default=False,
+        help="Run hyperparameters search",
     )
     parser.add_argument(
-        "--no-optim-plots", action="store_true", default=False, help="Disable hyperparameter optimization plots"
+        "--no-optim-plots",
+        action="store_true",
+        default=False,
+        help="Disable hyperparameter optimization plots",
     )
-    parser.add_argument("--n-jobs", help="Number of parallel jobs when optimizing hyperparameters", type=int, default=1)
+    parser.add_argument(
+        "--n-jobs",
+        help="Number of parallel jobs when optimizing hyperparameters",
+        type=int,
+        default=1,
+    )
     parser.add_argument(
         "--sampler",
         help="Sampler to use when optimizing hyperparameters",
@@ -91,7 +165,12 @@ def train() -> None:
         default="median",
         choices=["halving", "median", "none"],
     )
-    parser.add_argument("--n-startup-trials", help="Number of trials before using optuna sampler", type=int, default=10)
+    parser.add_argument(
+        "--n-startup-trials",
+        help="Number of trials before using optuna sampler",
+        type=int,
+        default=10,
+    )
     parser.add_argument(
         "--n-evaluations",
         help="Training policies are evaluated every n-timesteps // n-evaluations steps when doing hyperparameter optimization."
@@ -100,10 +179,20 @@ def train() -> None:
         default=None,
     )
     parser.add_argument(
-        "--storage", help="Database storage path if distributed optimization should be used", type=str, default=None
+        "--storage",
+        help="Database storage path if distributed optimization should be used",
+        type=str,
+        default=None,
     )
-    parser.add_argument("--study-name", help="Study name for distributed optimization", type=str, default=None)
-    parser.add_argument("--verbose", help="Verbose mode (0: no output, 1: INFO)", default=1, type=int)
+    parser.add_argument(
+        "--study-name",
+        help="Study name for distributed optimization",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--verbose", help="Verbose mode (0: no output, 1: INFO)", default=1, type=int
+    )
     parser.add_argument(
         "--gym-packages",
         type=str,
@@ -112,7 +201,11 @@ def train() -> None:
         help="Additional external Gym environment package modules to import",
     )
     parser.add_argument(
-        "--env-kwargs", type=str, nargs="+", action=StoreDict, help="Optional keyword argument to pass to the env constructor"
+        "--env-kwargs",
+        type=str,
+        nargs="+",
+        action=StoreDict,
+        help="Optional keyword argument to pass to the env constructor",
     )
     parser.add_argument(
         "--eval-env-kwargs",
@@ -137,15 +230,28 @@ def train() -> None:
         help="Custom yaml file or python package from which the hyperparameters will be loaded."
         "We expect that python packages contain a dictionary called 'hyperparams' which contains a key for each environment.",
     )
-    parser.add_argument("-uuid", "--uuid", action="store_true", default=False, help="Ensure that the run has a unique ID")
+    parser.add_argument(
+        "-uuid",
+        "--uuid",
+        action="store_true",
+        default=False,
+        help="Ensure that the run has a unique ID",
+    )
     parser.add_argument(
         "--track",
         action="store_true",
         default=False,
         help="if toggled, this experiment will be tracked with Weights and Biases",
     )
-    parser.add_argument("--wandb-project-name", type=str, default="sb3", help="the wandb's project name")
-    parser.add_argument("--wandb-entity", type=str, default=None, help="the entity (team) of wandb's project")
+    parser.add_argument(
+        "--wandb-project-name", type=str, default="sb3", help="the wandb's project name"
+    )
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default=None,
+        help="the entity (team) of wandb's project",
+    )
     parser.add_argument(
         "-P",
         "--progress",
@@ -154,7 +260,12 @@ def train() -> None:
         help="if toggled, display a progress bar using tqdm and rich",
     )
     parser.add_argument(
-        "-tags", "--wandb-tags", type=str, default=[], nargs="+", help="Tags for wandb run, e.g.: -tags optimized pr-123"
+        "-tags",
+        "--wandb-tags",
+        type=str,
+        default=[],
+        nargs="+",
+        help="Tags for wandb run, e.g.: -tags optimized pr-123",
     )
 
     args = parser.parse_args()
@@ -172,7 +283,9 @@ def train() -> None:
             closest_match = difflib.get_close_matches(env_id, registered_envs, n=1)[0]
         except IndexError:
             closest_match = "'no close match found...'"
-        raise ValueError(f"{env_id} not found in gym registry, you maybe meant {closest_match}?")
+        raise ValueError(
+            f"{env_id} not found in gym registry, you maybe meant {closest_match}?"
+        )
 
     # Unique id to ensure there is no race condition for the folder creation
     uuid_str = f"_{uuid.uuid4()}" if args.uuid else ""

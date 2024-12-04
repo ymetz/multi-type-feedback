@@ -19,8 +19,16 @@ from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike  # noqa: F401
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv, VecFrameStack, VecNormalize
+from stable_baselines3.common.sb2_compat.rmsprop_tf_like import (
+    RMSpropTFLike,
+)  # noqa: F401
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    SubprocVecEnv,
+    VecEnv,
+    VecFrameStack,
+    VecNormalize,
+)
 
 # metaworld compatability
 import metaworld
@@ -51,7 +59,9 @@ def flatten_dict_observations(env: gym.Env) -> gym.Env:
     return gym.wrappers.FlattenObservation(env)
 
 
-def get_wrapper_class(hyperparams: Dict[str, Any], key: str = "env_wrapper") -> Optional[Callable[[gym.Env], gym.Env]]:
+def get_wrapper_class(
+    hyperparams: Dict[str, Any], key: str = "env_wrapper"
+) -> Optional[Callable[[gym.Env], gym.Env]]:
     """
     Get one or more Gym environment wrapper class specified as a hyper parameter
     "env_wrapper".
@@ -315,7 +325,9 @@ def get_trained_models(log_folder: str) -> Dict[str, Tuple[str, str]]:
         if not os.path.isdir(os.path.join(log_folder, algo)):
             continue
         for model_folder in os.listdir(os.path.join(log_folder, algo)):
-            args_files = glob.glob(os.path.join(log_folder, algo, model_folder, "*/args.yml"))
+            args_files = glob.glob(
+                os.path.join(log_folder, algo, model_folder, "*/args.yml")
+            )
             if len(args_files) != 1:
                 continue  # we expect only one sub-folder with an args.yml file
             with open(args_files[0]) as fh:
@@ -326,7 +338,9 @@ def get_trained_models(log_folder: str) -> Dict[str, Tuple[str, str]]:
     return trained_models
 
 
-def get_hf_trained_models(organization: str = "sb3", check_filename: bool = False) -> Dict[str, Tuple[str, str]]:
+def get_hf_trained_models(
+    organization: str = "sb3", check_filename: bool = False
+) -> Dict[str, Tuple[str, str]]:
     """
     Get pretrained models,
     available on the Hugginface hub for a given organization.
@@ -358,7 +372,10 @@ def get_hf_trained_models(organization: str = "sb3", check_filename: bool = Fals
         model_name = ModelName(algo, env_name)
 
         # check if there is a model file in the repo
-        if check_filename and not any(f.rfilename == model_name.filename for f in api.model_info(model.modelId).siblings):
+        if check_filename and not any(
+            f.rfilename == model_name.filename
+            for f in api.model_info(model.modelId).siblings
+        ):
             continue  # skip model if the repo contains no properly named model file
 
         trained_models[model_name] = (algo, env_id)
@@ -379,7 +396,11 @@ def get_latest_run_id(log_path: str, env_name: EnvironmentName) -> int:
     for path in glob.glob(os.path.join(log_path, env_name + "_[0-9]*")):
         run_id = path.split("_")[-1]
         path_without_run_id = path[: -len(run_id) - 1]
-        if path_without_run_id.endswith(env_name) and run_id.isdigit() and int(run_id) > max_run_id:
+        if (
+            path_without_run_id.endswith(env_name)
+            and run_id.isdigit()
+            and int(run_id) > max_run_id
+        ):
             max_run_id = int(run_id)
     return max_run_id
 
@@ -419,7 +440,10 @@ def get_saved_hyperparams(
                 if test_mode:
                     normalize_kwargs["norm_reward"] = norm_reward
             else:
-                normalize_kwargs = {"norm_obs": hyperparams["normalize"], "norm_reward": norm_reward}
+                normalize_kwargs = {
+                    "norm_obs": hyperparams["normalize"],
+                    "norm_reward": norm_reward,
+                }
             hyperparams["normalize_kwargs"] = normalize_kwargs
     return hyperparams, stats_path
 
@@ -477,7 +501,9 @@ def get_model_path(
     elif load_last_checkpoint:
         checkpoints = glob.glob(os.path.join(log_path, "rl_model_*_steps.zip"))
         if len(checkpoints) == 0:
-            raise ValueError(f"No checkpoint found for {algo} on {env_name}, path: {log_path}")
+            raise ValueError(
+                f"No checkpoint found for {algo} on {env_name}, path: {log_path}"
+            )
 
         def step_count(checkpoint_path: str) -> int:
             # path follow the pattern "rl_model_*_steps.zip", we count from the back to ignore any other _ in the path
@@ -497,18 +523,21 @@ def get_model_path(
 
     return name_prefix, model_path, log_path
 
+
 # ======= Metaworld compabtability ========
 
+
 def ppo_make_metaworld_env(env_id, seed):
-    env_name = env_id.replace('metaworld-','')
-    env_cls = _envs_dict.ALL_V2_ENVIRONMENTS[env_name]    
-    env = env_cls() 
+    env_name = env_id.replace("metaworld-", "")
+    env_cls = _envs_dict.ALL_V2_ENVIRONMENTS[env_name]
+    env = env_cls()
 
     env._freeze_rand_vec = False
     env._set_task_called = True
     env.seed(seed)
-    
+
     return TimeLimit(env, 500)
+
 
 def make_vec_metaworld_env(
     env_id: str,
@@ -548,19 +577,23 @@ def make_vec_metaworld_env(
     monitor_kwargs = {} if monitor_kwargs is None else monitor_kwargs
 
     def make_env(rank):
-        def _init():            
+        def _init():
             env = ppo_make_metaworld_env(env_id, seed + rank)
             if seed is not None:
                 env.action_space.seed(seed + rank)
             # Wrap the env in a Monitor wrapper
             # to have additional training information
-            monitor_path = os.path.join(monitor_dir, str(rank)) if monitor_dir is not None else None
+            monitor_path = (
+                os.path.join(monitor_dir, str(rank))
+                if monitor_dir is not None
+                else None
+            )
             # Create the monitor folder if needed
             if monitor_path is not None:
                 os.makedirs(monitor_dir, exist_ok=True)
-            
+
             env = MetaWorldMonitor(env, filename=monitor_path, **monitor_kwargs)
-            
+
             # Optionally, wrap the environment with the provided wrapper
             if wrapper_class is not None:
                 env = wrapper_class(env)
@@ -573,4 +606,6 @@ def make_vec_metaworld_env(
         # Default: use a DummyVecEnv
         vec_env_cls = DummyVecEnv
 
-    return vec_env_cls([make_env(i + start_index) for i in range(n_envs)], **vec_env_kwargs)
+    return vec_env_cls(
+        [make_env(i + start_index) for i in range(n_envs)], **vec_env_kwargs
+    )

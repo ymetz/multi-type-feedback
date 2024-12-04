@@ -92,7 +92,9 @@ class SubprocVecEnv(VecEnv):
            Defaults to 'forkserver' on available platforms, and 'spawn' otherwise.
     """
 
-    def __init__(self, env_fns: List[Callable[[], gym.Env]], start_method: Optional[str] = None):
+    def __init__(
+        self, env_fns: List[Callable[[], gym.Env]], start_method: Optional[str] = None
+    ):
         self.waiting = False
         self.closed = False
         n_envs = len(env_fns)
@@ -107,7 +109,9 @@ class SubprocVecEnv(VecEnv):
 
         self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(n_envs)])
         self.processes = []
-        for work_remote, remote, env_fn in zip(self.work_remotes, self.remotes, env_fns):
+        for work_remote, remote, env_fn in zip(
+            self.work_remotes, self.remotes, env_fns
+        ):
             args = (work_remote, remote, CloudpickleWrapper(env_fn))
             # daemon=True: if the main process crashes, we should not cause things to hang
             process = ctx.Process(target=_worker, args=args, daemon=True)  # type: ignore[attr-defined]
@@ -172,7 +176,9 @@ class SubprocVecEnv(VecEnv):
             remote.send(("get_attr", attr_name))
         return [remote.recv() for remote in target_remotes]
 
-    def set_attr(self, attr_name: str, value: Any, indices: VecEnvIndices = None) -> None:
+    def set_attr(
+        self, attr_name: str, value: Any, indices: VecEnvIndices = None
+    ) -> None:
         """Set attribute inside vectorized environments (see base class)."""
         target_remotes = self._get_target_remotes(indices)
         for remote in target_remotes:
@@ -180,14 +186,22 @@ class SubprocVecEnv(VecEnv):
         for remote in target_remotes:
             remote.recv()
 
-    def env_method(self, method_name: str, *method_args, indices: VecEnvIndices = None, **method_kwargs) -> List[Any]:
+    def env_method(
+        self,
+        method_name: str,
+        *method_args,
+        indices: VecEnvIndices = None,
+        **method_kwargs,
+    ) -> List[Any]:
         """Call instance methods of vectorized environments."""
         target_remotes = self._get_target_remotes(indices)
         for remote in target_remotes:
             remote.send(("env_method", (method_name, method_args, method_kwargs)))
         return [remote.recv() for remote in target_remotes]
 
-    def env_is_wrapped(self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None) -> List[bool]:
+    def env_is_wrapped(
+        self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None
+    ) -> List[bool]:
         """Check if worker environments are wrapped with a given wrapper"""
         target_remotes = self._get_target_remotes(indices)
         for remote in target_remotes:
@@ -206,7 +220,9 @@ class SubprocVecEnv(VecEnv):
         return [self.remotes[i] for i in indices]
 
 
-def _flatten_obs(obs: Union[List[VecEnvObs], Tuple[VecEnvObs]], space: spaces.Space) -> VecEnvObs:
+def _flatten_obs(
+    obs: Union[List[VecEnvObs], Tuple[VecEnvObs]], space: spaces.Space
+) -> VecEnvObs:
     """
     Flatten observations, depending on the observation space.
 
@@ -217,15 +233,25 @@ def _flatten_obs(obs: Union[List[VecEnvObs], Tuple[VecEnvObs]], space: spaces.Sp
             A flattened NumPy array or an OrderedDict or tuple of flattened numpy arrays.
             Each NumPy array has the environment index as its first axis.
     """
-    assert isinstance(obs, (list, tuple)), "expected list or tuple of observations per environment"
+    assert isinstance(
+        obs, (list, tuple)
+    ), "expected list or tuple of observations per environment"
     assert len(obs) > 0, "need observations from at least one environment"
 
     if isinstance(space, spaces.Dict):
-        assert isinstance(space.spaces, OrderedDict), "Dict space must have ordered subspaces"
-        assert isinstance(obs[0], dict), "non-dict observation for environment with Dict observation space"
-        return OrderedDict([(k, np.stack([o[k] for o in obs])) for k in space.spaces.keys()])
+        assert isinstance(
+            space.spaces, OrderedDict
+        ), "Dict space must have ordered subspaces"
+        assert isinstance(
+            obs[0], dict
+        ), "non-dict observation for environment with Dict observation space"
+        return OrderedDict(
+            [(k, np.stack([o[k] for o in obs])) for k in space.spaces.keys()]
+        )
     elif isinstance(space, spaces.Tuple):
-        assert isinstance(obs[0], tuple), "non-tuple observation for environment with Tuple observation space"
+        assert isinstance(
+            obs[0], tuple
+        ), "non-tuple observation for environment with Tuple observation space"
         obs_len = len(space.spaces)
         return tuple(np.stack([o[i] for o in obs]) for i in range(obs_len))  # type: ignore[index]
     else:

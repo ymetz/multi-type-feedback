@@ -5,7 +5,10 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from stable_baselines3.common.preprocessing import check_for_nested_spaces, is_image_space_channels_first
+from stable_baselines3.common.preprocessing import (
+    check_for_nested_spaces,
+    is_image_space_channels_first,
+)
 from stable_baselines3.common.vec_env import DummyVecEnv, VecCheckNan
 
 
@@ -24,7 +27,9 @@ def _starts_at_zero(space: Union[spaces.Discrete, spaces.MultiDiscrete]) -> bool
     return np.allclose(space.start, np.zeros_like(space.start))
 
 
-def _check_non_zero_start(space: spaces.Space, space_type: str = "observation", key: str = "") -> None:
+def _check_non_zero_start(
+    space: spaces.Space, space_type: str = "observation", key: str = ""
+) -> None:
     """
     :param space: Observation or action space
     :param space_type: information about whether it is an observation or action space
@@ -32,7 +37,9 @@ def _check_non_zero_start(space: spaces.Space, space_type: str = "observation", 
     :param key: When the observation space comes from a Dict space, we pass the
         corresponding key to have more precise warning messages. Defaults to "".
     """
-    if isinstance(space, (spaces.Discrete, spaces.MultiDiscrete)) and not _starts_at_zero(space):
+    if isinstance(
+        space, (spaces.Discrete, spaces.MultiDiscrete)
+    ) and not _starts_at_zero(space):
         maybe_key = f"(key='{key}')" if key else ""
         warnings.warn(
             f"{type(space).__name__} {space_type} space {maybe_key} with a non-zero start (start={space.start}) "
@@ -79,7 +86,9 @@ def _check_image_input(observation_space: spaces.Box, key: str = "") -> None:
         )
 
 
-def _check_unsupported_spaces(env: gym.Env, observation_space: spaces.Space, action_space: spaces.Space) -> None:
+def _check_unsupported_spaces(
+    env: gym.Env, observation_space: spaces.Space, action_space: spaces.Space
+) -> None:
     """Emit warnings when the observation space or action space used is not supported by Stable-Baselines."""
 
     if isinstance(observation_space, spaces.Dict):
@@ -98,7 +107,10 @@ def _check_unsupported_spaces(env: gym.Env, observation_space: spaces.Space, act
                 "is not supported but `dict(space2=Box(), spaces3=Box(), spaces4=Discrete())` is."
             )
 
-    if isinstance(observation_space, spaces.MultiDiscrete) and len(observation_space.nvec.shape) > 1:
+    if (
+        isinstance(observation_space, spaces.MultiDiscrete)
+        and len(observation_space.nvec.shape) > 1
+    ):
         warnings.warn(
             f"The MultiDiscrete observation space uses a multidimensional array {observation_space.nvec} "
             "which is currently not supported by Stable-Baselines3. "
@@ -151,7 +163,9 @@ def _is_goal_env(env: gym.Env) -> bool:
     return hasattr(env.unwrapped, "compute_reward")
 
 
-def _check_goal_env_obs(obs: dict, observation_space: spaces.Dict, method_name: str) -> None:
+def _check_goal_env_obs(
+    obs: dict, observation_space: spaces.Dict, method_name: str
+) -> None:
     """
     Check that an environment implementing the `compute_rewards()` method
     (previously known as GoalEnv in gym) contains at least three elements,
@@ -194,11 +208,19 @@ def _check_goal_env_compute_reward(
         batch_desired_goals = batch_desired_goals.reshape(2, 1)
     batch_infos = np.array([info, info])
     rewards = env.compute_reward(batch_achieved_goals, batch_desired_goals, batch_infos)  # type: ignore[attr-defined]
-    assert rewards.shape == (2,), f"Unexpected shape for vectorized computation of reward: {rewards.shape} != (2,)"
-    assert rewards[0] == reward, f"Vectorized computation of reward differs from single computation: {rewards[0]} != {reward}"
+    assert rewards.shape == (
+        2,
+    ), f"Unexpected shape for vectorized computation of reward: {rewards.shape} != (2,)"
+    assert (
+        rewards[0] == reward
+    ), f"Vectorized computation of reward differs from single computation: {rewards[0]} != {reward}"
 
 
-def _check_obs(obs: Union[tuple, dict, np.ndarray, int], observation_space: spaces.Space, method_name: str) -> None:
+def _check_obs(
+    obs: Union[tuple, dict, np.ndarray, int],
+    observation_space: spaces.Space,
+    method_name: str,
+) -> None:
     """
     Check that the observation returned by the environment
     correspond to the declared one.
@@ -212,9 +234,13 @@ def _check_obs(obs: Union[tuple, dict, np.ndarray, int], observation_space: spac
     if isinstance(observation_space, spaces.Discrete):
         # Since https://github.com/Farama-Foundation/Gymnasium/pull/141,
         # `sample()` will return a np.int64 instead of an int
-        assert np.issubdtype(type(obs), np.integer), f"The observation returned by `{method_name}()` method must be an int"
+        assert np.issubdtype(
+            type(obs), np.integer
+        ), f"The observation returned by `{method_name}()` method must be an int"
     elif _is_numpy_array_space(observation_space):
-        assert isinstance(obs, np.ndarray), f"The observation returned by `{method_name}()` method must be a numpy array"
+        assert isinstance(
+            obs, np.ndarray
+        ), f"The observation returned by `{method_name}()` method must be a numpy array"
 
     # Additional checks for numpy arrays, so the error message is clearer (see GH#1399)
     if isinstance(obs, np.ndarray):
@@ -232,7 +258,9 @@ def _check_obs(obs: Union[tuple, dict, np.ndarray, int], observation_space: spac
         if isinstance(observation_space, spaces.Box):
             lower_bounds, upper_bounds = observation_space.low, observation_space.high
             # Expose all invalid indices at once
-            invalid_indices = np.where(np.logical_or(obs < lower_bounds, obs > upper_bounds))
+            invalid_indices = np.where(
+                np.logical_or(obs < lower_bounds, obs > upper_bounds)
+            )
             if (obs > upper_bounds).any() or (obs < lower_bounds).any():
                 message = (
                     f"The observation returned by the `{method_name}()` method does not match the bounds "
@@ -275,23 +303,31 @@ def _check_box_obs(observation_space: spaces.Box, key: str = "") -> None:
         )
 
 
-def _check_returned_values(env: gym.Env, observation_space: spaces.Space, action_space: spaces.Space) -> None:
+def _check_returned_values(
+    env: gym.Env, observation_space: spaces.Space, action_space: spaces.Space
+) -> None:
     """
     Check the returned values by the env when calling `.reset()` or `.step()` methods.
     """
     # because env inherits from gymnasium.Env, we assume that `reset()` and `step()` methods exists
     reset_returns = env.reset()
     assert isinstance(reset_returns, tuple), "`reset()` must return a tuple (obs, info)"
-    assert len(reset_returns) == 2, f"`reset()` must return a tuple of size 2 (obs, info), not {len(reset_returns)}"
+    assert (
+        len(reset_returns) == 2
+    ), f"`reset()` must return a tuple of size 2 (obs, info), not {len(reset_returns)}"
     obs, info = reset_returns
-    assert isinstance(info, dict), f"The second element of the tuple return by `reset()` must be a dictionary not {info}"
+    assert isinstance(
+        info, dict
+    ), f"The second element of the tuple return by `reset()` must be a dictionary not {info}"
 
     if _is_goal_env(env):
         # Make mypy happy, already checked
         assert isinstance(observation_space, spaces.Dict)
         _check_goal_env_obs(obs, observation_space, "reset")
     elif isinstance(observation_space, spaces.Dict):
-        assert isinstance(obs, dict), "The observation returned by `reset()` must be a dictionary"
+        assert isinstance(
+            obs, dict
+        ), "The observation returned by `reset()` must be a dictionary"
 
         if not obs.keys() == observation_space.spaces.keys():
             raise AssertionError(
@@ -303,7 +339,9 @@ def _check_returned_values(env: gym.Env, observation_space: spaces.Space, action
             try:
                 _check_obs(obs[key], observation_space.spaces[key], "reset")
             except AssertionError as e:
-                raise AssertionError(f"Error while checking key={key}: " + str(e)) from e
+                raise AssertionError(
+                    f"Error while checking key={key}: " + str(e)
+                ) from e
     else:
         _check_obs(obs, observation_space, "reset")
 
@@ -320,7 +358,9 @@ def _check_returned_values(env: gym.Env, observation_space: spaces.Space, action
     obs, reward, terminated, truncated, info = data
 
     if isinstance(observation_space, spaces.Dict):
-        assert isinstance(obs, dict), "The observation returned by `step()` must be a dictionary"
+        assert isinstance(
+            obs, dict
+        ), "The observation returned by `step()` must be a dictionary"
 
         # Additional checks for GoalEnvs
         if _is_goal_env(env):
@@ -339,22 +379,30 @@ def _check_returned_values(env: gym.Env, observation_space: spaces.Space, action
             try:
                 _check_obs(obs[key], observation_space.spaces[key], "step")
             except AssertionError as e:
-                raise AssertionError(f"Error while checking key={key}: " + str(e)) from e
+                raise AssertionError(
+                    f"Error while checking key={key}: " + str(e)
+                ) from e
 
     else:
         _check_obs(obs, observation_space, "step")
 
     # We also allow int because the reward will be cast to float
-    assert isinstance(reward, (float, int)), "The reward returned by `step()` must be a float"
+    assert isinstance(
+        reward, (float, int)
+    ), "The reward returned by `step()` must be a float"
     assert isinstance(terminated, bool), "The `terminated` signal must be a boolean"
     assert isinstance(truncated, bool), "The `truncated` signal must be a boolean"
-    assert isinstance(info, dict), "The `info` returned by `step()` must be a python dictionary"
+    assert isinstance(
+        info, dict
+    ), "The `info` returned by `step()` must be a python dictionary"
 
     # Goal conditioned env
     if _is_goal_env(env):
         # for mypy, env.unwrapped was checked by _is_goal_env()
         assert hasattr(env, "compute_reward")
-        assert reward == env.compute_reward(obs["achieved_goal"], obs["desired_goal"], info)
+        assert reward == env.compute_reward(
+            obs["achieved_goal"], obs["desired_goal"], info
+        )
 
 
 def _check_spaces(env: gym.Env) -> None:
@@ -365,13 +413,19 @@ def _check_spaces(env: gym.Env) -> None:
     """
     gym_spaces = "cf. https://gymnasium.farama.org/api/spaces/"
 
-    assert hasattr(env, "observation_space"), f"You must specify an observation space ({gym_spaces})"
-    assert hasattr(env, "action_space"), f"You must specify an action space ({gym_spaces})"
+    assert hasattr(
+        env, "observation_space"
+    ), f"You must specify an observation space ({gym_spaces})"
+    assert hasattr(
+        env, "action_space"
+    ), f"You must specify an action space ({gym_spaces})"
 
     assert isinstance(
         env.observation_space, spaces.Space
     ), f"The observation space must inherit from gymnasium.spaces ({gym_spaces})"
-    assert isinstance(env.action_space, spaces.Space), f"The action space must inherit from gymnasium.spaces ({gym_spaces})"
+    assert isinstance(
+        env.action_space, spaces.Space
+    ), f"The action space must inherit from gymnasium.spaces ({gym_spaces})"
 
     if _is_goal_env(env):
         print(
@@ -447,7 +501,11 @@ def check_env(env: gym.Env, warn: bool = True, skip_render_check: bool = True) -
     if warn:
         _check_unsupported_spaces(env, observation_space, action_space)
 
-        obs_spaces = observation_space.spaces if isinstance(observation_space, spaces.Dict) else {"": observation_space}
+        obs_spaces = (
+            observation_space.spaces
+            if isinstance(observation_space, spaces.Dict)
+            else {"": observation_space}
+        )
         for key, space in obs_spaces.items():
             if isinstance(space, spaces.Box):
                 _check_box_obs(space, key)
@@ -468,7 +526,9 @@ def check_env(env: gym.Env, warn: bool = True, skip_render_check: bool = True) -
                 np.isfinite(np.array([action_space.low, action_space.high]))
             ), "Continuous action space must have a finite lower and upper bound"
 
-        if isinstance(action_space, spaces.Box) and action_space.dtype != np.dtype(np.float32):
+        if isinstance(action_space, spaces.Box) and action_space.dtype != np.dtype(
+            np.float32
+        ):
             warnings.warn(
                 f"Your action space has dtype {action_space.dtype}, we recommend using np.float32 to avoid cast errors."
             )

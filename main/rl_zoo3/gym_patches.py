@@ -39,5 +39,5 @@ class PatchedTimeLimit(gymnasium.wrappers.TimeLimit):
 
 # Patch Gymnasium TimeLimit
 gymnasium.wrappers.TimeLimit = PatchedTimeLimit  # type: ignore[misc]
-#gymnasium.wrappers.time_limit.TimeLimit = PatchedTimeLimit  # type: ignore[misc]
+# gymnasium.wrappers.time_limit.TimeLimit = PatchedTimeLimit  # type: ignore[misc]
 gymnasium.envs.registration.TimeLimit = PatchedTimeLimit  # type: ignore[misc,attr-defined]

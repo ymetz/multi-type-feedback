@@ -69,19 +69,23 @@ def generation_wrapper(c: int, n: int, scale: float) -> np.ndarray:
     """
 
     if c < 10:
-        raise ValueError("Masksembles approach couldn't be used in such setups where "
-                         f"number of channels is less then 10. Current value is (channels={c}). "
-                         "Please increase number of features in your layer or remove this "
-                         "particular instance of Masksembles from your architecture.")
+        raise ValueError(
+            "Masksembles approach couldn't be used in such setups where "
+            f"number of channels is less then 10. Current value is (channels={c}). "
+            "Please increase number of features in your layer or remove this "
+            "particular instance of Masksembles from your architecture."
+        )
 
-    if scale > 6.:
-        raise ValueError("Masksembles approach couldn't be used in such setups where "
-                         f"scale parameter is larger then 6. Current value is (scale={scale}).")
-    
+    if scale > 6.0:
+        raise ValueError(
+            "Masksembles approach couldn't be used in such setups where "
+            f"scale parameter is larger then 6. Current value is (scale={scale})."
+        )
+
     # inverse formula for number of active features in masks
     active_features = int(int(c) / (scale * (1 - (1 - 1 / scale) ** n)))
 
-    # Fix the last part by using binary search 
+    # Fix the last part by using binary search
     max_iter = 1000
 
     min = np.max([scale * 0.8, 1.0])
@@ -98,7 +102,9 @@ def generation_wrapper(c: int, n: int, scale: float) -> np.ndarray:
             min = mid
 
     if masks.shape[-1] != c:
-        raise ValueError("generation_wrapper function failed to generate masks with "
-                         "requested number of features. Please try to change scale parameter")
+        raise ValueError(
+            "generation_wrapper function failed to generate masks with "
+            "requested number of features. Please try to change scale parameter"
+        )
 
     return masks

@@ -10,7 +10,12 @@ T = TypeVar("T", int, np.ndarray)
 
 
 class IdentityEnv(gym.Env, Generic[T]):
-    def __init__(self, dim: Optional[int] = None, space: Optional[spaces.Space] = None, ep_length: int = 100):
+    def __init__(
+        self,
+        dim: Optional[int] = None,
+        space: Optional[spaces.Space] = None,
+        ep_length: int = 100,
+    ):
         """
         Identity environment for testing purposes
 
@@ -26,7 +31,9 @@ class IdentityEnv(gym.Env, Generic[T]):
                 dim = 1
             space = spaces.Discrete(dim)
         else:
-            assert dim is None, "arguments for both 'dim' and 'space' provided: at most one allowed"
+            assert (
+                dim is None
+            ), "arguments for both 'dim' and 'space' provided: at most one allowed"
 
         self.action_space = self.observation_space = space
         self.ep_length = ep_length
@@ -34,7 +41,9 @@ class IdentityEnv(gym.Env, Generic[T]):
         self.num_resets = -1  # Becomes 0 after __init__ exits.
         self.reset()
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[T, Dict]:
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[Dict] = None
+    ) -> Tuple[T, Dict]:
         if seed is not None:
             super().reset(seed=seed)
         self.current_step = 0
@@ -61,7 +70,13 @@ class IdentityEnv(gym.Env, Generic[T]):
 
 
 class IdentityEnvBox(IdentityEnv[np.ndarray]):
-    def __init__(self, low: float = -1.0, high: float = 1.0, eps: float = 0.05, ep_length: int = 100):
+    def __init__(
+        self,
+        low: float = -1.0,
+        high: float = 1.0,
+        eps: float = 0.05,
+        ep_length: int = 100,
+    ):
         """
         Identity environment for testing purposes
 
@@ -74,7 +89,9 @@ class IdentityEnvBox(IdentityEnv[np.ndarray]):
         super().__init__(ep_length=ep_length, space=space)
         self.eps = eps
 
-    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+    def step(
+        self, action: np.ndarray
+    ) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         reward = self._get_reward(action)
         self._choose_next_state()
         self.current_step += 1
@@ -83,7 +100,9 @@ class IdentityEnvBox(IdentityEnv[np.ndarray]):
         return self.state, reward, terminated, truncated, {}
 
     def _get_reward(self, action: np.ndarray) -> float:
-        return 1.0 if (self.state - self.eps) <= action <= (self.state + self.eps) else 0.0
+        return (
+            1.0 if (self.state - self.eps) <= action <= (self.state + self.eps) else 0.0
+        )
 
 
 class IdentityEnvMultiDiscrete(IdentityEnv[np.ndarray]):
@@ -134,7 +153,9 @@ class FakeImageEnv(gym.Env):
         self.observation_shape = (screen_height, screen_width, n_channels)
         if channel_first:
             self.observation_shape = (n_channels, screen_height, screen_width)
-        self.observation_space = spaces.Box(low=0, high=255, shape=self.observation_shape, dtype=np.uint8)
+        self.observation_space = spaces.Box(
+            low=0, high=255, shape=self.observation_shape, dtype=np.uint8
+        )
         if discrete:
             self.action_space = spaces.Discrete(action_dim)
         else:
@@ -142,7 +163,9 @@ class FakeImageEnv(gym.Env):
         self.ep_length = 10
         self.current_step = 0
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[Dict] = None
+    ) -> Tuple[np.ndarray, Dict]:
         if seed is not None:
             super().reset(seed=seed)
         self.current_step = 0

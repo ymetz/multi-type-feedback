@@ -6,27 +6,31 @@ import sys
 import typing
 from os import path
 from pathlib import Path
-import wandb
-from wandb.integration.sb3 import WandbCallback
-
-import numpy
-import gymnasium as gym
-import pytorch_lightning as pl
-import torch
-from imitation.rewards.reward_function import RewardFn
-from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.utils import set_random_seed
 
 # register custom envs
 import ale_py
+import gymnasium as gym
 import minigrid
+import numpy
+import pytorch_lightning as pl
+import torch
+import wandb
+from imitation.rewards.reward_function import RewardFn
+from rl_zoo3.exp_manager import ExperimentManager
+from rl_zoo3.utils import ALGOS, StoreDict
+from stable_baselines3 import PPO, SAC
+from stable_baselines3.common.utils import set_random_seed
+from wandb.integration.sb3 import WandbCallback
 
 from rlhf.common import get_reward_model_name
 from rlhf.datatypes import FeedbackType
-from rlhf.networks import LightningNetwork, LightningCnnNetwork, calculate_pairwise_loss, calculate_single_reward_loss
+from rlhf.networks import (
+    LightningCnnNetwork,
+    LightningNetwork,
+    calculate_pairwise_loss,
+    calculate_single_reward_loss,
+)
 
-from rl_zoo3.exp_manager import ExperimentManager
-from rl_zoo3.utils import ALGOS, StoreDict
 
 class CustomReward(RewardFn):
     """Custom reward based on weighted ensemble of fine-tuned reward models."""
@@ -44,10 +48,8 @@ class CustomReward(RewardFn):
         self.device = device
 
         self.reward_models = [
-            reward_model_cls.load_from_checkpoint(
-                path,
-                map_location=device
-            ) for path in reward_model_paths
+            reward_model_cls.load_from_checkpoint(path, map_location=device)
+            for path in reward_model_paths
         ]
 
         self.rewards = []
@@ -102,16 +104,26 @@ class CustomReward(RewardFn):
         _done: numpy.ndarray,
     ) -> list:
         """Return reward given the current state."""
-        state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(0)
-        actions = torch.as_tensor(actions, device=self.device, dtype=torch.float).unsqueeze(0)
-        
+        state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(
+            0
+        )
+        actions = torch.as_tensor(
+            actions, device=self.device, dtype=torch.float
+        ).unsqueeze(0)
+
         with torch.no_grad():
-            rewards = torch.empty(len(self.reward_models), state.shape[0]).to(self.device)
+            rewards = torch.empty(len(self.reward_models), state.shape[0]).to(
+                self.device
+            )
 
             for model_index, reward_model in enumerate(self.reward_models):
                 if reward_model.ensemble_count > 1:
-                    state_expanded = state.expand(reward_model.ensemble_count, *state.shape[1:])
-                    actions_expanded = actions.expand(reward_model.ensemble_count, *actions.shape[1:])
+                    state_expanded = state.expand(
+                        reward_model.ensemble_count, *state.shape[1:]
+                    )
+                    actions_expanded = actions.expand(
+                        reward_model.ensemble_count, *actions.shape[1:]
+                    )
                     model_rewards = reward_model(state_expanded, actions_expanded)
                     rewards[model_index] = model_rewards.mean(dim=0)
                 else:
@@ -122,11 +134,14 @@ class CustomReward(RewardFn):
             # Weight the reward predictions by the inverse of the standard deviation of the models
             if self.inverse_scaling:
                 inverse_standard_deviations = 1 / rewards.std(dim=1, keepdim=True)
-                weighted_rewards = (inverse_standard_deviations * rewards).sum(dim=1) / inverse_standard_deviations.sum(dim=1)
+                weighted_rewards = (inverse_standard_deviations * rewards).sum(
+                    dim=1
+                ) / inverse_standard_deviations.sum(dim=1)
             else:
                 weighted_rewards = torch.mean(rewards, dim=1)
 
             return weighted_rewards.cpu().numpy()
+
 
 def main():
     """Run RL agent training."""
@@ -140,9 +155,9 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--algorithm", 
-        type=str, 
-        default="ppo", 
+        "--algorithm",
+        type=str,
+        default="ppo",
         help="RL algorithm",
     )
     parser.add_argument(
@@ -153,21 +168,21 @@ def main():
         help="Types of feedback to train the reward model (space-separated list)",
     )
     parser.add_argument(
-        "--environment", 
-        type=str, 
-        default="HalfCheetah-v5", 
+        "--environment",
+        type=str,
+        default="HalfCheetah-v5",
         help="Environment",
     )
     parser.add_argument(
-        "--train-steps", 
-        type=int, 
-        default=int(1e6), 
+        "--train-steps",
+        type=int,
+        default=int(1e6),
         help="Number of steps to generate feedback for",
     )
     parser.add_argument(
-        "--seed", 
-        type=int, 
-        default=12, 
+        "--seed",
+        type=int,
+        default=12,
         help="Seed for env and stuff",
     )
     parser.add_argument(
@@ -178,14 +193,16 @@ def main():
 
     args = parser.parse_args()
 
-    FEEDBACK_ID = "_".join(
-        [args.algorithm, args.environment, str(args.seed)]
-    )
+    FEEDBACK_ID = "_".join([args.algorithm, args.environment, str(args.seed)])
     MODEL_ID = f"{FEEDBACK_ID}_ensemble_{args.seed}"
 
     reward_model_paths = []
     for feedback_type in args.feedback_types:
-        model_path = os.path.join(script_path, "reward_models", f"{FEEDBACK_ID}_{feedback_type}_{args.seed}.ckpt")
+        model_path = os.path.join(
+            script_path,
+            "reward_models",
+            f"{FEEDBACK_ID}_{feedback_type}_{args.seed}.ckpt",
+        )
         reward_model_paths.append(model_path)
 
     print("Reward model ID:", MODEL_ID)
@@ -194,7 +211,7 @@ def main():
     set_random_seed(args.seed)
 
     run = wandb.init(
-        name="RL_"+MODEL_ID,
+        name="RL_" + MODEL_ID,
         project="multi_reward_feedback",
         config={
             **vars(args),
@@ -219,7 +236,7 @@ def main():
         args,
         args.algorithm,
         args.environment,
-        os.path.join("agents","RL_"+MODEL_ID),
+        os.path.join("agents", "RL_" + MODEL_ID),
         tensorboard_log=f"runs/{'RL_'+MODEL_ID}",
         n_timesteps=args.train_steps,
         seed=args.seed,
@@ -228,7 +245,7 @@ def main():
             reward_model_cls=architecture_cls,
             reward_model_paths=reward_model_paths,
             inverse_scaling=args.inverse_scaling,
-            device=DEVICE
+            device=DEVICE,
         ),
         use_wandb_callback=True,
     )
@@ -246,6 +263,7 @@ def main():
         if model is not None:
             exp_manager.learn(model)
             exp_manager.save_trained_model(model)
+
 
 if __name__ == "__main__":
     main()

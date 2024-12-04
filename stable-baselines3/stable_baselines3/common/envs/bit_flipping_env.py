@@ -48,7 +48,9 @@ class BitFlippingEnv(Env):
         # here, it is a special where they are equal
 
         # observation space for observations given to the model
-        self.observation_space = self._make_observation_space(discrete_obs_space, image_obs_space, n_bits)
+        self.observation_space = self._make_observation_space(
+            discrete_obs_space, image_obs_space, n_bits
+        )
         # observation space used to update internal state
         self._obs_space = spaces.MultiBinary(n_bits)
 
@@ -59,7 +61,9 @@ class BitFlippingEnv(Env):
         self.continuous = continuous
         self.discrete_obs_space = discrete_obs_space
         self.image_obs_space = image_obs_space
-        self.desired_goal = np.ones((n_bits,), dtype=self.observation_space["desired_goal"].dtype)
+        self.desired_goal = np.ones(
+            (n_bits,), dtype=self.observation_space["desired_goal"].dtype
+        )
         if max_steps is None:
             max_steps = n_bits
         self.max_steps = max_steps
@@ -82,11 +86,15 @@ class BitFlippingEnv(Env):
 
         if self.image_obs_space:
             size = np.prod(self.image_shape)
-            image = np.concatenate((state * 255, np.zeros(size - len(state), dtype=np.uint8)))
+            image = np.concatenate(
+                (state * 255, np.zeros(size - len(state), dtype=np.uint8))
+            )
             return image.reshape(self.image_shape).astype(np.uint8)
         return state
 
-    def convert_to_bit_vector(self, state: Union[int, np.ndarray], batch_size: int) -> np.ndarray:
+    def convert_to_bit_vector(
+        self, state: Union[int, np.ndarray], batch_size: int
+    ) -> np.ndarray:
         """
         Convert to bit vector if needed.
 
@@ -98,14 +106,18 @@ class BitFlippingEnv(Env):
         if isinstance(state, int):
             bit_vector = np.array(state).reshape(batch_size, -1)
             # Convert to binary representation
-            bit_vector = ((bit_vector[:, :] & (1 << np.arange(len(self.state)))) > 0).astype(int)
+            bit_vector = (
+                (bit_vector[:, :] & (1 << np.arange(len(self.state)))) > 0
+            ).astype(int)
         elif self.image_obs_space:
             bit_vector = state.reshape(batch_size, -1)[:, : len(self.state)] / 255
         else:
             bit_vector = np.array(state).reshape(batch_size, -1)
         return bit_vector
 
-    def _make_observation_space(self, discrete_obs_space: bool, image_obs_space: bool, n_bits: int) -> spaces.Dict:
+    def _make_observation_space(
+        self, discrete_obs_space: bool, image_obs_space: bool, n_bits: int
+    ) -> spaces.Dict:
         """
         Helper to create observation space
 
@@ -198,7 +210,9 @@ class BitFlippingEnv(Env):
         else:
             self.state[action] = 1 - self.state[action]
         obs = self._get_obs()
-        reward = float(self.compute_reward(obs["achieved_goal"], obs["desired_goal"], None).item())
+        reward = float(
+            self.compute_reward(obs["achieved_goal"], obs["desired_goal"], None).item()
+        )
         terminated = reward == 0
         self.current_step += 1
         # Episode terminate when we reached the goal or the max number of steps
@@ -207,7 +221,10 @@ class BitFlippingEnv(Env):
         return obs, reward, terminated, truncated, info
 
     def compute_reward(
-        self, achieved_goal: Union[int, np.ndarray], desired_goal: Union[int, np.ndarray], _info: Optional[Dict[str, Any]]
+        self,
+        achieved_goal: Union[int, np.ndarray],
+        desired_goal: Union[int, np.ndarray],
+        _info: Optional[Dict[str, Any]],
     ) -> np.float32:
         # As we are using a vectorized version, we need to keep track of the `batch_size`
         if isinstance(achieved_goal, int):

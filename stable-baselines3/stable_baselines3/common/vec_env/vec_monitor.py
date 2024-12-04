@@ -4,7 +4,12 @@ from typing import Optional, Tuple
 
 import numpy as np
 
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvObs, VecEnvStepReturn, VecEnvWrapper
+from stable_baselines3.common.vec_env.base_vec_env import (
+    VecEnv,
+    VecEnvObs,
+    VecEnvStepReturn,
+    VecEnvWrapper,
+)
 
 
 class VecMonitor(VecEnvWrapper):
@@ -59,7 +64,9 @@ class VecMonitor(VecEnvWrapper):
         self.results_writer: Optional[ResultsWriter] = None
         if filename:
             self.results_writer = ResultsWriter(
-                filename, header={"t_start": self.t_start, "env_id": str(env_id)}, extra_keys=info_keywords
+                filename,
+                header={"t_start": self.t_start, "env_id": str(env_id)},
+                extra_keys=info_keywords,
             )
 
         self.info_keywords = info_keywords
@@ -82,7 +89,11 @@ class VecMonitor(VecEnvWrapper):
                 info = infos[i].copy()
                 episode_return = self.episode_returns[i]
                 episode_length = self.episode_lengths[i]
-                episode_info = {"r": episode_return, "l": episode_length, "t": round(time.time() - self.t_start, 6)}
+                episode_info = {
+                    "r": episode_return,
+                    "l": episode_length,
+                    "t": round(time.time() - self.t_start, 6),
+                }
                 for key in self.info_keywords:
                     episode_info[key] = info[key]
                 info["episode"] = episode_info

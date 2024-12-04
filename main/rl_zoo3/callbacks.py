@@ -67,7 +67,13 @@ class SaveVecNormalizeCallback(BaseCallback):
         only one file will be kept.
     """
 
-    def __init__(self, save_freq: int, save_path: str, name_prefix: Optional[str] = None, verbose: int = 0):
+    def __init__(
+        self,
+        save_freq: int,
+        save_path: str,
+        name_prefix: Optional[str] = None,
+        verbose: int = 0,
+    ):
         super().__init__(verbose)
         self.save_freq = save_freq
         self.save_path = save_path
@@ -84,7 +90,9 @@ class SaveVecNormalizeCallback(BaseCallback):
 
         if self.n_calls % self.save_freq == 0:
             if self.name_prefix is not None:
-                path = os.path.join(self.save_path, f"{self.name_prefix}_{self.num_timesteps}_steps.pkl")
+                path = os.path.join(
+                    self.save_path, f"{self.name_prefix}_{self.num_timesteps}_steps.pkl"
+                )
             else:
                 path = os.path.join(self.save_path, "vecnormalize.pkl")
             if self.model.get_vec_normalize_env() is not None:
@@ -112,7 +120,9 @@ class ParallelTrainCallback(BaseCallback):
     :param sleep_time: Limit the fps in the thread collecting experience.
     """
 
-    def __init__(self, gradient_steps: int = 100, verbose: int = 0, sleep_time: float = 0.0):
+    def __init__(
+        self, gradient_steps: int = 100, verbose: int = 0, sleep_time: float = 0.0
+    ):
         super().__init__(verbose)
         self.batch_size = 0
         self._model_ready = True
@@ -131,7 +141,9 @@ class ParallelTrainCallback(BaseCallback):
             temp_file = os.path.join("logs", "model_tmp.zip")  # type: ignore[arg-type,assignment]
 
         # make mypy happy
-        assert isinstance(self.model, (SAC, TQC)), f"{self.model} is not supported for parallel training"
+        assert isinstance(
+            self.model, (SAC, TQC)
+        ), f"{self.model} is not supported for parallel training"
 
         self.model.save(temp_file)  # type: ignore[arg-type]
 
@@ -141,7 +153,9 @@ class ParallelTrainCallback(BaseCallback):
                 self.model_class = model_class  # type: ignore[assignment]
                 break
 
-        assert self.model_class is not None, f"{self.model} is not supported for parallel training"
+        assert (
+            self.model_class is not None
+        ), f"{self.model} is not supported for parallel training"
         self._model = self.model_class.load(temp_file)  # type: ignore[arg-type]
 
         self.batch_size = self._model.batch_size
@@ -175,7 +189,9 @@ class ParallelTrainCallback(BaseCallback):
         self.process.start()
 
     def _train_thread(self) -> None:
-        self._model.train(gradient_steps=self.gradient_steps, batch_size=self.batch_size)
+        self._model.train(
+            gradient_steps=self.gradient_steps, batch_size=self.batch_size
+        )
         self._model_ready = True
 
     def _on_step(self) -> bool:
@@ -222,7 +238,9 @@ class RawStatisticsCallback(BaseCallback):
         for out_format in self.logger.output_formats:
             if isinstance(out_format, TensorBoardOutputFormat):
                 self._tensorboard_writer = out_format
-        assert self._tensorboard_writer is not None, "You must activate tensorboard logging when using RawStatisticsCallback"
+        assert (
+            self._tensorboard_writer is not None
+        ), "You must activate tensorboard logging when using RawStatisticsCallback"
 
     def _on_step(self) -> bool:
         for info in self.locals["infos"]:
@@ -233,6 +251,8 @@ class RawStatisticsCallback(BaseCallback):
                 }
                 exclude_dict = {key: None for key in logger_dict.keys()}
                 self._timesteps_counter += info["episode"]["l"]
-                self._tensorboard_writer.write(logger_dict, exclude_dict, self._timesteps_counter)
+                self._tensorboard_writer.write(
+                    logger_dict, exclude_dict, self._timesteps_counter
+                )
 
         return True

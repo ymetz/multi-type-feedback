@@ -9,6 +9,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PACKAGE_ROOT = os.path.join(SCRIPT_DIR, "procgen")
 README = open(os.path.join(SCRIPT_DIR, "README.md"), "rb").read().decode("utf8")
 
+
 # dynamically determine version number based on git commit
 def determine_version():
     version = open(os.path.join(PACKAGE_ROOT, "version.txt"), "r").read().strip()
@@ -29,18 +30,22 @@ def determine_version():
         assert parts[0] == "refs"
         if parts[1] == "tags":
             tag = parts[2]
-            assert tag == version, "mismatch in tag vs version, expected: %s actual: %s" % (
+            assert (
+                tag == version
+            ), "mismatch in tag vs version, expected: %s actual: %s" % (
                 tag,
                 version,
             )
             return version
-    
+
     if sha == "unknown":
         return version
     else:
         return version + "+" + sha[:7]
 
+
 version = determine_version()
+
 
 # build shared library
 class DummyExtension(Extension):
@@ -100,7 +105,6 @@ setup(
     extras_require={"test": ["pytest==6.2.5", "pytest-benchmark==3.4.1"]},
     ext_modules=[DummyExtension()],
     cmdclass={"build_ext": custom_build_ext},
-
     author="OpenAI",
     description="Procedurally Generated Game-Like RL Environments",
     long_description=README,

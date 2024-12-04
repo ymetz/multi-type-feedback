@@ -20,7 +20,9 @@ def is_image_space_channels_first(observation_space: spaces.Box) -> bool:
     """
     smallest_dimension = np.argmin(observation_space.shape).item()
     if smallest_dimension == 1:
-        warnings.warn("Treating image space as channels-last, while second dimension was smallest of the three.")
+        warnings.warn(
+            "Treating image space as channels-last, while second dimension was smallest of the three."
+        )
     return smallest_dimension == 0
 
 
@@ -52,7 +54,9 @@ def is_image_space(
             return False
 
         # Check the value range
-        incorrect_bounds = np.any(observation_space.low != 0) or np.any(observation_space.high != 255)
+        incorrect_bounds = np.any(observation_space.low != 0) or np.any(
+            observation_space.high != 255
+        )
         if check_bounds and incorrect_bounds:
             return False
 
@@ -69,7 +73,9 @@ def is_image_space(
     return False
 
 
-def maybe_transpose(observation: np.ndarray, observation_space: spaces.Space) -> np.ndarray:
+def maybe_transpose(
+    observation: np.ndarray, observation_space: spaces.Space
+) -> np.ndarray:
     """
     Handle the different cases for images as PyTorch use channel first format.
 
@@ -81,10 +87,16 @@ def maybe_transpose(observation: np.ndarray, observation_space: spaces.Space) ->
     from stable_baselines3.common.vec_env import VecTransposeImage
 
     if is_image_space(observation_space):
-        if not (observation.shape == observation_space.shape or observation.shape[1:] == observation_space.shape):
+        if not (
+            observation.shape == observation_space.shape
+            or observation.shape[1:] == observation_space.shape
+        ):
             # Try to re-order the channels
             transpose_obs = VecTransposeImage.transpose_image(observation)
-            if transpose_obs.shape == observation_space.shape or transpose_obs.shape[1:] == observation_space.shape:
+            if (
+                transpose_obs.shape == observation_space.shape
+                or transpose_obs.shape[1:] == observation_space.shape
+            ):
                 observation = transpose_obs
     return observation
 
@@ -110,7 +122,9 @@ def preprocess_obs(
         assert isinstance(obs, Dict), f"Expected dict, got {type(obs)}"
         preprocessed_obs = {}
         for key, _obs in obs.items():
-            preprocessed_obs[key] = preprocess_obs(_obs, observation_space[key], normalize_images=normalize_images)
+            preprocessed_obs[key] = preprocess_obs(
+                _obs, observation_space[key], normalize_images=normalize_images
+            )
         return preprocessed_obs  # type: ignore[return-value]
 
     assert isinstance(obs, th.Tensor), f"Expecting a torch Tensor, but got {type(obs)}"
@@ -128,7 +142,9 @@ def preprocess_obs(
         # Tensor concatenation of one hot encodings of each Categorical sub-space
         return th.cat(
             [
-                F.one_hot(obs_.long(), num_classes=int(observation_space.nvec[idx])).float()
+                F.one_hot(
+                    obs_.long(), num_classes=int(observation_space.nvec[idx])
+                ).float()
                 for idx, obs_ in enumerate(th.split(obs.long(), 1, dim=1))
             ],
             dim=-1,
@@ -137,7 +153,9 @@ def preprocess_obs(
     elif isinstance(observation_space, spaces.MultiBinary):
         return obs.float()
     else:
-        raise NotImplementedError(f"Preprocessing not implemented for {observation_space}")
+        raise NotImplementedError(
+            f"Preprocessing not implemented for {observation_space}"
+        )
 
 
 def get_obs_shape(
@@ -164,7 +182,9 @@ def get_obs_shape(
         return {key: get_obs_shape(subspace) for (key, subspace) in observation_space.spaces.items()}  # type: ignore[misc]
 
     else:
-        raise NotImplementedError(f"{observation_space} observation space is not supported")
+        raise NotImplementedError(
+            f"{observation_space} observation space is not supported"
+        )
 
 
 def get_flattened_obs_dim(observation_space: spaces.Space) -> int:
@@ -219,7 +239,11 @@ def check_for_nested_spaces(obs_space: spaces.Space) -> None:
     :param obs_space: an observation space
     """
     if isinstance(obs_space, (spaces.Dict, spaces.Tuple)):
-        sub_spaces = obs_space.spaces.values() if isinstance(obs_space, spaces.Dict) else obs_space.spaces
+        sub_spaces = (
+            obs_space.spaces.values()
+            if isinstance(obs_space, spaces.Dict)
+            else obs_space.spaces
+        )
         for sub_space in sub_spaces:
             if isinstance(sub_space, (spaces.Dict, spaces.Tuple)):
                 raise NotImplementedError(

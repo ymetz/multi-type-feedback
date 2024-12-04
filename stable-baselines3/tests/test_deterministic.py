@@ -17,7 +17,11 @@ def test_deterministic_training_common(algo):
     env_id = "Pendulum-v1"
     if algo in [TD3, SAC]:
         kwargs.update(
-            {"action_noise": NormalActionNoise(np.zeros(1), 0.1 * np.ones(1)), "learning_starts": 100, "train_freq": 4}
+            {
+                "action_noise": NormalActionNoise(np.zeros(1), 0.1 * np.ones(1)),
+                "learning_starts": 100,
+                "train_freq": 4,
+            }
         )
     else:
         if algo == DQN:

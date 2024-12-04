@@ -16,7 +16,13 @@ class TestEnv(gym.Env):
         self.observation_space = spaces.Box(low=0, high=1, shape=(2,), dtype=np.float32)
 
     def step(self, action):
-        return self.observation_space.sample(), 0.0, self.np_random.random() > 0.5, False, {}
+        return (
+            self.observation_space.sample(),
+            0.0,
+            self.np_random.random() > 0.5,
+            False,
+            {},
+        )
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)

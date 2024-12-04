@@ -1,9 +1,14 @@
 import os
 from typing import Callable
 
-import gymnasium.wrappers.rendering as rendering # >= gymnasium==1.0.0
+import gymnasium.wrappers.rendering as rendering  # >= gymnasium==1.0.0
 
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvObs, VecEnvStepReturn, VecEnvWrapper
+from stable_baselines3.common.vec_env.base_vec_env import (
+    VecEnv,
+    VecEnvObs,
+    VecEnvStepReturn,
+    VecEnvWrapper,
+)
 from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
 from stable_baselines3.common.vec_env.subproc_vec_env import SubprocVecEnv
 
@@ -49,7 +54,9 @@ class VecVideoRecorder(VecEnvWrapper):
             metadata = temp_env.metadata
 
         self.env.metadata = metadata
-        assert self.env.render_mode == "rgb_array", f"The render_mode must be 'rgb_array', not {self.env.render_mode}"
+        assert (
+            self.env.render_mode == "rgb_array"
+        ), f"The render_mode must be 'rgb_array', not {self.env.render_mode}"
 
         self.record_video_trigger = record_video_trigger
         self.video_folder = os.path.abspath(video_folder)

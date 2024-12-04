@@ -4,6 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
+
 class ImpalaCNN(BaseFeaturesExtractor):
     def __init__(self, observation_space, depths=[16, 32, 32], **conv_kwargs):
         super(ImpalaCNN, self).__init__(observation_space, features_dim=256)
@@ -28,14 +29,16 @@ class ImpalaCNN(BaseFeaturesExtractor):
         return num_str
 
     def conv_layer(self, in_channels, out_channels):
-        return nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, **self.conv_kwargs)
+        return nn.Conv2d(
+            in_channels, out_channels, kernel_size=3, padding=1, **self.conv_kwargs
+        )
 
     def residual_block(self, in_channels):
         return nn.Sequential(
             nn.ReLU(),
             self.conv_layer(in_channels, in_channels),
             nn.ReLU(),
-            self.conv_layer(in_channels, in_channels)
+            self.conv_layer(in_channels, in_channels),
         )
 
     def conv_sequence(self, in_channels, out_channels):
@@ -43,7 +46,7 @@ class ImpalaCNN(BaseFeaturesExtractor):
             self.conv_layer(in_channels, out_channels),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             self.residual_block(out_channels),
-            self.residual_block(out_channels)
+            self.residual_block(out_channels),
         )
 
     def compute_flattened_size(self, observation_space):

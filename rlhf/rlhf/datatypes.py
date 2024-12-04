@@ -1,6 +1,6 @@
 """Common types for all scripts in the project."""
 
-from typing import Generic, Literal, TypedDict, TypeVar, Union, Tuple, List
+from typing import Generic, List, Literal, Tuple, TypedDict, TypeVar, Union
 
 import numpy
 from numpy.typing import NDArray
@@ -12,10 +12,11 @@ FeedbackType = Union[
     Literal["corrective"],
     Literal["demonstrative"],
     Literal["descriptive"],
-    Literal["descriptive_preference"]
+    Literal["descriptive_preference"],
 ]
 
 SegmentT = List[Tuple[NDArray, NDArray, bool, float]]
+
 
 # Feedback Dataset
 class FeedbackDataset(TypedDict):

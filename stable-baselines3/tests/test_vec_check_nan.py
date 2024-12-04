@@ -13,8 +13,12 @@ class NanAndInfEnv(gym.Env):
 
     def __init__(self):
         super().__init__()
-        self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float64)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float64)
+        self.action_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=(1,), dtype=np.float64
+        )
+        self.observation_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=(1,), dtype=np.float64
+        )
 
     @staticmethod
     def step(action):

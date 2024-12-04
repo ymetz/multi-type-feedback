@@ -78,11 +78,15 @@ class Monitor(gym.Wrapper[ObsType, ActType, ObsType, ActType]):
         for key in self.reset_keywords:
             value = kwargs.get(key)
             if value is None:
-                raise ValueError(f"Expected you to pass keyword argument {key} into reset")
+                raise ValueError(
+                    f"Expected you to pass keyword argument {key} into reset"
+                )
             self.current_reset_info[key] = value
         return self.env.reset(**kwargs)
 
-    def step(self, action: ActType) -> Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
+    def step(
+        self, action: ActType
+    ) -> Tuple[ObsType, SupportsFloat, bool, bool, Dict[str, Any]]:
         """
         Step the environment with the given action
 
@@ -97,7 +101,11 @@ class Monitor(gym.Wrapper[ObsType, ActType, ObsType, ActType]):
             self.needs_reset = True
             ep_rew = sum(self.rewards)
             ep_len = len(self.rewards)
-            ep_info = {"r": round(ep_rew, 6), "l": ep_len, "t": round(time.time() - self.t_start, 6)}
+            ep_info = {
+                "r": round(ep_rew, 6),
+                "l": ep_len,
+                "t": round(time.time() - self.t_start, 6),
+            }
             for key in self.info_keywords:
                 ep_info[key] = info[key]
             self.episode_returns.append(ep_rew)
@@ -193,7 +201,9 @@ class ResultsWriter:
         mode = "w" if override_existing else "a"
         # Prevent newline issue on Windows, see GH issue #692
         self.file_handler = open(filename, f"{mode}t", newline="\n")
-        self.logger = csv.DictWriter(self.file_handler, fieldnames=("r", "l", "t", *extra_keys))
+        self.logger = csv.DictWriter(
+            self.file_handler, fieldnames=("r", "l", "t", *extra_keys)
+        )
         if override_existing:
             self.file_handler.write(f"#{json.dumps(header)}\n")
             self.logger.writeheader()
@@ -236,7 +246,9 @@ def load_results(path: str) -> pandas.DataFrame:
     """
     monitor_files = get_monitor_files(path)
     if len(monitor_files) == 0:
-        raise LoadMonitorResultsError(f"No monitor files of the form *{Monitor.EXT} found in {path}")
+        raise LoadMonitorResultsError(
+            f"No monitor files of the form *{Monitor.EXT} found in {path}"
+        )
     data_frames, headers = [], []
     for file_name in monitor_files:
         with open(file_name) as file_handler:

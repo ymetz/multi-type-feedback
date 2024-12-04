@@ -68,7 +68,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env feedback noise n_feedback <<< $combination
-        echo "python rlhf/train_reward_model_with_noise_2.py --algorithm ppo --environment $env --feedback-type $feedback --n-feedback $n_feedback --seed $seed --noise-level $noise --no-loading-bar &" >> $sbatch_script
+        echo "python rlhf/train_reward_model.py --algorithm ppo --environment $env --feedback-type $feedback --n-feedback $n_feedback --seed $seed --noise-level $noise --no-loading-bar &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish
