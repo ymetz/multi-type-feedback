@@ -1,13 +1,16 @@
 #!/bin/bash
 
 # Set the experiment parameters
-envs=("Ant-v5" "Hopper-v5" "Humanoid-v5")
+envs=("Ant-v5" "Hopper-v5" "Humanoid-v5" "Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
 #envs=("roundabout-v0" "merge-v0" "highway-fast-v0")
 #envs=("metaworld-sweep-into-v0")
 #envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
 seeds=(1789 1687123 12)
-noise_levels=(0.1 0.25 0.5 0.75 1.5 3.0)
-#noise_levels=(0.0)
+algs=("sac" "sac" "sac" "ppo" "ppo" "ppo")
+#noise_levels=(0.1 0.25 0.5 0.75 1.5 3.0)
+noise_levels=(0.0)
+#n_feedbacks=(-1)
+n_feedbacks=(5000 2500 1250 750)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -17,9 +20,11 @@ declare -a combinations
 
 # Generate all combinations
 for seed in "${seeds[@]}"; do
-    for env in "${envs[@]}"; do
-        for noise_level in "${noise_levels[@]}"; do
-            combinations+=("$seed $env $noise_level")
+    for i in "${!envs[@]}"; do
+        for noise in "${noise_levels[@]}"; do
+            for n_feedback in "${n_feedbacks[@]}"; do
+                combinations+=("$seed ${envs[$i]} $noise ${algs[$i]} $n_feedback")
+            done
         done
     done
 done
@@ -54,8 +59,8 @@ EOT
 
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
-        read seed env noise_level <<< $combination
-        echo "python rlhf/generate_rew_correlation_plot.py --algorithm sac --environment $env --seed $seed --n-feedback 10000 --noise-level $noise_level &" >> $sbatch_script
+        read seed env noise algo n_feedback <<< $combination
+        echo "python rlhf/generate_rew_correlation_plot.py --algorithm $algo --environment $env --n-feedback $n_feedback --seed $seed --n-samples 10000 --noise-level $noise &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

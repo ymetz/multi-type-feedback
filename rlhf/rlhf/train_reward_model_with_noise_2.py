@@ -36,6 +36,7 @@ from rl_zoo3.utils import ppo_make_metaworld_env
 import wandb
 from rlhf.datatypes import FeedbackDataset, FeedbackType, SegmentT
 from rlhf.networks import LightningNetwork, LightningCnnNetwork, calculate_single_reward_loss, calculate_pairwise_loss
+from rlhf.utils import TrainingUtils
 
 # for convenice sake, todo: make dynamic in the future
 discount_factors = {
@@ -49,9 +50,9 @@ discount_factors = {
     'ALE/Enduro-v5': 0.99,
     'ALE/Pong-v5': 0.99,
     'Humanoid-v5': 0.99,
-    'highway-v0': 0.99,
-    'merge-v0': 0.99,
-    'roundabout-v0': 0.99,
+    'highway-fast-v0': 0.8,
+    'merge-v0': 0.8,
+    'roundabout-v0': 0.8,
     'metaworld-sweep-into-v2': 0.99,
     'metaworld-button-press-v2': 0.99,
     'metaworld-pick-place-v2': 0.99
@@ -84,24 +85,39 @@ def truncated_uniform_vectorized(mean, width, low=0, upp=9):
     
     return result[0] if scalar_input else result
 
-def truncated_gaussian_vectorized(mean, width, low=0, upp=9, min_width=1e-8):
+def truncated_gaussian_vectorized(mean, width, low=0, upp=9, min_width=1e-6):
+    """
+    Generate samples from a truncated Gaussian distribution with proper handling of zero variance.
+    
+    Args:
+        mean: Mean of the distribution
+        width: Width parameter (typically proportional to standard deviation)
+        low: Lower bound of the truncation
+        upp: Upper bound of the truncation
+        min_width: Minimum allowed width to prevent numerical issues
+    """
     # Handle scalar inputs
     scalar_input = np.isscalar(mean) and np.isscalar(width)
     mean = np.atleast_1d(mean)
     width = np.atleast_1d(width)
+    
+    # Ensure width is at least min_width to prevent division by zero
+    width = np.maximum(width, min_width)
     
     # Calculate the bounds of the distribution
     lower = np.maximum(mean - width/2, low)
     upper = np.minimum(mean + width/2, upp)
     
     # Calculate parameters for truncated normal distribution
-    a = (lower - mean) / (width/4)  # 4 sigma range
-    b = (upper - mean) / (width/4)
+    sigma = width/4  # 4 sigma range
+    a = (lower - mean) / sigma
+    b = (upper - mean) / sigma
 
-    print(a,b)
-    
-    # Generate samples from truncated normal distribution
-    result = truncnorm.rvs(a, b, loc=mean, scale=width/4, size=mean.shape)
+    result = np.where(
+        width <= min_width * 1.1,  # Using 1.1 to account for floating point comparison
+        mean + np.random.normal(0, min_width/10, size=mean.shape),  # Tiny noise
+        truncnorm.rvs(a, b, loc=mean, scale=sigma, size=mean.shape)
+    )
     
     return result[0] if scalar_input else result
 
@@ -120,6 +136,7 @@ class FeedbackDataset(Dataset):
         noise_level: float = 0.0, # depending on the feedback, we use different types of noise (e.g. flip the preference, add noise to the rating or description)
         segment_len: int = 50,
         env = None,
+        seed: int = 1234,
     ):
         """Initialize dataset."""
         print("Loading dataset...")
@@ -222,24 +239,42 @@ class FeedbackDataset(Dataset):
 
                 if noise_level > 0.0:
 
-                    obs_min, obs_max = np.min(obs, axis=0), np.max(obs, axis=0)
+                    # Calculate statistics across all data points, keeping the feature dimensions
+                    obs_min = np.min(obs, axis=0)
+                    obs_max = np.max(obs, axis=0)
                     obs_std = np.std(obs, axis=0)
-                    acts_min, acts_max = np.min(actions, axis=0), np.max(actions, axis=0)
+                    
+                    acts_min = np.min(actions, axis=0)
+                    acts_max = np.max(actions, axis=0)
                     acts_std = np.std(actions, axis=0)
                     
-                    obs = truncated_gaussian_vectorized(
-                        mean=obs, 
-                        width=np.array(noise_level) * obs_std, 
-                        low=obs_min,
-                        upp=obs_max,
-                    )
                     
-                    actions = truncated_gaussian_vectorized(
-                        mean=actions, 
-                        width=np.array(noise_level) * acts_std, 
-                        low=acts_min,
-                        upp=acts_max,
-                    )
+                    # Process each batch separately
+                    noisy_obs = []
+                    noisy_actions = []
+                    
+                    for i in range(obs.shape[0]):
+                        # Add noise to each batch independently
+                        noisy_obs.append(
+                            truncated_gaussian_vectorized(
+                                mean=obs[i], 
+                                width=np.array(noise_level) * obs_std,  # obs_std is already per-feature
+                                low=obs_min,
+                                upp=obs_max,
+                            )
+                        )
+                        
+                        noisy_actions.append(
+                            truncated_gaussian_vectorized(
+                                mean=actions[i], 
+                                width=np.array(noise_level) * acts_std,
+                                low=acts_min,
+                                upp=acts_max,
+                            )
+                        )
+                    
+                    obs = np.stack(noisy_obs)
+                    actions = np.stack(noisy_actions)
 
                 obs = torch.as_tensor(obs).float()
                 actions = torch.as_tensor(actions).float()
@@ -390,6 +425,15 @@ class FeedbackDataset(Dataset):
             )
 
         print("Dataset loaded")
+        print(f"N TARGETS AVAILABLE: {len(self.targets)}, N_FEEDBACK: {n_feedback}")
+        
+        if n_feedback != -1 and n_feedback < len(self.targets):
+            # is a bit inefficient as we first collected the entire dataset..but we just have to do it once
+            rng = np.random.default_rng(seed)
+            indices = rng.choice(len(self.targets), size=n_feedback, replace=False)
+
+            self.targets = [self.targets[i] for i in indices]
+            self.preds = [self.preds[i] for i in indices]
 
     def __len__(self):
         """Return size of dataset."""
@@ -415,6 +459,7 @@ def train_reward_model(
     callback: Union[Callback, None] = None,
     num_ensemble_models: int = 4,
     noise_level: float = 0.0,
+    n_feedback: int = -1,
     seed: int = 0,
 ):
 
@@ -448,7 +493,7 @@ def train_reward_model(
         monitor="val_loss",
     )
 
-    # initialise the wandb logger and name your wandb project
+    
     # initialise the wandb logger and name your wandb project
     wandb_logger = WandbLogger(project="multi_reward_feedback_final_lul", 
                                name=reward_model_id,
@@ -457,6 +502,7 @@ def train_reward_model(
                                     "noise_level": noise_level,
                                     "seed": seed,
                                     "environment": environment,
+                                   "n_feedback": n_feedback,
                                 },
     )
 
@@ -483,156 +529,57 @@ def train_reward_model(
 
 
 def main():
+    parser = TrainingUtils.setup_base_parser()
+    parser.add_argument("--feedback-type", type=str, default="evaluative", help="Type of feedback")
+    parser.add_argument("--n-ensemble", type=int, default=4, help="Number of ensemble models")
+    parser.add_argument('--no-loading-bar', action='store_true', help="Disable loading bar")
+    args = parser.parse_args()
 
-    cpu_count = os.cpu_count()
-    cpu_count = cpu_count if cpu_count is not None else 8
-
-    arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument(
-        "--feedback-type",
-        type=str,
-        default="evaluative",
-        help="Type of feedback to train the reward model",
-    )
-    arg_parser.add_argument(
-        "--algorithm",
-        type=str,
-        default="ppo",
-        help="RL algorithm used to generate the feedback",
-    )
-    arg_parser.add_argument(
-        "--environment",
-        type=str,
-        default="HalfCheetah-v5",
-        help="Environment used to generate the feedback",
-    )
-    arg_parser.add_argument(
-        "--seed",
-        type=int,
-        default=12,
-        help="The seed for random generation adn the saved feedback",
-    )
-    arg_parser.add_argument(
-        "--n-ensemble",
-        type=int,
-        default=4,
-    )
-    arg_parser.add_argument(
-        "--n-feedback",
-        type=int,
-        default=-1,
-    )
-    arg_parser.add_argument(
-        "--noise-level",
-        type=float,
-        default=0.0,
-        help="Noise level to add to the feedback",
-    )
-    arg_parser.add_argument(
-        '--no-loading-bar', 
-        action='store_true', 
-        help="Disable the loading bar"
-    )
-    args = arg_parser.parse_args()
-
-    np.random.seed(args.seed)
-    random.seed(args.seed)
-
-    env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")
-    FEEDBACK_ID = "_".join(
-        [args.algorithm, env_name, str(args.seed)]
-    )
-    if args.noise_level > 0.0:
-        MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}_noise_{str(args.noise_level)}"
-    else:
-        MODEL_ID = f"{FEEDBACK_ID}_{args.feedback_type}_{args.seed}"
-
-    # Select loss function based on feedback type
-    loss_function = None
-    architecture_cls = None
-
-    if args.feedback_type == "evaluative" or args.feedback_type == "descriptive":
-        loss_function = calculate_single_reward_loss
-    else:
-        #"comparative" | "corrective" | "demonstrative" | "descriptive_preference":
-        loss_function = calculate_pairwise_loss
-
-    if "procgen" in args.environment:
-        _, short_name, _ = args.environment.split("-")
-        environment = Gym3ToGymnasium(ProcgenGym3Env(num=1, env_name=short_name))
-        environment = TransformObservation(environment, lambda obs: obs["rgb"], environment.observation_space)
-    elif "ALE/" in args.environment:
-        environment = FrameStackObservation(AtariWrapper(gym.make(args.environment)), 4)
-        environment = TransformObservation(environment, lambda obs: obs.squeeze(-1), environment.observation_space)
-    elif "MiniGrid" in args.environment:
-        environment = FlatObsWrapper(gym.make(args.environment))
-    elif "metaworld" in args.environment:
-        environment_name = args.environment.replace("metaworld-", "")
-        environment = ppo_make_metaworld_env(environment_name, args.seed)
-    else:
-        environment = gym.make(args.environment)
+    TrainingUtils.set_seeds(args.seed)
+    environment = TrainingUtils.setup_environment(args.environment)
     
-    if "procgen" in args.environment or "ALE" in args.environment:
-        reward_model = LightningCnnNetwork(
-            input_spaces=(environment.observation_space, environment.action_space),
-            hidden_dim=256,
-            action_hidden_dim=16,
-            layer_num=3,
-            cnn_channels=(16,32,32),
-            output_dim=1,
-            loss_function=loss_function,
-            learning_rate=(
-                1e-5
-                #1e-6
-                #if args.feedback_type == "corrective"
-                #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
-            ),
-            ensemble_count=args.n_ensemble,
-        )
+    feedback_id, model_id = TrainingUtils.get_model_ids(args)
+    
+    # Setup reward model
+    reward_model = (LightningCnnNetwork if "procgen" in args.environment or "ALE" in args.environment 
+                   else LightningNetwork)(
+        input_spaces=(environment.observation_space, environment.action_space),
+        hidden_dim=256,
+        action_hidden_dim=16 if "procgen" in args.environment or "ALE" in args.environment else 32,
+        layer_num=3 if "procgen" in args.environment or "ALE" in args.environment else 6,
+        cnn_channels=(16,32,32) if "procgen" in args.environment or "ALE" in args.environment else None,
+        output_dim=1,
+        loss_function=calculate_single_reward_loss if args.feedback_type in ["evaluative", "descriptive"] 
+                     else calculate_pairwise_loss,
+        learning_rate=1e-5,
+        ensemble_count=args.n_ensemble,
+    )
 
-    else:
-        reward_model = LightningNetwork(
-            input_spaces=(environment.observation_space, environment.action_space),
-            hidden_dim=256,
-            action_hidden_dim=32,
-            layer_num=6,
-            output_dim=1,
-            loss_function=loss_function,
-            learning_rate=(
-                1e-5
-                #1e-6
-                #if args.feedback_type == "corrective"
-                #else (1e-5 if args.feedback_type == "comparative" else 2e-5)
-            ),
-            ensemble_count=args.n_ensemble,
-        )
-
-    # Load data
-    dataset_dir = "feedback_regen"
     dataset = FeedbackDataset(
-        path.join(script_path, dataset_dir, f"{FEEDBACK_ID}.pkl"),
+        os.path.join(script_path, "feedback_regen", f"{feedback_id}.pkl"),
         args.feedback_type,
         args.n_feedback,
         noise_level=args.noise_level,
         env=environment if args.feedback_type == "demonstrative" else None,
         env_name=args.environment,
+        seed=args.seed,
     )
 
     train_reward_model(
         reward_model,
-        MODEL_ID,
+        model_id,
         args.feedback_type,
         dataset,
         maximum_epochs=100,
         split_ratio=0.85,
         environment=args.environment,
-        cpu_count=cpu_count,
+        cpu_count=os.cpu_count() or 8,
         num_ensemble_models=args.n_ensemble,
-        enable_progress_bar=False if args.no_loading_bar else True,
+        enable_progress_bar=not args.no_loading_bar,
         noise_level=args.noise_level,
+        n_feedback=args.n_feedback,
         seed=args.seed,
     )
-
 
 
 if __name__ == "__main__":

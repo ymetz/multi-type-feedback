@@ -15,13 +15,14 @@ from stable_baselines3.common.utils import set_random_seed
 import wandb
 from imitation.data import rollout
 from rl_zoo3.utils import ppo_make_metaworld_env
+from rlhf.utils import TrainingUtils
 
 # register custom envs
 import ale_py
 import minigrid
 import highway_env
 
-def load_demonstrations(demo_path: str, noise_level: float = 0.0, discrete_action_space: bool = False):
+def load_demonstrations(demo_path: str, noise_level: float = 0.0, discrete_action_space: bool = False, n_feedback: int = -1, seed: int = 42):
     """Load and process demonstration data from pickle file."""
     with open(demo_path, "rb") as f:
         feedback_data = pickle.load(f)
@@ -74,107 +75,56 @@ def load_demonstrations(demo_path: str, noise_level: float = 0.0, discrete_actio
         actions.append(acts[:-1])
         terms.append(dones)
 
+    if n_feedback != -1 and n_feedback < len(observations):
+        # is a bit inefficient as we first collected the entire dataset..but we just have to do it once
+        rng = np.random.default_rng(seed)
+        indices = rng.choice(len(observations), size=n_feedback, replace=False)
+
+        observations = [observations[i] for i in indices]
+        actions = [actions[i] for i in indices]
+        terms = [terms[i] for i in indices]
+
     return [Trajectory(obs=flat_obs, acts=flat_acts, terminal=terms[-1], infos=[{} for _ in range(len(flat_acts))]) for (flat_obs, flat_acts, terms) in zip(observations, actions, terms)]
 
 def main():
-    """Run behavioral cloning training."""
-    script_path = Path(__file__).parents[1].resolve()
-    
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--environment",
-        type=str,
-        default="HalfCheetah-v5",
-        help="Environment name",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=12,
-        help="Random seed",
-    )
-    parser.add_argument(
-        "--noise-level",
-        type=float,
-        default=0.0,
-        help="Noise level to add to demonstrations",
-    )
-    parser.add_argument(
-        "--n-epochs",
-        type=int,
-        default=20,
-        help="Number of training epochs",
-    )
-    parser.add_argument(
-        "--algo",
-        type=str,
-        default="ppo",
-        help="Number of training epochs",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=32,
-        help="Batch size for training",
-    )
+    parser = TrainingUtils.setup_base_parser()
+    parser.add_argument("--n-epochs", type=int, default=20, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=32, help="Batch size for training")
     args = parser.parse_args()
 
-    FEEDBACK_ID = f"{args.algo}_{args.environment}_{args.seed}"
-    if args.noise_level > 0.0:
-        MODEL_ID = f"{FEEDBACK_ID}_demonstrative_{args.seed}_noise_{str(args.noise_level)}"
-    else:
-        MODEL_ID = f"{FEEDBACK_ID}_demonstrative_{args.seed}"
-
-    # Set up wandb logging
-    run = wandb.init(
-        name="BC_"+MODEL_ID,
-        project="multi_reward_feedback_final_lul",
-        config={
-            **vars(args),
-            "model_type": "behavioral_cloning",
-            "noise_level": args.noise_level,
-            "seed": args.seed,
-            "environment": args.environment,
-        },
+    TrainingUtils.set_seeds(args.seed)
+    feedback_id, model_id = TrainingUtils.get_model_ids(args)
+    
+    script_path = Path(__file__).parents[1].resolve()
+    environment = TrainingUtils.setup_environment(args.environment)
+    eval_env = TrainingUtils.setup_environment(args.environment)
+    
+    TrainingUtils.setup_wandb_logging(
+        f"BC_{model_id}", 
+        args,
+        {"model_type": "behavioral_cloning"}
     )
 
-    # Set random seed
-    set_random_seed(args.seed)
-
-    rng = np.random.default_rng(args.seed)
-    
-    if "procgen" in args.environment:
-        _, short_name, _ = args.environment.split("-")
-        environment = Gym3ToGymnasium(ProcgenGym3Env(num=1, env_name=short_name))
-        environment = TransformObservation(environment, lambda obs: obs["rgb"], environment.observation_space)
-
-        eval_env = Gym3ToGymnasium(ProcgenGym3Env(num=1, env_name=short_name))
-        eval_env = TransformObservation(eval_env, lambda obs: obs["rgb"], eval_env.observation_space)
-    elif "ALE/" in args.environment:
-        environment = FrameStackObservation(AtariWrapper(gym.make(args.environment)), 4)
-        environment = TransformObservation(environment, lambda obs: obs.squeeze(-1), environment.observation_space)
-
-        eval_env = FrameStackObservation(AtariWrapper(gym.make(args.environment)), 4)
-        eval_env = TransformObservation(eval_env, lambda obs: obs.squeeze(-1), eval_env.observation_space)
-    elif "MiniGrid" in args.environment:
-        environment = FlatObsWrapper(gym.make(args.environment))
-        eval_env = FlatObsWrapper(gym.make(args.environment))
-    elif "metaworld" in args.environment:
-        environment_name = args.environment.replace("metaworld-", "")
-        environment = ppo_make_metaworld_env(environment_name, args.seed)
-        eval_env = ppo_make_metaworld_env(environment_name, args.seed)
-    else:
-        environment = gym.make(args.environment)
-        eval_env = gym.make(args.environment)
-    
-    # Load demonstrations
-    demo_path = os.path.join(script_path, "feedback_regen", f"{FEEDBACK_ID}.pkl")
-
+    demo_path = os.path.join(script_path, "feedback_regen", f"{feedback_id}.pkl")
     is_discrete_action = isinstance(environment.action_space, gym.spaces.Discrete)
     
-    trajectories = load_demonstrations(demo_path, args.noise_level, discrete_action_space=is_discrete_action)
-
+    trajectories = load_demonstrations(
+        demo_path, 
+        args.noise_level, 
+        discrete_action_space=is_discrete_action, 
+        n_feedback=args.n_feedback, 
+        seed=args.seed
+    )
     trajectories = rollout.flatten_trajectories(trajectories)
+    
+    bc_trainer = bc.BC(
+        observation_space=environment.observation_space,
+        action_space=environment.action_space,
+        demonstrations=trajectories,
+        batch_size=args.batch_size,
+        rng=np.random.default_rng(args.seed),
+        device=TrainingUtils.get_device(),
+    )
     
     # Create BC trainer
     bc_trainer = bc.BC(
@@ -193,7 +143,6 @@ def main():
             n_epochs=1,
             progress_bar=False
         )
-        print(stats)
         
         # Evaluate policy
         mean_reward, std_reward = evaluate_policy(
@@ -217,7 +166,7 @@ def main():
     mean_reward, std_reward = evaluate_policy(
         bc_trainer.policy,
         eval_env,
-        n_eval_episodes=100
+        n_eval_episodes=100,
     )
     print(f"Final evaluation: Mean reward = {mean_reward:.2f} +/- {std_reward:.2f}")
     wandb.log({

@@ -1,7 +1,7 @@
 import os
 from typing import Callable
 
-from gymnasium.wrappers.monitoring import video_recorder
+import gymnasium.wrappers.rendering as rendering # >= gymnasium==1.0.0
 
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvObs, VecEnvStepReturn, VecEnvWrapper
 from stable_baselines3.common.vec_env.dummy_vec_env import DummyVecEnv
@@ -22,7 +22,7 @@ class VecVideoRecorder(VecEnvWrapper):
     :param name_prefix: Prefix to the video name
     """
 
-    video_recorder: video_recorder.VideoRecorder
+    video_recorder: rendering.RecordVideo
 
     def __init__(
         self,

@@ -29,6 +29,7 @@ from torch import Tensor
 import random
 import itertools
 import bisect
+from rlhf.utils import TrainingUtils
 
 import pandas as pd
 
@@ -564,98 +565,46 @@ def generate_feedback(
     }
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", type=int, default=0, help="Experiment number")
-    parser.add_argument("--algorithm", type=str, default="ppo", help="RL algorithm")
-    parser.add_argument("--environment", type=str, default="HalfCheetah-v5", help="Environment")
-    parser.add_argument("--n-steps-factor", type=int, default=int(20), help="Number of steps sampled for each feedback instance")
-    parser.add_argument("--n-feedback", type=int, default=int(1000), help="How many feedback instances should be generated")
-    parser.add_argument("--seed", type=int, default=1337, help="TODO: Seed for env and stuff")
-    parser.add_argument("--segment-len", type=int, default=50, help="How long is the segment we generate feedback for")
-    parser.add_argument("--min-segment-len", type=int, default=None, help="(Optional: Min. segment len, default: segment_len / 2")
-    parser.add_argument("--oversampling_factor", type=float, default=1.5, help="Oversampling segments to enable succesful corrections")
-    parser.add_argument("--save-folder", type=str, default="feedback", help="Where to save the feedback")
-    parser.add_argument("--top-n-models", type=int, default=3)
+    parser = TrainingUtils.setup_base_parser()
+    parser.add_argument("--n-steps-factor", type=int, default=20, help="Number of steps sampled for each feedback instance")
+    parser.add_argument("--segment-len", type=int, default=50, help="Segment length for feedback generation")
+    parser.add_argument("--min-segment-len", type=int, default=None, help="Minimum segment length")
+    parser.add_argument("--oversampling_factor", type=float, default=1.5, help="Oversampling factor")
+    parser.add_argument("--save-folder", type=str, default="feedback", help="Save folder")
+    parser.add_argument("--top-n-models", type=int, default=3, help="Top N models to use")
     args = parser.parse_args()
 
-    np.random.seed(args.seed)
-    random.seed(args.seed)
+    TrainingUtils.set_seeds(args.seed)
+    device = TrainingUtils.get_device()
     
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    env_name = args.environment if "ALE" not in args.environment else args.environment.replace("/","-")
-    feedback_id = f"{args.algorithm}_{env_name}"
-    feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}_{args.seed}.pkl"
-    checkpoints_path = "../main/gt_agents"
-
-    # load "ensemble" of expert agents
-    expert_model_paths = [os.path.join(checkpoints_path, args.algorithm, model) for model in os.listdir(os.path.join(checkpoints_path, args.algorithm)) if env_name in model]
-    orig_len = len(expert_model_paths)
-    #expert_model = (PPO if args.algorithm == "ppo" else SAC).load(
-    #    os.path.join(checkpoints_path, args.algorithm, f"{args.environment.replace("/", "-")}_1", "best_model.zip")
-    #)
-
-
-    try:
-        run_eval_scores = pd.read_csv(os.path.join(checkpoints_path, "collected_results.csv"))
-        run_eval_scores = run_eval_scores.loc[run_eval_scores['env'] == args.environment].sort_values(by=['eval_score'], ascending=False).head(args.top_n_models)["run"].to_list()
-        expert_model_paths = [path for path in expert_model_paths if path.split(os.path.sep)[-1] in run_eval_scores]
-    except:
-        print("[WARN] No eval benchmark results are available. Check you eval benchmarks")    
-
-    if "procgen" in args.environment:
-        _, short_name, _ = args.environment.split("-")
-        environment = Gym3ToGymnasium(ProcgenGym3Env(num=1, env_name=short_name))
-        environment = SaveResetEnvWrapper(TransformObservation(environment, lambda obs: obs["rgb"], environment.observation_space))
-    elif "ALE/" in args.environment:
-        environment = FrameStackObservation(WarpFrame(gym.make(args.environment)), 4)
-        environment = SaveResetEnvWrapper(TransformObservation(environment, lambda obs: obs.squeeze(-1), environment.observation_space))
-    elif "MiniGrid" in args.environment:
-        environment = SaveResetEnvWrapper(FlatObsWrapper(gym.make(args.environment)))
-    elif "metaworld" in args.environment:
-        environment_name = args.environment.replace("metaworld-", "")
-        environment = SaveResetEnvWrapper(ppo_make_metaworld_env(environment_name, args.seed))
-    else:
-        environment = SaveResetEnvWrapper(gym.make(args.environment))
-
-    expert_models = []
-    for expert_model_path in expert_model_paths:
-        if os.path.isfile(os.path.join(expert_model_path, env_name, "vecnormalize.pkl")):
-            norm_env = VecNormalize.load(os.path.join(expert_model_path, env_name, "vecnormalize.pkl"), DummyVecEnv([lambda: environment]))
-        else:
-            norm_env = None
-        if "ALE" not in env_name:
-            expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, f"{env_name}.zip")
-            ), norm_env))
-        else:
-            expert_models.append(((PPO if args.algorithm == "ppo" else SAC).load(os.path.join(expert_model_path, f"best_model.zip")
-            ), norm_env))
+    feedback_id, _ = TrainingUtils.get_model_ids(args)
+    feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}.pkl"
     
-    model_class = PPO if args.algorithm == "ppo" else SAC
-
-    is_discrete_action = isinstance(environment.action_space, gym.spaces.Discrete)
-
-    feedback = generate_feedback(
-        model_class,
-        expert_models,
-        environment,
-        environment_name=args.environment,
-        total_steps_factor=args.n_steps_factor,
-        n_feedback=args.n_feedback,
-        segment_len=args.segment_len,
-        min_segment_len=args.min_segment_len if args.min_segment_len else args.segment_len // 2,
-        oversampling_factor=args.oversampling_factor,
-        checkpoints_path=checkpoints_path,
-        algorithm=args.algorithm,
-        device=device,
-        action_one_hot=is_discrete_action,
+    environment = TrainingUtils.setup_environment(args.environment, args.seed)
+    expert_models = TrainingUtils.load_expert_models(
+        args.environment, args.algorithm, "../main/gt_agents", 
+        environment, args.top_n_models
     )
 
-    debug_feedback_output(feedback)
+    feedback = generate_feedback(
+        PPO if args.algorithm == "ppo" else SAC,
+        expert_models,
+        environment,
+        args.environment,
+        args.n_steps_factor,
+        args.n_feedback,
+        args.segment_len,
+        args.min_segment_len or args.segment_len // 2,
+        args.oversampling_factor,
+        "../main/gt_agents",
+        args.algorithm,
+        device,
+        isinstance(environment.action_space, gym.spaces.Discrete),
+    )
 
     feedback_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(feedback_path, "wb") as feedback_file:
-        print("FB path", feedback_path)
-        pickle.dump(feedback, feedback_file, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(feedback_path, "wb") as f:
+        pickle.dump(feedback, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == "__main__":
     main()

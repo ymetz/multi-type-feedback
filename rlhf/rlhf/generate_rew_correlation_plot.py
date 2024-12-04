@@ -12,7 +12,7 @@ import torch
 import argparse
 import pickle
 
-def generate_correlation_data(env, algo, seed=6389, reward_seed=1789, num_samples=int(1e4), noise_level=0.0):
+def generate_correlation_data(env, algo, seed=6389, reward_seed=1789, num_samples=int(1e4), noise_level=0.0, n_feedback=-1):
     with open(f"samples/{algo}_{env}_{seed}.pkl", "rb") as file:
         data = pkl.load(file)
     
@@ -49,6 +49,8 @@ def generate_correlation_data(env, algo, seed=6389, reward_seed=1789, num_sample
                 true_noise_level = noise_level
             
             rew_functions.append(os.path.join(base_dir, f"{algo}_{env}_{reward_seed}_{type}_{reward_seed}_noise_{true_noise_level}.ckpt"))
+        elif n_feedback != -1:
+            rew_functions.append(os.path.join(base_dir, f"{algo}_{env}_{reward_seed}_{type}_{reward_seed}_nfeedback_{n_feedback}.ckpt"))
         else:
             rew_functions.append(os.path.join(base_dir, f"{algo}_{env}_{reward_seed}_{type}_{reward_seed}.ckpt"))
 
@@ -77,7 +79,7 @@ def generate_correlation_data(env, algo, seed=6389, reward_seed=1789, num_sample
     
     pred_rewards = [rews] + [pr.squeeze() for pr in pred_rewards]
 
-    with open(os.path.join("correlation_data_fixed", f"corr_{env}_{algo}_noise_{noise_level}_{reward_seed}.pkl"), "wb") as feedback_file:
+    with open(os.path.join("correlation_data", f"corr_{env}_{algo}_noise_{noise_level}_{reward_seed}.pkl"), "wb") as feedback_file:
         pickle.dump(pred_rewards, feedback_file, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == "__main__":
@@ -85,12 +87,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--algorithm", type=str, default="ppo", help="RL algorithm")
     parser.add_argument("--environment", type=str, default="HalfCheetah-v5", help="Environment")
-    parser.add_argument("--n-feedback", type=int, default=int(10000), help="How many feedback instances should be generated")
+    parser.add_argument("--n-samples", type=int, default=int(10000), help="How many feedback instances should be generated")
     parser.add_argument("--seed", type=int, default=1789, help="TODO: Seed for env and stuff")
     parser.add_argument("--noise-level", type=float, default=0.0)
+    parser.add_argument("--n-feedback", type=int, default=-1)
 
     args = parser.parse_args()
 
-    generate_correlation_data(args.environment, args.algorithm, reward_seed=args.seed, num_samples=args.n_feedback, noise_level=args.noise_level)
+    generate_correlation_data(args.environment, args.algorithm, reward_seed=args.seed, num_samples=args.n_samples, noise_level=args.noise_level, n_feedback=args.n_feedback)
 
     

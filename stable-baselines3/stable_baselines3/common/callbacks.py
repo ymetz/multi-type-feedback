@@ -439,7 +439,8 @@ class EvalCallback(EventCallback):
         info = locals_["info"]
 
         if locals_["done"]:
-            maybe_is_success = info.get("is_success")
+            # added success because it is used for Metaworld
+            maybe_is_success = info.get("is_success") or info.get("success")
             if maybe_is_success is not None:
                 self._is_success_buffer.append(maybe_is_success)
 
