@@ -1,11 +1,21 @@
 from collections import defaultdict
-from typing import Any, Dict, List, Union
+from typing import Dict, List, Tuple
+import gymnasium as gym
 
 import numpy as np
 import torch
 import wandb
 from stable_baselines3 import PPO, SAC
-from torch.utils.data import ConcatDataset
+from feedback_oracle import FeedbackOracle
+from feedback_dataset import FeedbackDataset
+from feedback_models import LightningNetwork, LightningCnnNetwork
+from feedback_losses import calculate_single_reward_loss, calculate_pairwise_loss
+from torch.utils.data import DataLoader
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import EarlyStopping
+from rlhf.utils import TrainingUtils
+import argparse
+
 
 
 class DynamicRLHF:
@@ -594,7 +604,7 @@ def main():
 
     # Initialize oracle
     oracle = FeedbackOracle(
-        expert_models=load_expert_models(args.environment, args.algorithm),
+        expert_models=TrainingUtils.load_expert_models(args.environment, args.algorithm),
         environment=env,
         checkpoints_path="path/to/checkpoints",
         algorithm=args.algorithm,

@@ -26,6 +26,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
 
 from rlhf.save_reset_wrapper import SaveResetEnvWrapper
+from rlhf.utils import TrainingUtils
 
 
 def predict_expert_value(
@@ -39,13 +40,9 @@ def predict_expert_value(
     observation = expert_model.policy.obs_to_tensor(observation)[0]
     with torch.no_grad():
         return torch.min(
-            (
-                torch.cat(
-                    expert_model.policy.critic_target(observation, actions), dim=1
-                )
-                if isinstance(expert_model, SAC)
-                else expert_model.policy.predict_values(observation)
-            ),
+            torch.cat(expert_model.policy.critic_target(observation, actions), dim=1)
+            if isinstance(expert_model, SAC)
+            else expert_model.policy.predict_values(observation),
             dim=1,
             keepdim=True,
         )[0]
@@ -271,11 +268,9 @@ def generate_feedback_stream(
 
                         for t in range(segment_len):
                             action = expert_model.predict(
-                                (
-                                    exp_norm_env.normalize_obs(obs)
-                                    if exp_norm_env
-                                    else obs
-                                ),
+                                exp_norm_env.normalize_obs(obs)
+                                if exp_norm_env
+                                else obs,
                                 deterministic=True,
                             )[0]
                             next_obs, rew, terminated, truncated, _ = environment.step(
@@ -403,8 +398,8 @@ def generate_feedback_stream(
         "segments": segments,
         "ratings": ratings.tolist(),
         "preferences": preferences,
-        "demos": demos,
-        "corrections": corrections,
+        "demos": reservoir_demos,
+        "corrections": reservoir_segments,
         "description": cluster_descriptions,
         "description_preference": descr_preferences,
         "opt_gaps": opt_gaps,
@@ -504,54 +499,44 @@ def load_expert_models(
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", type=int, default=0)
-    parser.add_argument("--algorithm", type=str, default="ppo")
-    parser.add_argument("--environment", type=str, default="HalfCheetah-v5")
-    parser.add_argument("--n-steps-factor", type=int, default=20)
-    parser.add_argument("--n-feedback", type=int, default=1000)
-    parser.add_argument("--seed", type=int, default=1337)
-    parser.add_argument("--segment-len", type=int, default=50)
-    parser.add_argument("--save-folder", type=str, default="feedback")
-    parser.add_argument("--top-n-models", type=int, default=3)
+    parser = TrainingUtils.setup_base_parser()
+    parser.add_argument("--experiment", type=int, default=0, help="Experiment number")
+    parser.add_argument("--n-steps-factor", type=int, default=20, help="Number of steps sampled per feedback")
+    parser.add_argument("--segment-len", type=int, default=50, help="Length of feedback segments")
+    parser.add_argument("--save-folder", type=str, default="feedback", help="Save folder")
+    parser.add_argument("--top-n-models", type=int, default=3, help="Top N models to use")
     args = parser.parse_args()
 
-    np.random.seed(args.seed)
-    random.seed(args.seed)
-
-    env_name = (
-        args.environment
-        if "ALE" not in args.environment
-        else args.environment.replace("/", "-")
-    )
-    feedback_id = f"{args.algorithm}_{env_name}"
-    feedback_path = (
-        Path(__file__).parents[1].resolve()
-        / args.save_folder
-        / f"{feedback_id}_{args.seed}.pkl"
-    )
+    TrainingUtils.set_seeds(args.seed)
+    
+    feedback_id, _ = TrainingUtils.get_model_ids(args)
+    feedback_path = Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}.pkl"
     checkpoints_path = "../main/gt_agents"
-
-    environment = setup_environment(args.environment)
-    expert_models = load_expert_models(args, environment, checkpoints_path)
-
-    model_class = PPO if args.algorithm == "ppo" else SAC
-
+    
+    environment = TrainingUtils.setup_environment(args.environment)
+    expert_models = TrainingUtils.load_expert_models(
+        args.environment, 
+        args.algorithm, 
+        checkpoints_path, 
+        environment, 
+        args.top_n_models
+    )
+    
     feedback = generate_feedback_stream(
-        model_class=model_class,
+        model_class=PPO if args.algorithm == "ppo" else SAC,
         expert_models=expert_models,
         environment=environment,
         environment_name=args.environment,
         total_steps=args.n_feedback * args.n_steps_factor,
         n_feedback=args.n_feedback,
         segment_len=args.segment_len,
-        checkpoints_dir=os.path.join(checkpoints_path, args.algorithm, f"{env_name}_1"),
+        checkpoints_dir=os.path.join(checkpoints_path, args.algorithm, f"{args.environment}_1"),
         algorithm=args.algorithm,
     )
 
     feedback_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(feedback_path, "wb") as feedback_file:
-        pickle.dump(feedback, feedback_file, protocol=pickle.HIGHEST_PROTOCOL)
+    with open(feedback_path, "wb") as f:
+        pickle.dump(feedback, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 if __name__ == "__main__":

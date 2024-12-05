@@ -1,9 +1,11 @@
 import os
+import pandas as pd
 import gym
 import torch
 import random
 import numpy as np
 import argparse
+import wandb
 from pathlib import Path
 from typing import Optional, Tuple, Any, Dict
 
@@ -11,8 +13,8 @@ from procgen import ProcgenGym3Env
 from gym3.wrapper import Gym3ToGymnasium
 from gym.wrappers import TransformObservation, FrameStackObservation
 from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.atari_wrappers import AtariWrapper
 from rl_zoo3.utils import ppo_make_metaworld_env
 from minigrid.wrappers import FlatObsWrapper
 
