@@ -30,8 +30,6 @@ from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
-
-from rlhf.datatypes import FeedbackDataset
 from rlhf.save_reset_wrapper import SaveResetEnvWrapper
 from rlhf.utils import TrainingUtils
 

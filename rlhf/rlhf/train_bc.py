@@ -13,7 +13,6 @@ import highway_env
 import minigrid
 import numpy as np
 import torch
-import wandb
 from imitation.algorithms import bc
 from imitation.data import rollout
 from imitation.data.types import Trajectory
@@ -21,6 +20,7 @@ from rl_zoo3.utils import ppo_make_metaworld_env
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.utils import set_random_seed
 
+import wandb
 from rlhf.utils import TrainingUtils
 
 
@@ -117,11 +117,16 @@ def main():
     feedback_id, model_id = TrainingUtils.get_model_ids(args)
 
     script_path = Path(__file__).parents[1].resolve()
-    environment = TrainingUtils.setup_environment(args.environment)
+    environment = TrainingUtils.setup_environment(
+        args.environment, save_reset_wrapper=False
+    )
     eval_env = TrainingUtils.setup_environment(args.environment)
 
     TrainingUtils.setup_wandb_logging(
-        f"BC_{model_id}", args, {"model_type": "behavioral_cloning"}
+        f"BC_{model_id}",
+        args,
+        {"model_type": "behavioral_cloning"},
+        wandb_project_name=args.wandb_project_name,
     )
 
     demo_path = os.path.join(script_path, "feedback_regen", f"{feedback_id}.pkl")

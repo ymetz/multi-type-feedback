@@ -1,7 +1,8 @@
 import unittest
 
-import masksembles.keras
 import tensorflow as tf
+
+import masksembles.keras
 
 
 class TestCreation(unittest.TestCase):

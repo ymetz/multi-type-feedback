@@ -7,10 +7,11 @@ import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn.functional as F
-from masksembles.torch import Masksembles1D, Masksembles2D
 from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torch.nn.functional import log_softmax, mse_loss, nll_loss
+
+from masksembles.torch import Masksembles1D, Masksembles2D
 
 # Loss functions
 single_reward_loss = nn.MSELoss()
@@ -314,7 +315,7 @@ class LightningCnnNetwork(LightningModule):
         # Reshape back to (batch_size, segment_length, output_dim)
         output = output.reshape(batch_size, segment_length, -1)
 
-        return x
+        return output
 
     def training_step(self, batch: Tensor):
         """Compute the loss for training."""

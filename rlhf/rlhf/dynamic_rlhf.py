@@ -1,28 +1,33 @@
+import argparse
 from collections import defaultdict
+from pathlib import Path
 from typing import Dict, List, Tuple
-import gymnasium as gym
 
+import gymnasium as gym
 import numpy as np
 import torch
-import wandb
-from stable_baselines3 import PPO, SAC
-from feedback_oracle import FeedbackOracle
-from feedback_dataset import FeedbackDataset
-from feedback_models import LightningNetwork, LightningCnnNetwork
-from feedback_losses import calculate_single_reward_loss, calculate_pairwise_loss
-from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import EarlyStopping
-from rlhf.utils import TrainingUtils
-import argparse
+from stable_baselines3 import PPO, SAC
+from torch.utils.data import DataLoader
 
+import wandb
+from rlhf.feedback_dataset import FeedbackDataset, load_flat_buffer_into_feedback_dataset
+from rlhf.feedback_oracle import FeedbackOracle
+from rlhf.networks import (
+    LightningCnnNetwork,
+    LightningNetwork,
+    calculate_pairwise_loss,
+    calculate_single_reward_loss,
+)
+from rlhf.utils import TrainingUtils
 
 
 class DynamicRLHF:
     def __init__(
         self,
         oracle: FeedbackOracle,
-        env,
+        env: gym.Env,
         algorithm: str = "ppo",
         feedback_types: List[str] = [
             "evaluative",
@@ -35,8 +40,8 @@ class DynamicRLHF:
         rl_steps_per_iteration: int = 10000,
         reward_training_epochs: int = 50,
         device: str = "cuda",
-        uncertainty_threshold: float = 0.8,  # For uncertainty-based sampling
         enable_wandb: bool = True,
+        wandb_project_name: str = "dynamic_rlhf",
     ):
         self.oracle = oracle
         self.env = env
@@ -47,7 +52,6 @@ class DynamicRLHF:
         self.rl_steps_per_iteration = rl_steps_per_iteration
         self.reward_training_epochs = reward_training_epochs
         self.device = device
-        self.uncertainty_threshold = uncertainty_threshold
         self.enable_wandb = enable_wandb
 
         # Initialize feedback buffers for each type
@@ -61,7 +65,7 @@ class DynamicRLHF:
 
         if enable_wandb:
             wandb.init(
-                project="dynamic_rlhf",
+                project=wandb_project_name,
                 config={
                     "algorithm": algorithm,
                     "feedback_types": feedback_types,
@@ -125,7 +129,7 @@ class DynamicRLHF:
         for _ in range(n_trajectories):
             trajectory = []
             obs, _ = self.env.reset()
-            initial_states.append(self.env.save_state())
+            initial_states.append(self.env.save_state(observation=obs))
 
             for _ in range(self.oracle.segment_len):
                 action, _ = self.rl_agent.predict(obs, deterministic=True)
@@ -141,82 +145,6 @@ class DynamicRLHF:
             trajectories.append(trajectory)
 
         return trajectories, initial_states
-
-    def sample_feedback_random(
-        self, trajectories: List[List], initial_states: List[np.ndarray]
-    ) -> Dict:
-        """Randomly sample feedback types."""
-        feedback_distribution = np.ones(len(self.feedback_types)) / len(
-            self.feedback_types
-        )
-        selected_types = np.random.choice(
-            self.feedback_types,
-            size=self.n_feedback_per_iteration,
-            p=feedback_distribution,
-        )
-
-        feedback_counts = defaultdict(int)
-        all_feedback = []
-
-        for trajectory, initial_state, feedback_type in zip(
-            trajectories, initial_states, selected_types
-        ):
-            feedback = self.oracle.get_feedback(
-                trajectory, initial_state, [feedback_type]
-            )
-            feedback_counts[feedback_type] += 1
-            all_feedback.append(feedback)
-
-        return all_feedback, feedback_counts
-
-    def sample_feedback_uncertainty(
-        self, trajectories: List[List], initial_states: List[np.ndarray]
-    ) -> Dict:
-        """Sample feedback types based on uncertainty."""
-        uncertainties = defaultdict(list)
-
-        # First, get uncertainty estimates for all feedback types
-        for trajectory, initial_state in zip(trajectories, initial_states):
-            feedback = self.oracle.get_feedback(
-                trajectory, initial_state, self.feedback_types
-            )
-            for feedback_type in self.feedback_types:
-                uncertainties[feedback_type].append(
-                    feedback["uncertainty"][feedback_type]
-                )
-
-        # Compute sampling probabilities based on uncertainties
-        avg_uncertainties = {
-            feedback_type: np.mean(vals)
-            for feedback_type, vals in uncertainties.items()
-        }
-
-        total_uncertainty = sum(avg_uncertainties.values())
-        if total_uncertainty == 0:
-            probs = np.ones(len(self.feedback_types)) / len(self.feedback_types)
-        else:
-            probs = [
-                avg_uncertainties[ft] / total_uncertainty for ft in self.feedback_types
-            ]
-
-        # Sample feedback types based on uncertainty
-        selected_types = np.random.choice(
-            self.feedback_types, size=self.n_feedback_per_iteration, p=probs
-        )
-
-        feedback_counts = defaultdict(int)
-        all_feedback = []
-
-        for trajectory, initial_state, feedback_type in zip(
-            trajectories, initial_states, selected_types
-        ):
-            feedback = self.oracle.get_feedback(
-                trajectory, initial_state, [feedback_type]
-            )
-            feedback_counts[feedback_type] += 1
-            all_feedback.append(feedback)
-
-        return all_feedback, feedback_counts
 
     def update_feedback_buffers(self, new_feedback: List[Dict]):
         """Update feedback buffers with new feedback while maintaining size limit."""
@@ -351,6 +279,14 @@ class DynamicRLHF:
         # Update feedback buffers
         self.update_feedback_buffers(feedback)
 
+        # Ensure buffer data is in correct format before creating dataset
+        for feedback_type, buffer in self.feedback_buffers.items():
+            if buffer:
+                self.feedback_buffers[feedback_type] = [
+                    (obs, label, weight) 
+                    for obs, label, weight in buffer
+                ]
+
         # Train reward models
         reward_metrics = self.train_reward_models()
 
@@ -390,30 +326,71 @@ class DynamicRLHF:
 
         return feedback_counts, reward_metrics
 
+    def sample_feedback_random(
+        self, trajectories: List[List], initial_states: List[np.ndarray]
+    ) -> Dict:
+        """Randomly sample feedback types."""
+        feedback_distribution = np.ones(len(self.feedback_types)) / len(
+            self.feedback_types
+        )
+        selected_types = np.random.choice(
+            self.feedback_types,
+            size=self.n_feedback_per_iteration,
+            p=feedback_distribution,
+        )
+
+        feedback_counts = defaultdict(int)
+        all_feedback = []
+
+        for trajectory, initial_state, feedback_type in zip(
+            trajectories, initial_states, selected_types
+        ):
+            feedback_dict = {}
+            
+            # Handle different feedback types
+            if feedback_type in ["comparative", "descriptive_preference"]:
+                # Need a second trajectory for comparison
+                trajectory2, _ = self.collect_trajectories(1)
+                feedback = self.oracle.get_feedback(
+                    (trajectory, trajectory2[0]), initial_state, feedback_type
+                )
+            elif feedback_type in ["demonstrative", "corrective"]:
+                # Oracle will generate the second trajectory
+                feedback = self.oracle.get_feedback(
+                    trajectory, initial_state, feedback_type
+                )
+            else:  # evaluative, descriptive
+                feedback = self.oracle.get_feedback(
+                    trajectory, initial_state, feedback_type
+                )
+            
+            feedback_dict[feedback_type] = feedback
+            feedback_counts[feedback_type] += 1
+            all_feedback.append(feedback_dict)
+
+        return all_feedback, feedback_counts
+
     def update_feedback_buffers(self, new_feedback: List[Dict]):
         """Update feedback buffers with new feedback while maintaining size limit."""
-        for feedback in new_feedback:
-            for feedback_type in feedback:
+        for feedback_dict in new_feedback:
+            for feedback_type, feedback in feedback_dict.items():
                 if feedback_type != "uncertainty":  # Skip uncertainty metadata
-                    if (
-                        len(self.feedback_buffers[feedback_type])
-                        >= self.feedback_buffer_size
-                    ):
+                    if len(self.feedback_buffers[feedback_type]) >= self.feedback_buffer_size:
                         # Remove oldest feedback
                         self.feedback_buffers[feedback_type].pop(0)
-                    self.feedback_buffers[feedback_type].append(feedback[feedback_type])
+                    self.feedback_buffers[feedback_type].append(feedback)
 
     def train_reward_models(self):
-        """Train reward models on current feedback buffers."""
-        metrics = {}
-
+        reward_metrics = {}
+        
         for feedback_type in self.feedback_types:
-            if not self.feedback_buffers[feedback_type]:
+            buffer_data = self.feedback_buffers[feedback_type]
+            if not buffer_data:
                 continue
-
+                
             # Create dataset from buffer
             dataset = FeedbackDataset(
-                self.feedback_buffers[feedback_type],
+                load_flat_buffer_into_feedback_dataset(buffer_data, feedback_type),
                 feedback_type,
                 len(self.feedback_buffers[feedback_type]),
                 env_name=self.env.spec.id,
@@ -567,11 +544,7 @@ class DynamicRLHF:
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--algorithm", type=str, default="ppo", help="RL algorithm")
-    parser.add_argument(
-        "--environment", type=str, default="HalfCheetah-v5", help="Environment"
-    )
+    parser = TrainingUtils.setup_base_parser()
     parser.add_argument(
         "--feedback-types",
         nargs="+",
@@ -587,36 +560,50 @@ def main():
         help="Feedback sampling strategy",
     )
     parser.add_argument(
+        "--save-folder", type=str, default="feedback", help="Save folder"
+    )
+    parser.add_argument(
         "--total-iterations",
         type=int,
         default=100,
         help="Number of training iterations",
     )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--top-n-models", type=int, default=3, help="Top N models to use"
+    )
     args = parser.parse_args()
 
-    # Set random seeds
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    TrainingUtils.set_seeds(args.seed)
+    device = TrainingUtils.get_device()
 
-    # Initialize environment
-    env = gym.make(args.environment)
+    feedback_id, _ = TrainingUtils.get_model_ids(args)
+    feedback_path = (
+        Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}.pkl"
+    )
+
+    environment = TrainingUtils.setup_environment(args.environment, args.seed)
+    expert_models = TrainingUtils.load_expert_models(
+        args.environment,
+        args.algorithm,
+        "../main/gt_agents",
+        environment,
+        args.top_n_models,
+    )
 
     # Initialize oracle
     oracle = FeedbackOracle(
-        expert_models=TrainingUtils.load_expert_models(args.environment, args.algorithm),
-        environment=env,
-        checkpoints_path="path/to/checkpoints",
-        algorithm=args.algorithm,
-        cache_dir="path/to/cache",
+        expert_models=expert_models,
+        environment=environment,
+        reference_data_path=feedback_path,
     )
 
     # Initialize RLHF trainer
     rlhf = DynamicRLHF(
         oracle=oracle,
-        env=env,
+        env=environment,
         algorithm=args.algorithm,
         feedback_types=args.feedback_types,
+        wandb_project_name=args.wandb_project_name,
     )
 
     # Run training

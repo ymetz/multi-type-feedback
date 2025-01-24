@@ -1,7 +1,8 @@
 import unittest
 
-import masksembles.torch
 import torch
+
+import masksembles.torch
 
 
 class TestCreation(unittest.TestCase):

@@ -16,14 +16,13 @@ import numpy
 import numpy as np
 import pytorch_lightning as pl
 import torch
-import wandb
 from imitation.rewards.reward_function import RewardFn
 from rl_zoo3.exp_manager import ExperimentManager
 from rl_zoo3.utils import ALGOS, StoreDict
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.utils import set_random_seed
-from wandb.integration.sb3 import WandbCallback
 
+import wandb
 from rlhf.datatypes import FeedbackType
 from rlhf.networks import (
     LightningCnnNetwork,
@@ -32,6 +31,7 @@ from rlhf.networks import (
     calculate_single_reward_loss,
 )
 from rlhf.utils import TrainingUtils
+from wandb.integration.sb3 import WandbCallback
 
 
 class CustomReward(RewardFn):
@@ -129,7 +129,9 @@ def main():
         else None
     )
 
-    TrainingUtils.setup_wandb_logging(f"RL_{model_id}", args)
+    TrainingUtils.setup_wandb_logging(
+        f"RL_{model_id}", args, wandb_project_name=args.wandb_project_name
+    )
 
     architecture_cls = (
         LightningCnnNetwork

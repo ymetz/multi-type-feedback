@@ -19,7 +19,7 @@ SegmentT = List[Tuple[NDArray, NDArray, bool, float]]
 
 
 # Feedback Dataset
-class FeedbackDataset(TypedDict):
+class FeedbackData(TypedDict):
     segments: List[SegmentT]
     ratings: List[int]
     preferences: List[Tuple[int, int, int]]

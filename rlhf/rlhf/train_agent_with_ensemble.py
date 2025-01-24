@@ -14,14 +14,13 @@ import minigrid
 import numpy
 import pytorch_lightning as pl
 import torch
-import wandb
 from imitation.rewards.reward_function import RewardFn
 from rl_zoo3.exp_manager import ExperimentManager
 from rl_zoo3.utils import ALGOS, StoreDict
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.utils import set_random_seed
-from wandb.integration.sb3 import WandbCallback
 
+import wandb
 from rlhf.common import get_reward_model_name
 from rlhf.datatypes import FeedbackType
 from rlhf.networks import (
@@ -30,6 +29,7 @@ from rlhf.networks import (
     calculate_pairwise_loss,
     calculate_single_reward_loss,
 )
+from wandb.integration.sb3 import WandbCallback
 
 
 class CustomReward(RewardFn):

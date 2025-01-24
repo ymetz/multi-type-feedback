@@ -1,15 +1,14 @@
+import pickle
 from typing import Any, List, Tuple, Union
 
 import numpy as np
-import pickle
 from scipy.spatial.distance import cdist
 from sklearn.cluster import MiniBatchKMeans
-from stable_baselines3.common.vec_env import VecNormalize
 from stable_baselines3 import PPO, SAC
+from stable_baselines3.common.vec_env import VecNormalize
 
 
 class FeedbackOracle:
-    """Previous initialization and helper methods remain the same..."""
 
     def __init__(
         self,
@@ -87,7 +86,7 @@ class FeedbackOracle:
             Tuple[
                 List[Tuple[np.ndarray, np.ndarray, float, bool]],
                 List[Tuple[np.ndarray, np.ndarray, float, bool]],
-            ],  # trajectory pair
+            ],
         ],
         initial_state: np.ndarray,
         feedback_type: str,
@@ -206,12 +205,10 @@ class FeedbackOracle:
             return (0, 1, 0)
 
         diff = abs(return1 - return2) / total_return
-        if diff < 0.1:
-            return (0, 1, 0)
-        elif return1 > return2:
-            return (1, 0, 1)
+        if return1 > return2:
+            return (trajectory2, trajectory1, 1)
         else:
-            return (0, 1, 1)
+            return (trajectory1, trajectory2, 1)
 
     def get_demonstrative_feedback(self, initial_state):
         """Existing implementation..."""
@@ -222,7 +219,7 @@ class FeedbackOracle:
             self.expert_models
         ):
             self.environment.reset()
-            obs = initial_state.squeeze(0)
+            obs = self.environment.load_state(initial_state)
             demo = []
 
             for _ in range(self.segment_len):
@@ -249,7 +246,6 @@ class FeedbackOracle:
         return best_demo
 
     def get_corrective_feedback(self, trajectory, initial_state):
-        """Existing implementation..."""
         trajectory_return = self._compute_discounted_return(trajectory)
         expert_demo = self.get_demonstrative_feedback(initial_state)
         expert_return = self._compute_discounted_return(expert_demo)
@@ -262,26 +258,7 @@ class FeedbackOracle:
 
         if expert_return > trajectory_return:
             return (trajectory, expert_demo)
-        return (trajectory, None)
-
-    def get_random_trajectory(self):
-        """Existing implementation..."""
-        self.environment.reset()
-        trajectory = []
-        done = False
-
-        while not done and len(trajectory) < self.segment_len:
-            action = self.environment.action_space.sample()
-            next_obs, reward, terminated, truncated, _ = self.environment.step(action)
-            done = terminated or truncated
-            trajectory.append((np.expand_dims(next_obs, axis=0), action, reward, done))
-
-        return trajectory
-
-    def _compute_discounted_return(self, trajectory: List[Tuple]) -> float:
-        """Helper method to compute discounted return of a trajectory."""
-        rewards = [step[2] for step in trajectory]
-        return sum(reward * (self.gamma**i) for i, reward in enumerate(rewards))
+        return (trajectory, expert_demo)
 
     def get_descriptive_preference_feedback(
         self,
@@ -326,9 +303,26 @@ class FeedbackOracle:
         diff = abs(reward_diff) / total_reward
 
         # If difference is small, mark as indifferent
-        if diff < 0.1:  # 10% threshold for indifference
-            return (0, 1, 0)
         elif reward1 > reward2:
-            return (1, 0, 1)
+            return (avg_state_action2, avg_state_action1, 1)
         else:
-            return (0, 1, 1)
+            return (avg_state_action1, avg_state_action2, 1)
+
+    def get_random_trajectory(self):
+        """Existing implementation..."""
+        self.environment.reset()
+        trajectory = []
+        done = False
+
+        while not done and len(trajectory) < self.segment_len:
+            action = self.environment.action_space.sample()
+            next_obs, reward, terminated, truncated, _ = self.environment.step(action)
+            done = terminated or truncated
+            trajectory.append((np.expand_dims(next_obs, axis=0), action, reward, done))
+
+        return trajectory
+
+    def _compute_discounted_return(self, trajectory: List[Tuple]) -> float:
+        """Helper method to compute discounted return of a trajectory."""
+        rewards = [step[2] for step in trajectory]
+        return sum(reward * (self.gamma**i) for i, reward in enumerate(rewards))
