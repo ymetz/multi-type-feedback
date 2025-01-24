@@ -1,4 +1,6 @@
-# Multi-Type-Feedback
+# Reward Learning from Multiple Feedback Types
+
+Code for Feedback Generation, Reward Learning, and RL Benchmarks
 
 This repository contains code for training and evaluating reinforcement learning agents using various types of feedback.
 
