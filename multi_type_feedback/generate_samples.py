@@ -25,7 +25,7 @@ from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
-from rlhf.save_reset_wrapper import SaveResetEnvWrapper
+from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
 
 
 def one_hot_vector(k, max_val):

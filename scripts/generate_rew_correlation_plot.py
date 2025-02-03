@@ -11,7 +11,7 @@ import torch
 from scipy.stats import pearsonr
 from sklearn.cluster import MiniBatchKMeans
 
-from rlhf.networks import LightningNetwork
+from multi_type_feedback.networks import LightningNetwork
 
 
 def generate_correlation_data(

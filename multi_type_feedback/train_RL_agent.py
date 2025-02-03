@@ -23,14 +23,14 @@ from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.utils import set_random_seed
 
 import wandb
-from rlhf.datatypes import FeedbackType
-from rlhf.networks import (
+from multi_type_feedback.datatypes import FeedbackType
+from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
     calculate_pairwise_loss,
     calculate_single_reward_loss,
 )
-from rlhf.utils import TrainingUtils
+from multi_type_feedback.utils import TrainingUtils
 from wandb.integration.sb3 import WandbCallback
 
 

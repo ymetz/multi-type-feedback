@@ -18,7 +18,7 @@ from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 import wandb
-from rlhf.save_reset_wrapper import SaveResetEnvWrapper
+from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
 
 
 class TrainingUtils:

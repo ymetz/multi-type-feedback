@@ -2,7 +2,7 @@
 
 from typing import Literal, Union
 
-from rlhf.datatypes import FeedbackType
+from multi_type_feedback.datatypes import FeedbackType
 
 
 # Common functions

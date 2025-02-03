@@ -32,14 +32,14 @@ from stable_baselines3.common.vec_env import VecExtractDictObs
 from torch.utils.data import DataLoader, Dataset, random_split
 
 import wandb
-from rlhf.feedback_dataset import LoadFeedbackDataset
-from rlhf.networks import (
+from multi_type_feedback.feedback_dataset import LoadFeedbackDataset
+from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
     calculate_pairwise_loss,
     calculate_single_reward_loss,
 )
-from rlhf.utils import TrainingUtils
+from multi_type_feedback.utils import TrainingUtils
 
 # for convenice sake, todo: make dynamic in the future
 discount_factors = {

@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from scipy.stats import truncnorm, uniform
 from torch.utils.data import Dataset
 
-from rlhf.datatypes import FeedbackData, FeedbackType, SegmentT
+from multi_type_feedback.datatypes import FeedbackData, FeedbackType, SegmentT
 
 
 def truncated_uniform_vectorized(mean, width, low=0, upp=9):

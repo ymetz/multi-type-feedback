@@ -25,8 +25,8 @@ from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
 
-from rlhf.datatypes import FeedbackDataset
-from rlhf.save_reset_wrapper import SaveResetEnvWrapper
+from multi_type_feedback.datatypes import FeedbackDataset
+from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
 
 
 def predict_expert_value(

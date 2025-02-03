@@ -21,7 +21,7 @@ from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.utils import set_random_seed
 
 import wandb
-from rlhf.utils import TrainingUtils
+from multi_type_feedback.utils import TrainingUtils
 
 
 def load_demonstrations(

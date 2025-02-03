@@ -21,9 +21,9 @@ from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.utils import set_random_seed
 
 import wandb
-from rlhf.common import get_reward_model_name
-from rlhf.datatypes import FeedbackType
-from rlhf.networks import (
+from multi_type_feedback.common import get_reward_model_name
+from multi_type_feedback.datatypes import FeedbackType
+from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
     calculate_pairwise_loss,
