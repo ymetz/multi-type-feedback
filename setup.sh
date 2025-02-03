@@ -1,11 +1,12 @@
 python -m venv venv
 source venv/bin/activate
-pip3 install torch torchvision
+pip install torch torchvision
 cd main && pip install -e .
-cd procgen && pip install -e .
-cd ../..
-pip install -e stable-baselines3
+pip install -e dependencies/procgen
+cd ..
 cd rlhf
-pip install -e masksembles
+pip install -e dependencies/masksembles
+cd ..
 pip install imitation
-pip install gymnasium==1.0.0a2 lightning minigrid mujoco ale-py wandb
+pip install -e dependencies/stable-baselines3
+pip install gymnasium lightning minigrid mujoco ale-py wandb

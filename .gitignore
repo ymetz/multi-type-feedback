@@ -1,12 +1,12 @@
 main/gt_agents
 main/logs
 main/rl-trained-agents
-rlhf/agents
-rlhf/feedback
-rlhf/feedback_debug
-rlhf/wandb
-rlhf/runs
-rlhf/reward_models
+mutli-type-feedback/agents
+mutli-type-feedback/feedback
+mutli-type-feedback/feedback_debug
+mutli-type-feedback/wandb
+mutli-type-feedback/runs
+mutli-type-feedback/reward_models
 
 .DS_Store
 
