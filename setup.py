@@ -7,7 +7,7 @@ def get_abs_path(rel_path):
     return f"file://{os.path.join(base_dir, rel_path)}"
 
 setup(
-    name="multi_type_feedback",
+    name="multi-type-feedback",
     version="0.1.0",
     description="Reward Learning from Multiple Feedback Types",
     author="YANNICK Metz",

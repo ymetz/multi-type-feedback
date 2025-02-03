@@ -1,6 +1,5 @@
 [build-system]
-# Note: setuptools 66.1.1 is the last version that supports installing gym==0.21.0
-requires = ["setuptools==66.1.1", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 # TODO(juan): we've commented this out because currently
@@ -11,6 +10,8 @@ build-backend = "setuptools.build_meta"
 # # Disable local scheme to allow uploads to Test PyPI.
 # # See https://github.com/pypa/setuptools_scm/issues/342
 # local_scheme = "imitation.version:get_version"
+
+
 
 [tool.black]
 target-version = ["py38"]
