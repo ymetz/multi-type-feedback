@@ -1,41 +1,31 @@
 from setuptools import setup, find_packages
+import os
+
+# Get absolute paths to dependencies
+base_dir = os.path.abspath(os.path.dirname(__file__))
+def get_abs_path(rel_path):
+    return f"file://{os.path.join(base_dir, rel_path)}"
 
 setup(
-    name="multi-type-feedback",
+    name="multi_type_feedback",
     version="0.1.0",
     description="Reward Learning from Multiple Feedback Types",
-    author="András Geiszl",
-    author_email="geiszla@gmail.com",
-    license="UNLICENSED",
+    author="YANNICK Metz",
+    author_email="yannick.metz@uni-konstanz.de",
+    license="MIT",
     packages=find_packages(),
     install_requires=[
         "torch",
         "torchvision",
-        "imitation",
-        "gymnasium",
+        "gymnasium==1.0.0",
         "lightning",
         "minigrid",
         "mujoco",
         "ale-py",
         "wandb",
+        f"stable-baselines3 @ {get_abs_path('dependencies/stable-baselines3')}",
+        f"imitation @ {get_abs_path('dependencies/imitation')}",
+        f"masksembles @ {get_abs_path('dependencies/masksembles')}",
     ],
-    extras_require={
-        "procgen": ["procgen @ file://dependencies/procgen"],
-    },
-    entry_points={
-        "console_scripts": [
-            "generate_feedback=rlhf.generate_feedback:main",
-            "train_reward=rlhf.train_reward_model:main",
-            "train_agent=rlhf.train_agent:main",
-            "plot_reward=rlhf.plot_reward_model_output:main",
-            "export_videos=rlhf.export_videos:main",
-        ],
-    },
     python_requires=">=3.11",
-    classifiers=[
-        "Development Status :: 3 - Alpha",
-        "Intended Audience :: Science/Research",
-        "License :: Other/Proprietary License",
-        "Programming Language :: Python :: 3.11",
-    ],
 )
