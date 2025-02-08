@@ -1,10 +1,14 @@
-from setuptools import setup, find_packages
 import os
+
+from setuptools import find_packages, setup
 
 # Get absolute paths to dependencies
 base_dir = os.path.abspath(os.path.dirname(__file__))
+
+
 def get_abs_path(rel_path):
     return f"file://{os.path.join(base_dir, rel_path)}"
+
 
 setup(
     name="multi-type-feedback",
@@ -23,6 +27,10 @@ setup(
         "mujoco",
         "ale-py",
         "wandb",
+        "sb3-contrib",
+        "metaworld @ git+https://github.com/Farama-Foundation/Metaworld.git@master#egg=metaworld",
+        "gym3",
+        "procgen @ git+https://github.com/juancroldan/procgen",
         f"stable-baselines3 @ {get_abs_path('dependencies/stable-baselines3')}",
         f"imitation @ {get_abs_path('dependencies/imitation')}",
         f"masksembles @ {get_abs_path('dependencies/masksembles')}",
