@@ -31,6 +31,7 @@ setup(
         "metaworld @ git+https://github.com/Farama-Foundation/Metaworld.git@master#egg=metaworld",
         "gym3",
         "procgen @ git+https://github.com/juancroldan/procgen",
+        "opencv-python",
         f"stable-baselines3 @ {get_abs_path('dependencies/stable-baselines3')}",
         f"imitation @ {get_abs_path('dependencies/imitation')}",
         f"masksembles @ {get_abs_path('dependencies/masksembles')}",
