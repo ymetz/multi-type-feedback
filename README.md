@@ -19,17 +19,18 @@ This repository contains code for training and evaluating reinforcement learning
 Trains PPO agents on various environments:
 
 ```bash
-python train.py --algo ppo --env <environment> --verbose 0 --save-freq <frequency> --seed <seed> --gym-packages procgen ale_py --log-folder gt_agents
+python train_baselines/train.py --algo ppo --env <environment> --verbose 0 --save-freq <frequency> --seed <seed> --gym-packages procgen ale_py --log-folder train_baselines/gt_agents
 ```
 
 Environments: Ant-v5, Swimmer-v5, HalfCheetah-v5, Hopper-v5, Atari, Procgen, ...
+Info: Please make sure to use train_baselines/gt_agents as the log folder, to esnure compatability with generation-script, however you can adapt the expert model dirs in necessary.
 
 ### 2. Feedback Generation (`multi_type_feedback/generate_feedback.py`)
 
 Generates feedback for trained agents:
 
 ```bash
-python multi_type_feedback/generate_feedback.py --algorithm ppo --environment <env> --seed <seed> --n-feedback 10000 --save-folder feedback_regen
+python multi_type_feedback/generate_feedback.py --algorithm ppo --environment <env> --seed <seed> --n-feedback 10000 --save-folder feedback
 ```
 
 Note: The script looks in the gt_agents folder for trained agents. Abd expects that the `python train_baselines/benchmark_envs.py` script has been run to generate the evaluation scores.
@@ -39,7 +40,7 @@ Note: The script looks in the gt_agents folder for trained agents. Abd expects t
 Trains reward models based on generated feedback:
 
 ```bash
-python multi_type_feedback/train_reward_model.py --algorithm ppo --environment <env> --feedback-type <type> --seed <seed>
+python multi_type_feedback/train_reward_model.py --algorithm ppo --environment <env> --feedback-type <type> --seed <seed> --feedback-folder feedback --save-folder reward_models
 ```
 
 Feedback types: evaluative, comparative, demonstrative, corrective, descriptive, descriptive_preference
@@ -57,7 +58,7 @@ python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env>
 Trains agents using the learned reward models:
 
 ```bash
-python multi_type_feedback/train_agent_ensemble.py --algorithm ppo --environment <env> --feedback-types <types> --seed <seed>
+python multi_type_feedback/train_RL_agent_with_ensemble.py --algorithm ppo --environment <env> --feedback-types <types> --seed <seed>
 ```
 
 Feedback types: evaluative, comparative, demonstrative, corrective, descriptive, descriptive_preference

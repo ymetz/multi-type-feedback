@@ -102,7 +102,7 @@ def train() -> None:
         default=False,
     )
     parser.add_argument(
-        "-f", "--log-folder", help="Log folder", type=str, default="logs"
+        "-f", "--log-folder", help="Log folder", type=str, default="train_baselines/gt_agents"
     )
     parser.add_argument("--seed", help="Random generator seed", type=int, default=-1)
     parser.add_argument(

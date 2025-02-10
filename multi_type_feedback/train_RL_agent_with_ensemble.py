@@ -6,11 +6,7 @@ import sys
 import typing
 from os import path
 from pathlib import Path
-
-# register custom envs
-import ale_py
 import gymnasium as gym
-import minigrid
 import numpy
 import pytorch_lightning as pl
 import torch
@@ -19,17 +15,14 @@ from train_baselines.exp_manager import ExperimentManager
 from train_baselines.utils import ALGOS, StoreDict
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.utils import set_random_seed
+from multi_type_feedback.utils import TrainingUtils
 
 import wandb
-from multi_type_feedback.common import get_reward_model_name
 from multi_type_feedback.datatypes import FeedbackType
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
-    calculate_pairwise_loss,
-    calculate_single_reward_loss,
 )
-from wandb.integration.sb3 import WandbCallback
 
 
 class CustomReward(RewardFn):
@@ -125,6 +118,7 @@ class CustomReward(RewardFn):
                         reward_model.ensemble_count, *actions.shape[1:]
                     )
                     model_rewards = reward_model(state_expanded, actions_expanded)
+                    print("MODEL REWARDS", model_rewards)
                     rewards[model_index] = model_rewards.mean(dim=0)
                 else:
                     rewards[model_index] = reward_model(state, actions).squeeze(1)
@@ -145,20 +139,23 @@ class CustomReward(RewardFn):
 
 def main():
     """Run RL agent training."""
-
-    script_path = Path(__file__).parents[1].resolve()
-
     cpu_count = os.cpu_count()
     cpu_count = cpu_count if cpu_count is not None else 8
 
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-    parser = argparse.ArgumentParser()
+    parser = TrainingUtils.setup_base_parser()
     parser.add_argument(
-        "--algorithm",
+        "--reward-model-folder",
         type=str,
-        default="ppo",
-        help="RL algorithm",
+        default="reward_models",
+        help="Folder of trained reward models",
+    )
+    parser.add_argument(
+        "--save-folder",
+        type=str,
+        default="trained_agents",
+        help="Folder for finished feedback RL agents",
     )
     parser.add_argument(
         "--feedback-types",
@@ -168,22 +165,10 @@ def main():
         help="Types of feedback to train the reward model (space-separated list)",
     )
     parser.add_argument(
-        "--environment",
-        type=str,
-        default="HalfCheetah-v5",
-        help="Environment",
-    )
-    parser.add_argument(
         "--train-steps",
         type=int,
         default=int(1e6),
         help="Number of steps to generate feedback for",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=12,
-        help="Seed for env and stuff",
     )
     parser.add_argument(
         "--inverse-scaling",
@@ -194,13 +179,12 @@ def main():
     args = parser.parse_args()
 
     FEEDBACK_ID = "_".join([args.algorithm, args.environment, str(args.seed)])
-    MODEL_ID = f"{FEEDBACK_ID}_ensemble_{args.seed}"
+    MODEL_ID = f"{FEEDBACK_ID}_{args.seed}"
 
     reward_model_paths = []
     for feedback_type in args.feedback_types:
         model_path = os.path.join(
-            script_path,
-            "reward_models",
+            args.reward_model_folder,
             f"{FEEDBACK_ID}_{feedback_type}_{args.seed}.ckpt",
         )
         reward_model_paths.append(model_path)
@@ -211,8 +195,8 @@ def main():
     set_random_seed(args.seed)
 
     run = wandb.init(
-        name="RL_" + MODEL_ID,
-        project="multi_reward_feedback",
+        name="ENSEMBLE_RL_" + MODEL_ID,
+        project=args.wandb_project_name,
         config={
             **vars(args),
             "feedback_types": args.feedback_types,
@@ -231,13 +215,12 @@ def main():
         architecture_cls = LightningNetwork
 
     # ================ Load correct reward function model ===================
-
     exp_manager = ExperimentManager(
         args,
         args.algorithm,
         args.environment,
-        os.path.join("agents", "RL_" + MODEL_ID),
-        tensorboard_log=f"runs/{'RL_'+MODEL_ID}",
+        os.path.join(args.save_folder, f"ENSEMBLE_RL_{MODEL_ID}"),
+        tensorboard_log=f"runs/{'ENSEMBLE_RL_'+MODEL_ID}",
         n_timesteps=args.train_steps,
         seed=args.seed,
         log_interval=-1,

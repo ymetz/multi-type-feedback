@@ -115,16 +115,26 @@ class CustomReward(RewardFn):
 def main():
     parser = TrainingUtils.setup_base_parser()
     parser.add_argument(
+        "--reward-model-folder",
+        type=str,
+        default="reward_models",
+        help="Folder of trained reward models",
+    )
+    parser.add_argument(
+        "--save-folder",
+        type=str,
+        default="trained_agents",
+        help="Folder for finished feedback RL agents",
+    )
+    parser.add_argument(
         "--feedback-type", type=str, default="evaluative", help="Type of feedback"
     )
     args = parser.parse_args()
 
     TrainingUtils.set_seeds(args.seed)
     _, model_id = TrainingUtils.get_model_ids(args)
-
-    script_path = Path(__file__).parents[1].resolve()
     reward_model_path = (
-        os.path.join(script_path, "reward_models_lul", f"{model_id}.ckpt")
+        os.path.join(args.reward_model_folder, f"{model_id}.ckpt")
         if args.feedback_type != "baseline"
         else None
     )

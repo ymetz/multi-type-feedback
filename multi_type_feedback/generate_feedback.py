@@ -677,7 +677,7 @@ def main():
 
     feedback_id, _ = TrainingUtils.get_model_ids(args)
     feedback_path = (
-        Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}.pkl"
+        Path(args.save_folder) / f"{feedback_id}.pkl"
     )
 
     environment = TrainingUtils.setup_environment(args.environment, args.seed)

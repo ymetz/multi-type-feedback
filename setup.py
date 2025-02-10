@@ -36,6 +36,7 @@ setup(
         "stable-baselines3",
         f"imitation @ {get_abs_path('dependencies/imitation')}",
         f"masksembles @ {get_abs_path('dependencies/masksembles')}",
+        "train_baselines" @ {get_abs_path('train_baselines')}", 
     ],
     python_requires=">=3.9",
 )

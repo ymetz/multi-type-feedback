@@ -58,8 +58,6 @@ discount_factors = {
     "metaworld-pick-place-v2": 0.99,
 }
 
-script_path = Path(__file__).parents[1].resolve()
-
 # Utilize Tensor Cores of NVIDIA GPUs
 torch.set_float32_matmul_precision("high")
 
@@ -82,6 +80,7 @@ def train_reward_model(
     n_feedback: int = -1,
     seed: int = 0,
     wandb_project_name: str = "multi-type-rlhf",
+    save_path: str = "reward_models",
 ):
     """Train a reward model given trajectories data."""
     training_set_size = math.floor(split_ratio * len(dataset))
@@ -108,7 +107,7 @@ def train_reward_model(
     )
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=path.join(script_path, "reward_models_lul"),
+        dirpath=save_path,
         filename=reward_model_id,
         monitor="val_loss",
     )
@@ -160,6 +159,12 @@ def main():
     parser.add_argument(
         "--no-loading-bar", action="store_true", help="Disable loading bar"
     )
+    parser.add_argument(
+        "--feedback-folder", type=str, default="feedback", help="Folder to load feedback from"
+    )
+    parser.add_argument(
+        "--save-folder", type=str, default="reward_models", help="Save folder for trained reward models"
+    )
     args = parser.parse_args()
 
     TrainingUtils.set_seeds(args.seed)
@@ -199,7 +204,7 @@ def main():
     )
 
     dataset = LoadFeedbackDataset(
-        os.path.join(script_path, "feedback_regen", f"{feedback_id}.pkl"),
+        os.path.join(args.feedback_folder, f"{feedback_id}.pkl"),
         args.feedback_type,
         args.n_feedback,
         noise_level=args.noise_level,
@@ -223,6 +228,7 @@ def main():
         n_feedback=args.n_feedback,
         seed=args.seed,
         wandb_project_name=args.wandb_project_name,
+        save_path=args.save_folder,
     )
 
 
