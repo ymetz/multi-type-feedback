@@ -70,7 +70,7 @@ def test_parallel_train(tmp_path):
         f"python train.py -n 1000 --algo sac --env Pendulum-v1 --log-folder {tmp_path} "
         # Test custom argument for the monitor too
         "-params monitor_kwargs:'dict(info_keywords=(\"TimeLimit.truncated\",))' "
-        "callback:\"'rl_zoo3.callbacks.ParallelTrainCallback'\""
+        "callback:\"'train_baselines.callbacks.ParallelTrainCallback'\""
     )
     return_code = subprocess.call(shlex.split(cmd))
     _assert_eq(return_code, 0)

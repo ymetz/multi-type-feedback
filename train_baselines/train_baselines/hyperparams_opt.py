@@ -8,7 +8,7 @@ from stable_baselines3.common.noise import (
 )
 from torch import nn as nn
 
-from rl_zoo3.utils import linear_schedule
+from train_baselines.utils import linear_schedule
 
 
 def sample_ppo_params(

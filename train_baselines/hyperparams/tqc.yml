@@ -250,12 +250,12 @@ parking-v0:
 # Tuned
 CarRacing-v0:
   env_wrapper:
-    - rl_zoo3.wrappers.FrameSkip:
+    - train_baselines.wrappers.FrameSkip:
         skip: 2
     # wrapper from https://github.com/araffin/aae-train-donkeycar
     - ae.wrapper.AutoencoderWrapper:
         ae_path: "logs/car_racing_rgb_160.pkl"
-    - rl_zoo3.wrappers.HistoryWrapper:
+    - train_baselines.wrappers.HistoryWrapper:
         horizon: 2
   # frame_stack: 4
   normalize: True
@@ -272,7 +272,7 @@ RocketLander-v0:
   n_timesteps: !!float 3e6
   policy: 'MlpPolicy'
   env_wrapper:
-    - rl_zoo3.wrappers.FrameSkip:
+    - train_baselines.wrappers.FrameSkip:
         skip: 4
-    - rl_zoo3.wrappers.HistoryWrapper:
+    - train_baselines.wrappers.HistoryWrapper:
         horizon: 2

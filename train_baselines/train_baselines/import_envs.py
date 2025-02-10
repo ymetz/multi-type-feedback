@@ -3,7 +3,7 @@ from typing import Callable, Optional
 import gymnasium as gym
 from gymnasium.envs.registration import register
 
-from rl_zoo3.wrappers import MaskVelocityWrapper
+from train_baselines.wrappers import MaskVelocityWrapper
 
 try:
     import pybullet_envs_gymnasium

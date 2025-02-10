@@ -4,9 +4,9 @@ from stable_baselines3 import A2C
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import DummyVecEnv
 
-import rl_zoo3.import_envs  # noqa: F401
-from rl_zoo3.utils import get_wrapper_class
-from rl_zoo3.wrappers import (
+import train_baselines.import_envs  # noqa: F401
+from train_baselines.utils import get_wrapper_class
+from train_baselines.wrappers import (
     ActionNoiseWrapper,
     DelayedRewardWrapper,
     HistoryWrapper,
@@ -27,10 +27,10 @@ def test_wrappers():
     "env_wrapper",
     [
         None,
-        {"rl_zoo3.wrappers.HistoryWrapper": dict(horizon=2)},
+        {"train_baselines.wrappers.HistoryWrapper": dict(horizon=2)},
         [
-            {"rl_zoo3.wrappers.HistoryWrapper": dict(horizon=3)},
-            "rl_zoo3.wrappers.TimeFeatureWrapper",
+            {"train_baselines.wrappers.HistoryWrapper": dict(horizon=3)},
+            "train_baselines.wrappers.TimeFeatureWrapper",
         ],
     ],
 )

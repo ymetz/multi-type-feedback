@@ -11,7 +11,7 @@ import procgen
 
 # metaworld support
 import metaworld
-from rl_zoo3.utils import make_vec_metaworld_env
+from train_baselines.utils import make_vec_metaworld_env
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -71,10 +71,10 @@ from stable_baselines3.common.vec_env import (
 from torch import nn as nn
 
 # Register custom envs
-import rl_zoo3.import_envs  # noqa: F401
-from rl_zoo3.callbacks import SaveVecNormalizeCallback, TrialEvalCallback, MetaworldCompatibleEvalCallback
-from rl_zoo3.hyperparams_opt import HYPERPARAMS_SAMPLER
-from rl_zoo3.utils import (
+import train_baselines.import_envs  # noqa: F401
+from train_baselines.callbacks import SaveVecNormalizeCallback, TrialEvalCallback, MetaworldCompatibleEvalCallback
+from train_baselines.hyperparams_opt import HYPERPARAMS_SAMPLER
+from train_baselines.utils import (
     ALGOS,
     get_callback_list,
     get_class_by_name,
@@ -82,7 +82,7 @@ from rl_zoo3.utils import (
     get_wrapper_class,
     linear_schedule,
 )
-import rl_zoo3.impala_policy as impala_policy
+import train_baselines.impala_policy as impala_policy
 
 
 class ExperimentManager:

@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-from rl_zoo3.utils import get_hf_trained_models, get_trained_models
+from train_baselines.utils import get_hf_trained_models, get_trained_models
 
 # Test models from sb3 organization can be trusted
 os.environ["TRUST_REMOTE_CODE"] = "True"
@@ -55,7 +55,7 @@ def test_trained_agents(trained_model):
 
 
 def test_benchmark(tmp_path):
-    cmd = f"python -m rl_zoo3.benchmark -n {N_STEPS} --benchmark-dir {tmp_path} --test-mode --no-hub"
+    cmd = f"python -m train_baselines.benchmark -n {N_STEPS} --benchmark-dir {tmp_path} --test-mode --no-hub"
     return_code = subprocess.call(shlex.split(cmd))
     _assert_eq(return_code, 0)
 
@@ -92,7 +92,7 @@ def test_record_video(tmp_path):
     if not os.environ.get("DISPLAY"):
         pytest.skip("No X-Server")
 
-    cmd = f"python -m rl_zoo3.record_video -n 100 --algo sac --env Pendulum-v1 -o {tmp_path}"
+    cmd = f"python -m train_baselines.record_video -n 100 --algo sac --env Pendulum-v1 -o {tmp_path}"
     return_code = subprocess.call(shlex.split(cmd))
 
     _assert_eq(return_code, 0)
@@ -114,7 +114,7 @@ def test_record_training(tmp_path):
     _assert_eq(return_code, 0)
 
     cmd = (
-        f"python -m rl_zoo3.record_training -n 100 --algo {algo} --env {env_id} "
+        f"python -m train_baselines.record_training -n 100 --algo {algo} --env {env_id} "
         f"--f {tmp_path} "
         f"--gif -o {videos_tmp_path}"
     )

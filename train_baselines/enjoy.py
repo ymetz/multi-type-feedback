@@ -1,4 +1,4 @@
-from rl_zoo3.enjoy import enjoy
+from train_baselines.enjoy import enjoy
 
 if __name__ == "__main__":
     enjoy()

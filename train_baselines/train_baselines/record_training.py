@@ -7,7 +7,7 @@ from copy import deepcopy
 
 from huggingface_sb3 import EnvironmentName
 
-from rl_zoo3.utils import ALGOS, get_latest_run_id
+from train_baselines.utils import ALGOS, get_latest_run_id
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -113,14 +113,14 @@ if __name__ == "__main__":
 
     if os.path.exists(os.path.join(log_path, f"{env_name}.zip")):
         return_code = subprocess.call(
-            ["python", "-m", "rl_zoo3.record_video", *args_final_model]
+            ["python", "-m", "train_baselines.record_video", *args_final_model]
         )
         assert return_code == 0, "Failed to record the final model"
 
     if os.path.exists(os.path.join(log_path, "best_model.zip")):
         args_best_model = [*args_final_model, "--load-best"]
         return_code = subprocess.call(
-            ["python", "-m", "rl_zoo3.record_video", *args_best_model]
+            ["python", "-m", "train_baselines.record_video", *args_best_model]
         )
         assert return_code == 0, "Failed to record the best model"
 
@@ -129,7 +129,7 @@ if __name__ == "__main__":
     for checkpoint in checkpoints:
         args_checkpoint[-1] = str(checkpoint)
         return_code = subprocess.call(
-            ["python", "-m", "rl_zoo3.record_video", *args_checkpoint]
+            ["python", "-m", "train_baselines.record_video", *args_checkpoint]
         )
         assert return_code == 0, f"Failed to record the {checkpoint} checkpoint model"
 

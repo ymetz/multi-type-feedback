@@ -16,7 +16,7 @@ MountainCarContinuous-v0:
 
 Pendulum-v1:
   # callback:
-  #   - rl_zoo3.callbacks.ParallelTrainCallback
+  #   - train_baselines.callbacks.ParallelTrainCallback
   n_timesteps: 20000
   policy: 'MlpPolicy'
   learning_rate: !!float 1e-3
@@ -74,9 +74,9 @@ BipedalWalkerHardcore-v3:
 HalfCheetahBulletEnv-v0: &pybullet-defaults
   # env_wrapper:
   #   - sb3_contrib.common.wrappers.TimeFeatureWrapper
-  #   - rl_zoo3.wrappers.DelayedRewardWrapper:
+  #   - train_baselines.wrappers.DelayedRewardWrapper:
   #       delay: 10
-  #   - rl_zoo3.wrappers.HistoryWrapper:
+  #   - train_baselines.wrappers.HistoryWrapper:
   #       horizon: 10
   n_timesteps: !!float 1e6
   policy: 'MlpPolicy'
@@ -163,12 +163,12 @@ MinitaurBulletDuckEnv-v0:
 # To be tuned
 CarRacing-v2:
   env_wrapper:
-    - rl_zoo3.wrappers.FrameSkip:
+    - train_baselines.wrappers.FrameSkip:
         skip: 2
     # wrapper from https://github.com/araffin/aae-train-donkeycar
     - ae.wrapper.AutoencoderWrapper:
         ae_path: "logs/car_racing_rgb_160.pkl"
-    - rl_zoo3.wrappers.HistoryWrapper:
+    - train_baselines.wrappers.HistoryWrapper:
         horizon: 2
   # frame_stack: 4
   normalize: True
@@ -237,7 +237,7 @@ donkey-generated-track-v0:
   env_wrapper:
     - gymnasium.wrappers.time_limit.TimeLimit:
         max_episode_steps: 500
-    - rl_zoo3.wrappers.HistoryWrapper:
+    - train_baselines.wrappers.HistoryWrapper:
         horizon: 5
   n_timesteps: !!float 1e6
   policy: 'MlpPolicy'
@@ -261,9 +261,9 @@ donkey-generated-track-v0:
 NeckEnvRelative-v2:
   <<: *pybullet-defaults
   env_wrapper:
-    - rl_zoo3.wrappers.HistoryWrapper:
+    - train_baselines.wrappers.HistoryWrapper:
         horizon: 2
-    # - rl_zoo3.wrappers.LowPassFilterWrapper:
+    # - train_baselines.wrappers.LowPassFilterWrapper:
     #     freq: 2.0
     #     df: 25.0
   n_timesteps: !!float 1e6

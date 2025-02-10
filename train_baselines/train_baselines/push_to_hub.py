@@ -23,10 +23,10 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecEnv, unwrap_vec_normalize
 from wasabi import Printer
 
-import rl_zoo3.import_envs  # noqa: F401 pylint: disable=unused-import
-from rl_zoo3 import ALGOS, get_saved_hyperparams
-from rl_zoo3.exp_manager import ExperimentManager
-from rl_zoo3.utils import StoreDict, create_test_env, get_model_path
+import train_baselines.import_envs  # noqa: F401 pylint: disable=unused-import
+from train_baselines import ALGOS, get_saved_hyperparams
+from train_baselines.exp_manager import ExperimentManager
+from train_baselines.utils import StoreDict, create_test_env, get_model_path
 
 msg = Printer()
 
@@ -92,26 +92,26 @@ SB3 Contrib: https://github.com/Stable-Baselines-Team/stable-baselines3-contrib
 
 Install the RL Zoo (with SB3 and SB3-Contrib):
 ```bash
-pip install rl_zoo3
+pip install train_baselines
 ```
 
 ```
 # Download model and save it into the logs/ folder
-python -m rl_zoo3.load_from_hub --algo {algo_name} --env {env_id} -orga {organization} -f logs/
-python -m rl_zoo3.enjoy --algo {algo_name} --env {env_id}  -f logs/
+python -m train_baselines.load_from_hub --algo {algo_name} --env {env_id} -orga {organization} -f logs/
+python -m train_baselines.enjoy --algo {algo_name} --env {env_id}  -f logs/
 ```
 
-If you installed the RL Zoo3 via pip (`pip install rl_zoo3`), from anywhere you can do:
+If you installed the RL Zoo3 via pip (`pip install train_baselines`), from anywhere you can do:
 ```
-python -m rl_zoo3.load_from_hub --algo {algo_name} --env {env_id} -orga {organization} -f logs/
-python -m rl_zoo3.enjoy --algo {algo_name} --env {env_id}  -f logs/
+python -m train_baselines.load_from_hub --algo {algo_name} --env {env_id} -orga {organization} -f logs/
+python -m train_baselines.enjoy --algo {algo_name} --env {env_id}  -f logs/
 ```
 
 ## Training (with the RL Zoo)
 ```
-python -m rl_zoo3.train --algo {algo_name} --env {env_id} -f logs/
+python -m train_baselines.train --algo {algo_name} --env {env_id} -f logs/
 # Upload the model and generate video (when possible)
-python -m rl_zoo3.push_to_hub --algo {algo_name} --env {env_id} -f logs/ -orga {organization}
+python -m train_baselines.push_to_hub --algo {algo_name} --env {env_id} -f logs/ -orga {organization}
 ```
 
 ## Hyperparameters

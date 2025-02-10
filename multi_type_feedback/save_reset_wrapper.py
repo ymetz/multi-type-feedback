@@ -5,7 +5,7 @@ import numpy as np
 from ale_py import AtariEnv
 from gymnasium.envs.mujoco import MujocoEnv
 from minigrid.minigrid_env import MiniGridEnv
-from rl_zoo3.wrappers import Gym3ToGymnasium
+from train_baselines.wrappers import Gym3ToGymnasium
 
 
 class SaveResetEnvWrapper(gym.Wrapper):

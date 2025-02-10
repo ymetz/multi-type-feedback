@@ -33,7 +33,7 @@ from stable_baselines3.common.vec_env import (
 # metaworld compatability
 import metaworld
 import metaworld.envs.mujoco.env_dict as _envs_dict
-from rl_zoo3.wrappers import MetaWorldMonitor
+from train_baselines.wrappers import MetaWorldMonitor
 
 # For custom activation fn
 from torch import nn as nn
@@ -73,8 +73,8 @@ def get_wrapper_class(
     for multiple, specify a list:
 
     env_wrapper:
-        - rl_zoo3.wrappers.PlotActionWrapper
-        - rl_zoo3.wrappers.TimeFeatureWrapper
+        - train_baselines.wrappers.PlotActionWrapper
+        - train_baselines.wrappers.TimeFeatureWrapper
 
 
     :param hyperparams:
@@ -164,7 +164,7 @@ def get_callback_list(hyperparams: Dict[str, Any]) -> List[BaseCallback]:
     for multiple, specify a list:
 
     callback:
-        - rl_zoo3.callbacks.PlotActionWrapper
+        - train_baselines.callbacks.PlotActionWrapper
         - stable_baselines3.common.callbacks.CheckpointCallback
 
     :param hyperparams:

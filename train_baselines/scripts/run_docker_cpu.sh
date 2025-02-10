@@ -9,5 +9,5 @@ echo $cmd_line
 # Note: --user=root is needed, as the current user id/group id will be used
 # to mount the log directory (and $MAMBAUSER is not root)
 docker run -it --user=root --rm --network host --ipc=host \
- --mount src=$(pwd),target=/home/mambauser/code/rl_zoo3,type=bind stablebaselines/rl-baselines3-zoo-cpu:latest\
-  bash -c "cd /home/mambauser/code/rl_zoo3/ && $cmd_line"
+ --mount src=$(pwd),target=/home/mambauser/code/train_baselines,type=bind stablebaselines/rl-baselines3-zoo-cpu:latest\
+  bash -c "cd /home/mambauser/code/train_baselines/ && $cmd_line"

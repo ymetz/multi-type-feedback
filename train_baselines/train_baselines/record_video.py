@@ -8,8 +8,8 @@ from huggingface_sb3 import EnvironmentName
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import VecVideoRecorder
 
-from rl_zoo3.exp_manager import ExperimentManager
-from rl_zoo3.utils import (
+from train_baselines.exp_manager import ExperimentManager
+from train_baselines.utils import (
     ALGOS,
     StoreDict,
     create_test_env,

@@ -11,8 +11,8 @@ import pytablewriter
 from huggingface_sb3 import EnvironmentName
 from stable_baselines3.common.results_plotter import load_results, ts2xy
 
-from rl_zoo3.load_from_hub import download_from_hub
-from rl_zoo3.utils import (
+from train_baselines.load_from_hub import download_from_hub
+from train_baselines.utils import (
     get_hf_trained_models,
     get_latest_run_id,
     get_saved_hyperparams,
@@ -200,7 +200,7 @@ header = """
 ## Performance of trained agents
 
 Final performance of the trained agents can be found in the table below.
-This was computed by running `python -m rl_zoo3.benchmark`:
+This was computed by running `python -m train_baselines.benchmark`:
 it runs the trained agent (trained on `n_timesteps`) for `eval_timesteps` and then reports the mean episode reward
 during this evaluation.
 

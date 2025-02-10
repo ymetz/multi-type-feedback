@@ -19,8 +19,8 @@ from gymnasium.wrappers.stateful_observation import FrameStackObservation
 from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper
 from procgen import ProcgenGym3Env
-from rl_zoo3.utils import ppo_make_metaworld_env
-from rl_zoo3.wrappers import Gym3ToGymnasium
+from train_baselines.utils import ppo_make_metaworld_env
+from train_baselines.wrappers import Gym3ToGymnasium
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize

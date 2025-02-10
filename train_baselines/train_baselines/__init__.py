@@ -2,11 +2,11 @@ import os
 
 # isort: off
 
-import rl_zoo3.gym_patches  # noqa: F401
+import train_baselines.gym_patches  # noqa: F401
 
 # isort: on
 
-from rl_zoo3.utils import (
+from train_baselines.utils import (
     ALGOS,
     create_test_env,
     get_latest_run_id,

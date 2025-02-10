@@ -12,9 +12,9 @@ import torch as th
 from stable_baselines3.common.utils import set_random_seed
 
 # Register custom envs
-import rl_zoo3.import_envs  # noqa: F401
-from rl_zoo3.exp_manager import ExperimentManager
-from rl_zoo3.utils import ALGOS, StoreDict
+import train_baselines.import_envs  # noqa: F401
+from train_baselines.exp_manager import ExperimentManager
+from train_baselines.utils import ALGOS, StoreDict
 
 
 def train() -> None:

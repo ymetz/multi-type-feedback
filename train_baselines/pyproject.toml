@@ -11,8 +11,8 @@ select = ["E", "F", "B", "UP", "C90", "RUF"]
 ignore = ["B028"]
 
 [tool.ruff.lint.per-file-ignores]
-"./rl_zoo3/import_envs.py"= ["F401"]
-# "./rl_zoo3/plots/plot_train.py"= ["E501"]
+"./train_baselines/import_envs.py"= ["F401"]
+# "./train_baselines/plots/plot_train.py"= ["E501"]
 
 
 [tool.ruff.lint.mccabe]
@@ -52,8 +52,8 @@ branch = false
 omit = [
 	"tests/*",
 	"setup.py",
-	"rl_zoo3/plots/*",
-	"rl_zoo3/push_to_hub.py",
+	"train_baselines/plots/*",
+	"train_baselines/push_to_hub.py",
 	"scripts/*",
 ]
 

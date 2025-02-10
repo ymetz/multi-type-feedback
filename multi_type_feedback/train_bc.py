@@ -16,7 +16,7 @@ import torch
 from imitation.algorithms import bc
 from imitation.data import rollout
 from imitation.data.types import Trajectory
-from rl_zoo3.utils import ppo_make_metaworld_env
+from train_baselines.utils import ppo_make_metaworld_env
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.utils import set_random_seed
 

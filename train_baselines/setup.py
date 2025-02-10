@@ -3,11 +3,11 @@ import shutil
 
 from setuptools import setup
 
-with open(os.path.join("rl_zoo3", "version.txt")) as file_handler:
+with open(os.path.join("train_baselines", "version.txt")) as file_handler:
     __version__ = file_handler.read().strip()
 
 # Copy hyperparams files for packaging
-shutil.copytree("hyperparams", os.path.join("rl_zoo3", "hyperparams"))
+shutil.copytree("hyperparams", os.path.join("train_baselines", "hyperparams"))
 
 long_description = """
 # RL Baselines3 Zoo: A Training Framework for Stable Baselines3 Reinforcement Learning Agents
@@ -24,33 +24,27 @@ install_requires = [
     "pyyaml>=5.1",
     "pytablewriter~=1.2",
 ]
-# TODO(antonin): update to rliable>=1.1.0 once PR is merged and released
-plots_requires = [
-    "seaborn",
-    "rliable @ git+https://github.com/araffin/rliable@patch-1",
-    "scipy~=1.10",
-]
 test_requires = [
     # for MuJoCo envs v4:
     "mujoco~=2.3",
     # install parking-env to test HER
-    "highway-env==1.8.2",
+    "highway-env",
 ]
 
 setup(
-    name="rl_zoo3",
-    packages=["rl_zoo3", "rl_zoo3.plots"],
+    name="train_baselines",
+    packages=["train_baselines", "train_baselines.plots"],
     package_data={
-        "rl_zoo3": [
+        "train_baselines": [
             "py.typed",
             "version.txt",
             "hyperparams/*.yml",
         ]
     },
-    entry_points={"console_scripts": ["rl_zoo3=rl_zoo3.cli:main"]},
+    entry_points={"console_scripts": ["train_baselines=train_baselines.cli:main"]},
     install_requires=install_requires,
-    extras_require={"plots": plots_requires, "tests": test_requires},
-    description="A Training Framework for Stable Baselines3 Reinforcement Learning Agents",
+    extras_require={"tests": test_requires},
+    description="Adapted from: A Training Framework for Stable Baselines3 Reinforcement Learning Agents",
     author="Antonin Raffin",
     url="https://github.com/DLR-RM/rl-baselines3-zoo",
     author_email="antonin.raffin@dlr.de",
@@ -60,7 +54,7 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     version=__version__,
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     # PyPI package information.
     project_urls={
         "Code": "https://github.com/DLR-RM/rl-baselines3-zoo",
@@ -72,7 +66,6 @@ setup(
     },
     classifiers=[
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
@@ -80,4 +73,4 @@ setup(
 )
 
 # Remove copied files after packaging
-shutil.rmtree(os.path.join("rl_zoo3", "hyperparams"))
+shutil.rmtree(os.path.join("train_baselines", "hyperparams"))

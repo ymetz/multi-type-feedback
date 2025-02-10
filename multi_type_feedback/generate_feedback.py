@@ -31,7 +31,7 @@ from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
 from multi_type_feedback.utils import TrainingUtils, get_project_root
 
 try:
-    from rl_zoo3.benchmark_evals import collect_results
+    from train_baselines.benchmark_evals import collect_results
 except ImportError:
     collect_results = None
 

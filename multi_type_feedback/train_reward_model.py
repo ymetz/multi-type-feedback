@@ -22,7 +22,7 @@ from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-from rl_zoo3.wrappers import Gym3ToGymnasium
+from train_baselines.wrappers import Gym3ToGymnasium
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.vec_env import VecExtractDictObs
 from torch.utils.data import DataLoader, Dataset, random_split

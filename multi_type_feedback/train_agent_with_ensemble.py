@@ -15,8 +15,8 @@ import numpy
 import pytorch_lightning as pl
 import torch
 from imitation.rewards.reward_function import RewardFn
-from rl_zoo3.exp_manager import ExperimentManager
-from rl_zoo3.utils import ALGOS, StoreDict
+from train_baselines.exp_manager import ExperimentManager
+from train_baselines.utils import ALGOS, StoreDict
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.utils import set_random_seed
 
