@@ -101,8 +101,8 @@ class CustomReward(RewardFn):
                 )
 
             rewards = self.reward_model(
-                torch.as_tensor(state, device=self.device, dtype=torch.float),
-                torch.as_tensor(actions, device=self.device, dtype=torch.float),
+                state,
+                actions,
             )
             # Reshape rewards to always have 3 dimensions: (ensemble_count, batch_size, 1)
             rewards = rewards.view(self.reward_model.ensemble_count, -1, 1)

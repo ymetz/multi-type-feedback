@@ -97,29 +97,28 @@ class CustomReward(RewardFn):
         _done: numpy.ndarray,
     ) -> list:
         """Return reward given the current state."""
-        state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(
-            0
-        )
-        actions = torch.as_tensor(
-            actions, device=self.device, dtype=torch.float
-        ).unsqueeze(0)
-
         with torch.no_grad():
             rewards = torch.empty(len(self.reward_models), state.shape[0]).to(
                 self.device
             )
+            state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(
+                0
+            )
+            actions = torch.as_tensor(
+                actions, device=self.device, dtype=torch.float
+            ).unsqueeze(0)
 
             for model_index, reward_model in enumerate(self.reward_models):
                 if reward_model.ensemble_count > 1:
-                    state_expanded = state.expand(
-                        reward_model.ensemble_count, *state.shape[1:]
-                    )
-                    actions_expanded = actions.expand(
+                    model_state = state.expand(reward_model.ensemble_count, *state.shape[1:])
+                    model_actions = actions.expand(
                         reward_model.ensemble_count, *actions.shape[1:]
                     )
-                    model_rewards = reward_model(state_expanded, actions_expanded)
-                    print("MODEL REWARDS", model_rewards)
-                    rewards[model_index] = model_rewards.mean(dim=0)
+                    model_rewards = reward_model(
+                        model_state,
+                        model_actions,
+                    ).view(reward_model.ensemble_count, -1, 1)
+                    rewards[model_index] = torch.mean(model_rewards, dim=0).squeeze(-1)
                 else:
                     rewards[model_index] = reward_model(state, actions).squeeze(1)
 
@@ -188,9 +187,6 @@ def main():
             f"{FEEDBACK_ID}_{feedback_type}_{args.seed}.ckpt",
         )
         reward_model_paths.append(model_path)
-
-    print("Reward model ID:", MODEL_ID)
-    print(reward_model_paths)
 
     set_random_seed(args.seed)
 
