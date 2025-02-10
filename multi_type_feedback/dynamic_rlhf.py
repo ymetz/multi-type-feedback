@@ -20,7 +20,7 @@ from multi_type_feedback.networks import (
     calculate_pairwise_loss,
     calculate_single_reward_loss,
 )
-from multi_type_feedback.utils import TrainingUtils
+from multi_type_feedback.utils import TrainingUtils, get_project_root
 
 
 class DynamicRLHF:
@@ -148,6 +148,7 @@ class DynamicRLHF:
 
     def update_feedback_buffers(self, new_feedback: List[Dict]):
         """Update feedback buffers with new feedback while maintaining size limit."""
+        print("NEW FEEDBACK", new_feedback)
         for feedback in new_feedback:
             for feedback_type in feedback:
                 if feedback_type != "uncertainty":  # Skip uncertainty metadata
@@ -276,6 +277,8 @@ class DynamicRLHF:
                 trajectories, initial_states
             )
 
+        print("WANTING TO UPDATE", feedback)
+
         # Update feedback buffers
         self.update_feedback_buffers(feedback)
 
@@ -385,6 +388,7 @@ class DynamicRLHF:
         
         for feedback_type in self.feedback_types:
             buffer_data = self.feedback_buffers[feedback_type]
+            print("BUFFER DATA", buffer_data)
             if not buffer_data:
                 continue
                 
@@ -484,6 +488,8 @@ class DynamicRLHF:
                 trajectories, initial_states
             )
 
+        print("UPDATING FEEDBACK BUFFERS", feedback, feedback_counts)
+
         # Update feedback buffers
         self.update_feedback_buffers(feedback)
 
@@ -560,7 +566,16 @@ def main():
         help="Feedback sampling strategy",
     )
     parser.add_argument(
-        "--save-folder", type=str, default="feedback", help="Save folder"
+        "--save-folder",
+        type=str,
+        default="trained_agents_dynamic",
+        help="Folder for finished feedback RL agents",
+    )
+    parser.add_argument(
+        "--reference-data-folder",
+        type=str,
+        default="feedback",
+        help="Folder containing pre-computed offline feedback for calibration",
     )
     parser.add_argument(
         "--total-iterations",
@@ -571,6 +586,9 @@ def main():
     parser.add_argument(
         "--top-n-models", type=int, default=3, help="Top N models to use"
     )
+    parser.add_argument(
+        "--expert-model-base-path", type=str, default="train_baselines/gt_agents", help="Expert model base path"
+    )
     args = parser.parse_args()
 
     TrainingUtils.set_seeds(args.seed)
@@ -578,16 +596,16 @@ def main():
 
     feedback_id, _ = TrainingUtils.get_model_ids(args)
     feedback_path = (
-        Path(__file__).parents[1].resolve() / args.save_folder / f"{feedback_id}.pkl"
+        Path(args.reference_data_folder) / f"{feedback_id}.pkl"
     )
 
     environment = TrainingUtils.setup_environment(args.environment, args.seed)
     expert_models = TrainingUtils.load_expert_models(
-        args.environment,
-        args.algorithm,
-        "../main/gt_agents",
-        environment,
-        args.top_n_models,
+        env_name=args.environment,
+        algorithm=args.algorithm,
+        checkpoints_path=str(get_project_root() / args.expert_model_base_path),
+        environment=environment,
+        top_n_models=args.top_n_models,
     )
 
     # Initialize oracle

@@ -296,14 +296,13 @@ class FeedbackOracle:
         # Compare cluster rewards
         reward_diff = reward1 - reward2
         total_reward = abs(reward1) + abs(reward2)
-
-        if total_reward == 0:
-            return (0, 1, 0)  # Indifferent if both rewards are 0
-
         diff = abs(reward_diff) / total_reward
 
+        if total_reward == 0 or diff < 0.01:
+            return (0, 1, 0)  # Indifferent if both rewards are 0
+
         # If difference is small, mark as indifferent
-        elif reward1 > reward2:
+        if reward1 > reward2:
             return (avg_state_action2, avg_state_action1, 1)
         else:
             return (avg_state_action1, avg_state_action2, 1)
