@@ -19,3 +19,5 @@ for seed in "${!seeds[@]}"; do
 done
 
 echo "All training runs completed."
+
+python rl_zoo3/benchmark_env.py --algo ppo --model-base-path gt_agents

@@ -20,7 +20,7 @@ setup(
         "rich",
         "scikit-learn>=0.21.2",
         "seals~=0.2.1",
-        "stable-baselines3~=2.4.0",
+        "stable-baselines3>=2.5.0",
         "tensorboard>=1.14",
         "huggingface_sb3~=3.0",
         "optuna>=3.0.1",

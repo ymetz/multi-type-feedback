@@ -6,6 +6,7 @@ import pickle
 import random
 import re
 import tempfile
+import warnings
 from itertools import chain
 from pathlib import Path
 from typing import Iterator, List, Tuple, Type, Union
@@ -13,7 +14,6 @@ from typing import Iterator, List, Tuple, Type, Union
 # necessary to import ale_py/procgen, otherwise it will not be found
 import ale_py
 import gymnasium as gym
-import highway_env
 import numpy as np
 import pandas as pd
 import procgen
@@ -22,16 +22,19 @@ from gymnasium.wrappers.stateful_observation import FrameStackObservation
 from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper
 from numpy.typing import NDArray
-from procgen import ProcgenGym3Env
-from rl_zoo3.utils import ppo_make_metaworld_env
-from rl_zoo3.wrappers import Gym3ToGymnasium
 from sklearn.cluster import MiniBatchKMeans
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
 from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
-from multi_type_feedback.utils import TrainingUtils
+from multi_type_feedback.utils import TrainingUtils, get_project_root
+
+try:
+    from rl_zoo3.benchmark_evals import collect_results
+except ImportError:
+    collect_results = None
+
 
 
 def predict_expert_value(
@@ -341,7 +344,7 @@ def generate_feedback(
     expert_models: List[Union[PPO, SAC]],
     environment: gym.Env,
     environment_name: str = "HalfCheetah-v5",
-    checkpoints_path: str = "rl_checkpoints",
+    checkpoints_path: str = "gt_agents",
     total_steps_factor: int = 50,
     n_feedback: int = 100,
     segment_len: int = 50,
@@ -355,6 +358,7 @@ def generate_feedback(
     """Generate agent's observations and feedback in the training environment."""
     feedback_id = f"{algorithm}_{environment_name.replace('/', '-')}"
 
+    print(os.listdir(os.path.join(checkpoints_path, algorithm)))
     possible_checkpoint_indices = [
         str(model_dir.split("_")[-1])
         for model_dir in os.listdir(os.path.join(checkpoints_path, algorithm))
@@ -416,8 +420,7 @@ def generate_feedback(
 
         if model_file != "random":
             # replace the _1 index by other possible indices, this only works if all models have exactly the same number of checkpoints
-            # model_path = checkpoints_dir.replace("_1", f"_{random.choice(possible_checkpoint_indices)}")
-            model_path = checkpoints_dir.replace("_1", "_5")
+            model_path = checkpoints_dir.replace("_1", f"_{random.choice(possible_checkpoint_indices)}")
             model = model_class.load(
                 os.path.join(model_path, model_file),
                 custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0},
@@ -664,6 +667,9 @@ def main():
     parser.add_argument(
         "--top-n-models", type=int, default=3, help="Top N models to use"
     )
+    parser.add_argument(
+        "--expert-model-base-path", type=str, default="train_baselines/gt_agents", help="Expert model base path"
+    )
     args = parser.parse_args()
 
     TrainingUtils.set_seeds(args.seed)
@@ -675,28 +681,38 @@ def main():
     )
 
     environment = TrainingUtils.setup_environment(args.environment, args.seed)
+    
+    # try to load most recent benchmark scores for expert models, works if experts were created via train_baselines
+    # scripts
+    if collect_results is not None:
+        try:
+            collect_results("../"+args.expert_model_base_path.replace("\\","/").split("/")[-1], [args.algorithm], str(get_project_root() / args.expert_model_base_path))
+        except:
+            warnings.warn("""No expert benchmark results could be found. Only random policies are available. Make sure to train expert models with train_baselines,
+                          or change the path. Experts need to be trained with an SB3 MonitorWrapper and EvalCallback to retreive benchmark score""")
+    
     expert_models = TrainingUtils.load_expert_models(
         args.environment,
         args.algorithm,
-        "../main/gt_agents",
+        str(get_project_root() / args.expert_model_base_path),
         environment,
         args.top_n_models,
     )
 
     feedback = generate_feedback(
-        PPO if args.algorithm == "ppo" else SAC,
-        expert_models,
-        environment,
-        args.environment,
-        args.n_steps_factor,
-        args.n_feedback,
-        args.segment_len,
-        args.min_segment_len or args.segment_len // 2,
-        args.oversampling_factor,
-        "../main/gt_agents",
-        args.algorithm,
-        device,
-        isinstance(environment.action_space, gym.spaces.Discrete),
+        model_class=PPO if args.algorithm == "ppo" else SAC,
+        expert_models=expert_models,
+        environment=environment,
+        environment_name=args.environment,
+        checkpoints_path=str(get_project_root() / args.expert_model_base_path),
+        total_steps_factor=args.n_steps_factor,
+        n_feedback=args.n_feedback,
+        segment_len=args.segment_len,
+        oversampling_factor=args.oversampling_factor,
+        min_segment_len=args.min_segment_len or args.segment_len // 2,
+        algorithm=args.algorithm,
+        device=device,
+        action_one_hot=isinstance(environment.action_space, gym.spaces.Discrete),
     )
 
     feedback_path.parent.mkdir(parents=True, exist_ok=True)

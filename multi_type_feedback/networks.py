@@ -98,6 +98,7 @@ class LightningNetwork(LightningModule):
         action_hidden_dim: int,  # not used here
         loss_function: Callable[[LightningModule, Tensor], Tensor],
         learning_rate: float,
+        cnn_channels: list[int] = None, # not used, just for compatability
         activation_function: Type[nn.Module] = nn.ReLU,
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,

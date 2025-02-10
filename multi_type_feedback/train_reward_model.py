@@ -12,33 +12,30 @@ from typing import List, Tuple, Union
 
 import ale_py
 import gymnasium as gym
-import highway_env
-import minigrid
 import numpy as np
 import torch
 from gymnasium.wrappers.stateful_observation import FrameStackObservation
 from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper
 from numpy.typing import NDArray
-from procgen import ProcgenGym3Env
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-from rl_zoo3.utils import ppo_make_metaworld_env
 from rl_zoo3.wrappers import Gym3ToGymnasium
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.vec_env import VecExtractDictObs
 from torch.utils.data import DataLoader, Dataset, random_split
 
 import wandb
-from multi_type_feedback.feedback_dataset import LoadFeedbackDataset
+from multi_type_feedback.feedback_dataset import FeedbackDataset, LoadFeedbackDataset
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
     calculate_pairwise_loss,
     calculate_single_reward_loss,
 )
+from multi_type_feedback.datatypes import FeedbackType
 from multi_type_feedback.utils import TrainingUtils
 
 # for convenice sake, todo: make dynamic in the future
@@ -131,7 +128,8 @@ def train_reward_model(
 
     trainer = Trainer(
         max_epochs=maximum_epochs,
-        devices=[0],
+        accelerator="auto",
+        devices="auto",
         log_every_n_steps=5,
         gradient_clip_val=gradient_clip_value,
         enable_progress_bar=enable_progress_bar,

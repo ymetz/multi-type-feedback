@@ -49,7 +49,7 @@ Feedback types: evaluative, comparative, demonstrative, corrective, descriptive,
 Trains agents using the learned reward models:
 
 ```bash
-python multi_type_feedback/train_agent.py --algorithm ppo --environment <env> --feedback-type <type> --seed <seed>
+python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env> --feedback-type <type> --seed <seed>
 ```
 
 ### 5. Agent Training with Learned Reward Function Ensemble (`multi_type_feedback/train_agent_ensemble.py`)

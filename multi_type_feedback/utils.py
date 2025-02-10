@@ -10,7 +10,6 @@ import pandas as pd
 import torch
 from gymnasium.wrappers import FrameStackObservation, TransformObservation
 from minigrid.wrappers import FlatObsWrapper
-from procgen import ProcgenGym3Env
 from rl_zoo3.utils import ppo_make_metaworld_env
 from rl_zoo3.wrappers import Gym3ToGymnasium
 from stable_baselines3 import PPO, SAC
@@ -20,6 +19,20 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 import wandb
 from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
 
+try:
+    import minigrid
+except ImportError:
+    print("Cannot import minigrid")
+
+try:
+    import highway_env
+except ImportError:
+    print("Cannot import highway env")
+
+try:
+    from procgen import ProcgenGym3Env
+except ImportError:
+    print("Cannot import procgen")
 
 class TrainingUtils:
     @staticmethod
@@ -194,3 +207,10 @@ class TrainingUtils:
             monitor_gym=False,
             save_code=False,
         )
+
+def get_project_root() -> Path:
+    """Get the project root directory."""
+    current_file = Path(__file__).resolve()
+    if current_file.parent.name == "multi_type_feedback":
+        return current_file.parent.parent
+    return current_file.parent

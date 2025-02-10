@@ -40,7 +40,6 @@ from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.callbacks import (
     BaseCallback,
     CheckpointCallback,
-    EvalCallback,
     ProgressBarCallback,
 )
 from stable_baselines3.common.env_util import make_vec_env
@@ -73,7 +72,7 @@ from torch import nn as nn
 
 # Register custom envs
 import rl_zoo3.import_envs  # noqa: F401
-from rl_zoo3.callbacks import SaveVecNormalizeCallback, TrialEvalCallback
+from rl_zoo3.callbacks import SaveVecNormalizeCallback, TrialEvalCallback, MetaworldCompatibleEvalCallback
 from rl_zoo3.hyperparams_opt import HYPERPARAMS_SAMPLER
 from rl_zoo3.utils import (
     ALGOS,
@@ -589,7 +588,7 @@ class ExperimentManager:
             save_vec_normalize = SaveVecNormalizeCallback(
                 save_freq=1, save_path=self.params_path
             )
-            eval_callback = EvalCallback(
+            eval_callback = MetaworldCompatibleEvalCallback(
                 self.create_envs(self.n_eval_envs, eval_env=True),
                 callback_on_new_best=save_vec_normalize,
                 best_model_save_path=self.save_path,
