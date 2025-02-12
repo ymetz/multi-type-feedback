@@ -376,7 +376,6 @@ class FeedbackDataset(Dataset):
                     self.targets.append(((obs, actions), (obs2, actions2)))
                     self.preds.append(1)
         elif feedback_type == "descriptive":
-
             cluster_rews = np.array([cr[2] for cr in feedback_data["description"]])
             cluster_rew_min, cluster_rew_max = cluster_rews.min(), cluster_rews.max()
             cluster_rew_diff = np.abs(cluster_rew_max - cluster_rew_min)
@@ -400,7 +399,6 @@ class FeedbackDataset(Dataset):
                 else:
                     self.preds.append(cluster_representative[2])
         elif feedback_type == "descriptive_preference":
-
             cluster_rews = np.array([cr[2] for cr in feedback_data["description"]])
             cluster_rew_min, cluster_rew_max = cluster_rews.min(), cluster_rews.max()
             cluster_rew_diff = np.abs(cluster_rew_max - cluster_rew_min)
@@ -513,6 +511,23 @@ class LoadFeedbackDataset(FeedbackDataset):
             env,
             seed,
         )
+
+
+class BufferDataset(Dataset):
+
+    def __init__(
+        self,
+        buffer
+    ):
+        self.buffer = buffer
+
+    def __len__(self):
+        """Return size of dataset."""
+        return len(self.buffer)
+
+    def __getitem__(self, index):
+        """Return item with given index."""
+        return self.buffer[index]    
 
 
 FEEDBACK_TYPE_TO_KEY = {

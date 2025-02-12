@@ -14,7 +14,7 @@ from train_baselines.utils import ppo_make_metaworld_env
 from train_baselines.wrappers import Gym3ToGymnasium
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import AtariWrapper
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, VecEnv, VecEnvWrapper
 
 import wandb
 from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
@@ -214,3 +214,46 @@ def get_project_root() -> Path:
     if current_file.parent.name == "multi_type_feedback":
         return current_file.parent.parent
     return current_file.parent
+
+
+class RewardVecEnvWrapper(VecEnvWrapper):
+    """
+    A vectorized environment wrapper that modifies the reward
+    using a user-defined reward function `reward_fn`.
+    
+    :param venv: The vectorized environment to wrap.
+    :param reward_fn: A callable that takes in (observations, actions)
+                      and returns a modified reward vector.
+    """
+    def __init__(self, venv: VecEnv, reward_fn):
+        super().__init__(venv)
+        self.reward_fn = reward_fn
+        self.last_actions = None
+
+    def step_async(self, actions: np.ndarray) -> None:
+        """
+        Forward the actions to the underlying environment asynchronously
+        but store them so that we can modify the rewards in step_wait.
+        """
+        self.last_actions = actions
+        self.venv.step_async(actions)
+
+    def step_wait(self):
+        """
+        Wait for the environment to complete the step, then fetch the data:
+        observations, rewards, dones, infos.
+        We then apply the custom reward function to generate new rewards
+        based on the last actions and the resulting observations.
+        """
+        obs, rewards, dones, infos = self.venv.step_wait()
+
+        new_rewards = self.reward_fn(obs, self.last_actions)
+
+        return obs, new_rewards, dones, infos
+
+    def reset(self):
+        """
+        Reset the environment and return initial observations.
+        """
+        return self.venv.reset()
+

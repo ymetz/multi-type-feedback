@@ -285,7 +285,7 @@ def get_preference_pairs(segments, opt_gaps, n_feedback, tolerance=0.25):
     return preferences
 
 
-def get_preference_pairs_descript(clusters, rews, n_feedback, tolerance=0.25):
+def get_preference_pairs_descript(clusters, rews, n_feedback, tolerance=0.01):
     all_pairs = list(enumerate(itertools.combinations(range(len(clusters)), 2)))
     random.shuffle(all_pairs)
 
@@ -305,7 +305,7 @@ def get_preference_pairs_descript(clusters, rews, n_feedback, tolerance=0.25):
                 break
 
     if len(preferences) < n_feedback:
-        raise ValueError(
+        print(
             f"Could only generate {len(preferences)} preferences with the given tolerance. Increase the number of segments, decrease the tolerance, or decrease n_feedback."
         )
 

@@ -190,7 +190,7 @@ class LightningNetwork(LightningModule):
     def training_step(self, batch: Tensor):
         """Compute the loss for training."""
         loss = self.loss_function(self, batch)
-        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_loss", loss, on_epoch=True, prog_bar=True)
 
         return loss
 
