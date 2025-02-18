@@ -8,9 +8,6 @@ from collections import OrderedDict
 from pathlib import Path
 from pprint import pprint
 import procgen
-
-# metaworld support
-import metaworld
 from train_baselines.utils import make_vec_metaworld_env
 
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -271,6 +268,27 @@ class ExperimentManager:
 
         self._save_config(saved_hyperparams)
         return model, saved_hyperparams
+
+    def get_hyperparam_config_for_algo(self) -> Optional[Tuple[BaseAlgorithm, Dict[str, Any]]]:
+        """
+        Read hyperparameters, pre-process them (create schedules, wrappers, callbacks, action noise objects)
+        create the environment and possibly the model.
+
+        :return: the initialized RL model
+        """
+        unprocessed_hyperparams, saved_hyperparams = self.read_hyperparameters()
+        (
+            hyperparams,
+            self.env_wrapper,
+            self.callbacks,
+            self.vec_env_wrapper,
+        ) = self._preprocess_hyperparams(unprocessed_hyperparams)
+
+        self.create_log_folder()
+        self.create_callbacks()
+
+        self._save_config(saved_hyperparams)
+        return hyperparams
 
     def learn(self, model: BaseAlgorithm) -> None:
         """

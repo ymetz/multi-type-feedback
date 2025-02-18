@@ -14,9 +14,10 @@ yaml.add_multi_constructor(
 )
 
 def collect_results(
-    model_base_path: str = "../gt_agents",  # Updated default path
+    model_base_path: str = "gt_agents",  # Updated default path
     algorithms: List[str] = ["ppo", "sac"],
-    output_dir: Optional[str] = None
+    output_dir: Optional[str] = None,
+    full_param_df: bool = False
 ) -> pd.DataFrame:
     """
     Collect and process results from multiple algorithm runs.
@@ -29,25 +30,27 @@ def collect_results(
     Returns:
         DataFrame containing processed results
     """
-    # Get script directory and resolve relative paths
-    script_dir = os.path.dirname(os.path.abspath(__file__))
     if not os.path.isabs(model_base_path):
-        model_base_path = os.path.abspath(os.path.join(script_dir, model_base_path))
+        model_base_path = os.path.abspath(model_base_path)
     
     # Process each algorithm
     all_results = pd.DataFrame()
-    for algorithm in algorithms:
-        print(f"Processing algorithm: {algorithm}")
-        algorithm_df = process_algorithm_results(model_base_path, algorithm)
+    if len(algorithms) > 0:
+        for algorithm in algorithms:
+            print(f"Processing algorithm: {algorithm}")
+            algorithm_df = process_algorithm_results(model_base_path, algorithm, full_param_df=full_param_df)
+            all_results = pd.concat([all_results, algorithm_df], ignore_index=True)
+    else:
+        algorithm_df = process_algorithm_results(model_base_path, None, full_param_df=full_param_df)
         all_results = pd.concat([all_results, algorithm_df], ignore_index=True)
     
     # Sort and save results
     if not all_results.empty:
-        all_results = all_results.sort_values(["env", "algorithm"])
+        all_results = all_results.sort_values(["environment", "algorithm"])
         if output_dir is None:
             output_dir = model_base_path
         else:
-            output_dir = os.path.abspath(os.path.join(script_dir, output_dir))
+            output_dir = os.path.abspath(output_dir)
         output_path = os.path.join(output_dir, "collected_results.csv")
         all_results.to_csv(output_path, index=False)
         print(f"Results saved to: {output_path}")
@@ -56,10 +59,13 @@ def collect_results(
     
     return all_results
 
-def process_algorithm_results(model_base_path: str, algorithm: str) -> pd.DataFrame:
+def process_algorithm_results(model_base_path: str, algorithm: str = None, full_param_df: bool = False) -> pd.DataFrame:
     """Process results for a single algorithm."""
     df = pd.DataFrame()
-    algorithm_path = os.path.join(model_base_path, algorithm)
+    if algorithm is not None:
+        algorithm_path = os.path.join(model_base_path, algorithm)
+    else:
+        algorithm_path = model_base_path
     if not os.path.exists(algorithm_path):
         print(f"Path not found for algorithm {algorithm}: {algorithm_path}")
         return df
@@ -98,13 +104,21 @@ def process_algorithm_results(model_base_path: str, algorithm: str) -> pd.DataFr
             evals = np.mean(np.load(eval_path)["results"][-1])
             
             # Create result dictionary
-            result_dict = {
-                "algorithm": algorithm,
-                "run": run_dir,
-                "env": the_dict["env"],
-                "seed": the_dict["seed"],
-                "eval_score": evals,
-            }
+            if not full_param_df:
+                result_dict = {
+                    "algorithm": the_dict["algorithm"] if "algorithm" in the_dict else the_dict["algo"],
+                    "environment": the_dict["environment"] if "environment" in the_dict else the_dict["env"],
+                    "run": run_dir,
+                    "seed": the_dict["seed"],
+                    "eval_score": evals,
+                }
+            else:
+                result_dict = {
+                    **the_dict,
+                    "run": run_dir,
+                    "seed": the_dict["seed"],
+                    "eval_score": evals,
+                }
             
             # Append to dataframe
             df = pd.concat([df, pd.DataFrame([result_dict])], ignore_index=True)

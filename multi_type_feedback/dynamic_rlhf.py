@@ -1,14 +1,17 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 import gymnasium as gym
 import numpy as np
 import torch
+import uuid
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import WandbLogger
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
+from stable_baselines3.common.callbacks import BaseCallback
+from train_baselines.exp_manager import ExperimentManager
 from torch.utils.data import DataLoader
 
 import wandb
@@ -28,11 +31,44 @@ def one_hot_vector(k, max_val):
     np.put(vec, k, 1)
     return vec
 
+def vectorized_one_hot_vector(k, max_val):
+    vec = np.zeros((k.size, max_val))
+    vec[np.arange(k.size), k] = 1
+    return vec
+
+def create_matrix_vectorized(rows, cols, step):
+    """
+    Create a matrix that can be used to vectorize averaging over models
+    """
+    idx = torch.arange(0, cols).view(1, -1)
+    row_indices = torch.arange(0, rows).view(-1, 1)
+    matrix = (idx - row_indices) % step == 0
+    return matrix.float()
+
+def compute_grouped(tensor, k):
+    """
+    Compute standard deviation for groups of elements spaced k apart.
+    
+    Args:
+        tensor: Input tensor of shape (N,) where N is divisible by k
+        k: Number of predictions per input
+    
+    Returns:
+        Tensor of shape (N//k,) containing standard deviations
+    """
+    # Reshape the tensor to group related predictions together
+    n_inputs = tensor.shape[0] // k
+    reshaped = tensor.reshape(k, n_inputs).t()  # Shape: (n_inputs, k)
+    
+    # Compute standard deviation along dimension 1 (across the k predictions)
+    return torch.mean(reshaped, dim=1), torch.std(reshaped, dim=1)  # Shape: (n_inputs,)
+
 class DynamicRLHF:
     def __init__(
         self,
         oracle: FeedbackOracle,
         env: gym.Env,
+        gen_env: gym.Env,
         env_name: str = "Pendulum-v1",
         algorithm: str = "ppo",
         feedback_types: List[str] = [
@@ -44,14 +80,19 @@ class DynamicRLHF:
         n_feedback_per_iteration: int = 50,
         feedback_buffer_size: int = 2000,
         rl_steps_per_iteration: int = 5000,
-        reward_training_epochs: int = 2, # we train the rew. model after each update, just do one epoch
+        reward_training_epochs: int = 2,
         device: str = "cuda",
-        enable_wandb: bool = True,
-        wandb_project_name: str = "dynamic_rlhf",
-        num_ensemble_models: int = 4, # masksemble
+        num_ensemble_models: int = 4,
+        callbacks: List[BaseCallback] = None,
+        hyperparams: Dict[str, Any] = None,  # Hyperparameters from ExperimentManager
+        seed: int = None,
+        wandb_logger: Any = None,
+        tensorboard_log: str = "",
     ):
         self.oracle = oracle
         self.env = env
+        self.gen_env = gen_env
+        self.env_name = env_name
         self.algorithm = algorithm
         self.feedback_types = feedback_types
         self.n_feedback_per_iteration = n_feedback_per_iteration
@@ -59,8 +100,16 @@ class DynamicRLHF:
         self.rl_steps_per_iteration = rl_steps_per_iteration
         self.reward_training_epochs = reward_training_epochs
         self.device = device
-        self.enable_wandb = enable_wandb
         self.num_ensemble_models = num_ensemble_models
+        self.callbacks = callbacks or []
+        self._hyperparams = hyperparams or {}
+        self.seed = seed
+        self.wandb_logger = wandb_logger
+        self.tensorboard_log = tensorboard_log
+
+        unique_id = str(uuid.uuid4())[:8]
+        self.tb_log_name = f"tb_log_{unique_id}"
+        
         self.action_one_hot = isinstance(self.env.action_space, gym.spaces.Discrete)
         if self.action_one_hot:
             self.one_hot_dim = self.env.action_space.n
@@ -71,43 +120,41 @@ class DynamicRLHF:
         # Initialize RL agent
         self.rl_agent = self._init_rl_agent()
 
-        # Initialize reward models for each feedback type
+        # Initialize reward models
         self.reward_models = self._init_reward_models()
 
-        if enable_wandb:
-            wandb.init(
-                project=wandb_project_name,
-                config={
-                    "algorithm": algorithm,
-                    "feedback_types": feedback_types,
-                    "n_feedback_per_iteration": n_feedback_per_iteration,
-                    "rl_steps_per_iteration": rl_steps_per_iteration,
-                },
-                sync_tensorboard=True,
-            )
-
-            self.wandb_logger = WandbLogger(
-                project=wandb_project_name,
-                name=f"DYNAMIC_RL_{algorithm}_{env_name}_{','.join(feedback_types)}",
-            )
-        else:
-            self.wandb_logger = None
-        
     def _init_rl_agent(self):
-        """Initialize the RL agent."""
-        wrapped_env = RewardVecEnvWrapper(VecMonitor(DummyVecEnv([lambda: self.env])), reward_fn=self.compute_ensemble_reward)
+        """Initialize the RL agent using hyperparameters from ExperimentManager."""
+        wrapped_env = RewardVecEnvWrapper(
+            self.env, 
+            reward_fn=self.compute_ensemble_reward
+        )
 
         if self.algorithm == "ppo":
-            return PPO("MlpPolicy", wrapped_env, verbose=1, device=self.device)
+            return PPO(
+                env=wrapped_env, 
+                verbose=1, 
+                seed=self.seed,
+                device=self.device,
+                tensorboard_log=self.tensorboard_log,
+                **self._hyperparams
+            )
         else:
-            return SAC("MlpPolicy", wrapped_env, verbose=1, device=self.device)
+            return SAC(
+                env=wrapped_env, 
+                verbose=1, 
+                seed=self.seed,
+                device=self.device,
+                tensorboard_log=self.tensorboard_log,
+                **self._hyperparams
+            )
 
     def _init_reward_models(self):
         """Initialize reward models for each feedback type."""
         reward_models = {}
 
         for feedback_type in self.feedback_types:
-            if "ALE/" in self.env.spec.id or "procgen" in self.env.spec.id:
+            if "ALE/" in self.env_name or "procgen" in self.env_name:
                 model = LightningCnnNetwork(
                     input_spaces=(self.env.observation_space, self.env.action_space),
                     hidden_dim=256,
@@ -121,7 +168,7 @@ class DynamicRLHF:
                         else calculate_pairwise_loss
                     ),
                     learning_rate=1e-5,
-                    ensemble_count=4,
+                    ensemble_count=self.num_ensemble_models,
                 )
             else:
                 model = LightningNetwork(
@@ -136,7 +183,7 @@ class DynamicRLHF:
                         else calculate_pairwise_loss
                     ),
                     learning_rate=1e-5,
-                    ensemble_count=4,
+                    ensemble_count=self.num_ensemble_models,
                 )
             reward_models[feedback_type] = model
 
@@ -149,12 +196,12 @@ class DynamicRLHF:
 
         for _ in range(n_trajectories):
             trajectory = []
-            obs, _ = self.env.reset()
-            initial_states.append(self.env.save_state(observation=obs))
+            obs, _ = self.gen_env.reset()
+            initial_states.append(self.gen_env.save_state(observation=obs))
 
             for _ in range(self.oracle.segment_len):
                 action, _ = self.rl_agent.predict(obs, deterministic=False)
-                next_obs, reward, terminated, truncated, _ = self.env.step(action)
+                next_obs, reward, terminated, truncated, _ = self.gen_env.step(action)
                 if self.action_one_hot:
                     action = one_hot_vector(action, self.one_hot_dim)
                 done = terminated or truncated
@@ -375,15 +422,15 @@ class DynamicRLHF:
         device = self.device  # or whichever device you prefer
 
         if self.action_one_hot:
-            action = one_hot_vector(action, self.one_hot_dim)
+            action = vectorized_one_hot_vector(np.array(action), self.one_hot_dim)
 
         # add batch dimension to actions if not present (if called with non-vectorized env.)
         if len(action.shape) < 2:
             action = np.expand_dims(action, axis=0)
     
         # Convert to torch tensors of shape [batch_size, ...]
-        state_tensor = torch.as_tensor(state, device=device, dtype=torch.float32)
-        action_tensor = torch.as_tensor(action, device=device, dtype=torch.float32)
+        state_tensor = torch.as_tensor(state, device=device, dtype=torch.float32).unsqueeze(1)
+        action_tensor = torch.as_tensor(action, device=device, dtype=torch.float32).unsqueeze(1)
     
         # Lists to accumulate each model's [batch_size,] reward and uncertainty
         model_rewards = []
@@ -398,11 +445,11 @@ class DynamicRLHF:
                 if reward_model.ensemble_count > 1:
                     # Expand along a new "ensemble" dimension (dim=0)
                     # Resulting shape = [ensemble_count, batch_size, ...]
-                    st_expanded = state_tensor.unsqueeze(0).expand(
-                        reward_model.ensemble_count, *state_tensor.shape
+                    st_expanded = state_tensor.repeat(
+                        reward_model.ensemble_count, *[1] * (len(state_tensor.shape) - 1)
                     )
-                    act_expanded = action_tensor.unsqueeze(0).expand(
-                        reward_model.ensemble_count, *action_tensor.shape
+                    act_expanded = action_tensor.repeat(
+                        reward_model.ensemble_count, *[1] * (len(action_tensor.shape) - 1)
                     )
     
                     # predictions.shape might be [ensemble_count, batch_size]
@@ -414,9 +461,7 @@ class DynamicRLHF:
                         # e.g. shape: (ensemble_count, batch_size, 1)
                         predictions = predictions.squeeze(-1)
     
-                    # Mean & std over the ensemble dimension (dim=0) => shape [batch_size,]
-                    mean_reward = predictions.mean(dim=0)
-                    uncertainty = predictions.std(dim=0)
+                    mean_reward, uncertainty = compute_grouped(predictions, reward_model.ensemble_count)
                 else:
                     # Single model in the ensemble
                     predictions = reward_model(state_tensor, action_tensor)
@@ -491,7 +536,7 @@ class DynamicRLHF:
         self.train_rl_agent()
 
         # Log metrics
-        if self.enable_wandb:
+        if self.wandb_logger is not None:
             metrics = {"feedback_counts": feedback_counts, **reward_metrics}
             wandb.log(metrics)
 
@@ -499,13 +544,23 @@ class DynamicRLHF:
 
     def train_rl_agent(self):
         """Train RL agent using current reward models."""
+        # Use callbacks if provided
+        callback = None if not self.callbacks else self.callbacks
+        
         self.rl_agent.learn(
-            total_timesteps=self.rl_steps_per_iteration, 
+            total_timesteps=self.rl_steps_per_iteration,
             reset_num_timesteps=False,
-            callback=WandbCallback())
+            callback=callback,
+            tb_log_name=self.tb_log_name,
+        )
 
     def train(self, total_iterations: int, sampling_strategy: str = "random"):
         """Run full training loop for specified number of iterations."""
+        # Initialize callbacks if they exist
+        if self.callbacks:
+            for callback in self.callbacks:
+                callback.init_callback(self.rl_agent)
+
         for iteration in range(total_iterations):
             print(f"\nIteration {iteration + 1}/{total_iterations}")
 
@@ -521,45 +576,159 @@ class DynamicRLHF:
             for feedback_type, loss in reward_metrics.items():
                 print(f"{feedback_type}: {loss:.4f}")
 
-        if self.enable_wandb:
+        if self.wandb_logger is not None:
             wandb.finish()
 
+        # Cleanup callbacks if they exist
+        if self.callbacks:
+            for callback in self.callbacks:
+                callback.on_training_end()
 
 def main():
     parser = TrainingUtils.setup_base_parser()
-    
-    # Existing arguments
-#
-
-    TrainingUtils.set_seeds(args.seed)
-    device = TrainingUtils.get_device()
-
-    feedback_id, _ = TrainingUtils.get_model_ids(args)
-    feedback_path = (
-        Path(args.reference_data_folder) / f"{feedback_id}.pkl"
+    parser.add_argument(
+        "--feedback-types",
+        nargs="+",
+        type=str,
+        #default=["evaluative", "comparative", "demonstrative", "descriptive", "corrective", "descriptive_preference"],
+        default=["evaluative", "comparative", "demonstrative", "corrective"],
+        help="Types of feedback to use",
     )
+    parser.add_argument(
+        "--sampling-strategy",
+        type=str,
+        default="random",
+        choices=["random", "uncertainty"],
+        help="Feedback sampling strategy",
+    )
+    parser.add_argument(
+        "--save-folder",
+        type=str,
+        default="trained_agents",
+        help="Folder for finished feedback RL agents",
+    )
+    parser.add_argument(
+        "--reference-data-folder",
+        type=str,
+        default="feedback",
+        help="Folder containing pre-computed offline feedback for calibration",
+    )
+    parser.add_argument(
+        "--n-feedback-per-iteration",
+        type=int,
+        default=20,
+        help="Feedback Instances collected per iteration",
+    )
+    parser.add_argument(
+        "--rl-steps-per-iteration",
+        type=int,
+        default=5000,
+        help="Number of training iterations",
+    )
+    parser.add_argument(
+        "--n-timesteps",
+        type=int,
+        default=-1,
+        help="Overwrite for RL training timesteps",
+    )
+    parser.add_argument(
+        "--reward-training-epochs",
+        type=int,
+        default=3,
+        help="Number of epochs",
+    )
+    parser.add_argument(
+        "--top-n-models", 
+        type=int, 
+        default=3, 
+        help="Top N models to use"
+    )
+    parser.add_argument(
+        "--expert-model-base-path", 
+        type=str, 
+        default="train_baselines/gt_agents", 
+        help="Expert model base path"
+    )
+    parser.add_argument(
+        "--feedback-buffer-size",
+        type=int,
+        default=2000,
+        help="Maximum size of the feedback buffer",
+    )
+    parser.add_argument(
+        "--num-ensemble-models",
+        type=int,
+        default=4,
+        help="Number of ensemble models for masksemble",
+    )
+    args = parser.parse_args()
 
-    environment = TrainingUtils.setup_environment(args.environment, args.seed)
+    # Setup oracle
+    feedback_id, _ = TrainingUtils.get_model_ids(args)
+    device = TrainingUtils.get_device()
+    feedback_path = Path(args.reference_data_folder) / f"{feedback_id}.pkl"
+
+    gen_environment = TrainingUtils.setup_environment(args.environment, args.seed)
     expert_models = TrainingUtils.load_expert_models(
         env_name=args.environment,
         algorithm=args.algorithm,
         checkpoints_path=str(get_project_root() / args.expert_model_base_path),
-        environment=environment,
+        environment=gen_environment,
         top_n_models=args.top_n_models,
     )
 
-    # Initialize oracle
     oracle = FeedbackOracle(
         expert_models=expert_models,
-        environment=environment,
+        environment=gen_environment,
         reference_data_path=feedback_path,
         noise_level=args.noise_level,
     )
+    unique_id = str(uuid.uuid4())[:8]
+    
+    #try:
+    wandb.init(
+        name=f"DYNAMIC_RL_{args.algorithm}_{args.environment}_{','.join(args.feedback_types)}_{unique_id}",
+        project=args.wandb_project_name,
+        config={
+            "algorithm": args.algorithm,
+            "feedback_types": args.feedback_types,
+            "n_feedback_per_iteration": args.n_feedback_per_iteration,
+            "rl_steps_per_iteration": args.rl_steps_per_iteration,
+        },
+        sync_tensorboard=True,
+    )
 
-    # Initialize RLHF trainer with CLI arguments
-    rlhf = DynamicRLHF(
+    wandb_logger = WandbLogger(
+        #roject=wandb_project_name,
+        #name=f"DYNAMIC_RL_{algorithm}_{env_name}_{','.join(feedback_types)}",
+    )
+    #except:
+    #    print("Could not initialze W&B")
+    #    wandb_logger = None
+
+    # Create expert manager
+    exp_manager = ExperimentManager(
+        args=args,
+        algo=args.algorithm,
+        env_id=args.environment,
+        log_folder=args.save_folder,
+        eval_freq=5000,
+        n_eval_episodes=5,
+        use_wandb_callback=True,
+        tensorboard_log="tb_logs",
+    )
+
+    # Setup experiment and get hyperparameters
+    hyperparams = exp_manager.get_hyperparam_config_for_algo()
+
+    # Create environment
+    rl_env = exp_manager.create_envs(n_envs=exp_manager.n_envs)
+
+    # Create DynamicRLHF with ExperimentManager's hyperparameters and callbacks
+    drlhf = DynamicRLHF(
         oracle=oracle,
-        env=environment,
+        env=rl_env,
+        gen_env=gen_environment, # normal gym env for creating trajectories
         env_name=args.environment,
         algorithm=args.algorithm,
         feedback_types=args.feedback_types,
@@ -567,17 +736,20 @@ def main():
         feedback_buffer_size=args.feedback_buffer_size,
         rl_steps_per_iteration=args.rl_steps_per_iteration,
         reward_training_epochs=args.reward_training_epochs,
-        device=device,
-        enable_wandb=True,
-        wandb_project_name=args.wandb_project_name,
         num_ensemble_models=args.num_ensemble_models,
+        hyperparams=hyperparams,
+        callbacks=exp_manager.callbacks,
+        device=device,
+        wandb_logger=wandb_logger,
+        tensorboard_log=exp_manager.tensorboard_log,
+        seed=args.seed,
     )
 
-    # Run training with calculated iterations
-    rlhf.train(
-        total_iterations=total_iterations,
-        sampling_strategy=args.sampling_strategy
-    )
+    # Train
+
+    n_timesteps = args.n_timesteps if args.n_timesteps > 0 else exp_manager.n_timesteps
+    total_iterations = max(1, n_timesteps // drlhf.rl_steps_per_iteration)
+    drlhf.train(total_iterations=total_iterations, sampling_strategy="random")
 
 if __name__ == "__main__":
     main()
