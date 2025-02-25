@@ -4,7 +4,7 @@
 #envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
 #envs=("ALE/Pong-v5" "ALE/BeamRider-v5" "ALE/MsPacman-v5" "ALE/Enduro-v5") #"ALE/Pong-v5" "ALE/BeamRider-v5" "ALE/MsPacman-v5" "ALE/Enduro-v5")
 #envs=("metaworld-sweep-into-v2" "metaworld-pick-place-v2" "metaworld-button-press-v2")
-envs=("merge-v0" "roundabout-v0" "highway-fast-v0")
+envs=("LunarLander-v3")
 seeds=(1789 1687123 12 912391 330)
 
 # Create a directory for log files if it doesn't exist
@@ -38,7 +38,7 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
 #SBATCH --cpus-per-task=20
 #SBATCH --ntasks=1
 #SBATCH --job-name=generate_feedback_$batch_id
-#SBATCH --time=08:30:00
+#SBATCH --time=04:00:00
 #SBATCH --output=logs/train_generate_feedback_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
@@ -50,7 +50,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env <<< $combination
-        echo "python mutli-type-feedback/generate_feedback.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback_regen &" >> $sbatch_script
+        echo "python multi_type_feedback/generate_feedback.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

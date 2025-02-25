@@ -6,11 +6,24 @@ from ale_py import AtariEnv
 from gymnasium.envs.mujoco import MujocoEnv
 from minigrid.minigrid_env import MiniGridEnv
 from train_baselines.wrappers import Gym3ToGymnasium
+from multi_type_feedback.custom_save_reset_envs import CUSTOM_SAVE_RESET_WRAPPERS
 
 
 class SaveResetEnvWrapper(gym.Wrapper):
     def __init__(self, env):
+        """
+            A Wrapper that ensure ability to save/load the state for a selected
+            set of enviornments. If you encounter an unsupported env, feel free to 
+            add them to the CUSTOM_SAVE_RESET_WRAPPERS dict
+        """
         super(SaveResetEnvWrapper, self).__init__(env)
+
+        env_id = env.spec.id if env.spec is not None else env.__class__.__name__
+        for key, wrapper_ctor in CUSTOM_SAVE_RESET_WRAPPERS.items():
+            if key in env_id:
+                # Replace the unwrapped env with the custom save/load wrapper.
+                self.env = wrapper_ctor(self.env)
+                break
 
     def save_state(self, observation=None):
         """
@@ -37,11 +50,20 @@ class SaveResetEnvWrapper(gym.Wrapper):
             }
         elif isinstance(self.unwrapped, Gym3ToGymnasium):
             state = self.unwrapped.env.get_state()
+        elif hasattr(self.env, "get_state"):
+            state = self.env.get_state()
         else:
             # Something else
             state = copy.deepcopy(self.unwrapped)
 
-        return {"state": state, "observation": observation}
+        # YM: For TimeLimit Gymnasium Wrapper, also set the elapsed timesteps to original value
+        # to avoid late termination (in genenerate_feedback.py the el. timesteps are always set to 0)
+        if hasattr(self, "_elapsed_steps"):
+            elapsed_steps = self._elapsed_steps
+        else:
+            elapsed_steps = 0
+
+        return {"state": state, "observation": observation, "elapsed_steps": elapsed_steps}
 
     def load_state(self, state_and_obs):
         """
@@ -57,6 +79,8 @@ class SaveResetEnvWrapper(gym.Wrapper):
 
         obs = state_and_obs["observation"]
         state = state_and_obs["state"]
+        self._elapsed_steps = state_and_obs.get("elapsed_steps", 0)
+        
         if isinstance(self.unwrapped, MujocoEnv):
             # MuJoCo environment
             self.unwrapped.set_state(state["qpos"], state["qval"])
@@ -71,6 +95,8 @@ class SaveResetEnvWrapper(gym.Wrapper):
             self.unwrapped.mission = state["mission"]
         elif isinstance(self.unwrapped, Gym3ToGymnasium):
             self.unwrapped.env.set_state(state)
+        elif hasattr(self.env, "set_state"):
+            self.env.set_state(state)
         else:
             # Other environments
             for attr, value in vars(state).items():

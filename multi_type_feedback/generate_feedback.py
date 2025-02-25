@@ -28,7 +28,7 @@ from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
 from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
-from multi_type_feedback.utils import TrainingUtils, get_project_root
+from multi_type_feedback.utils import TrainingUtils
 
 try:
     from train_baselines.benchmark_evals import collect_results
@@ -686,7 +686,7 @@ def main():
     # scripts
     if collect_results is not None:
         try:
-            collect_results("../"+args.expert_model_base_path.replace("\\","/").split("/")[-1], [args.algorithm], str(get_project_root() / args.expert_model_base_path))
+            collect_results(args.expert_model_base_path.replace("\\","/"), [args.algorithm], str(args.expert_model_base_path))
         except:
             warnings.warn("""No expert benchmark results could be found. Only random policies are available. Make sure to train expert models with train_baselines,
                           or change the path. Experts need to be trained with an SB3 MonitorWrapper and EvalCallback to retreive benchmark score""")
@@ -694,7 +694,7 @@ def main():
     expert_models = TrainingUtils.load_expert_models(
         args.environment,
         args.algorithm,
-        str(get_project_root() / args.expert_model_base_path),
+        str(args.expert_model_base_path),
         environment,
         args.top_n_models,
     )
@@ -704,7 +704,7 @@ def main():
         expert_models=expert_models,
         environment=environment,
         environment_name=args.environment,
-        checkpoints_path=str(get_project_root() / args.expert_model_base_path),
+        checkpoints_path=str(args.expert_model_base_path),
         total_steps_factor=args.n_steps_factor,
         n_feedback=args.n_feedback,
         segment_len=args.segment_len,

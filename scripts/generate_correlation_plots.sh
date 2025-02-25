@@ -60,7 +60,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env noise algo n_feedback <<< $combination
-        echo "python mutli-type-feedback/generate_rew_correlation_plot.py --algorithm $algo --environment $env --n-feedback $n_feedback --seed $seed --n-samples 10000 --noise-level $noise &" >> $sbatch_script
+        echo "python multi_type_feedback/generate_rew_correlation_plot.py --algorithm $algo --environment $env --n-feedback $n_feedback --seed $seed --n-samples 10000 --noise-level $noise &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

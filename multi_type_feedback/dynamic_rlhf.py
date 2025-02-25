@@ -15,7 +15,6 @@ from train_baselines.exp_manager import ExperimentManager
 from torch.utils.data import DataLoader
 
 import wandb
-from wandb.integration.sb3 import WandbCallback
 from multi_type_feedback.feedback_dataset import BufferDataset, load_flat_buffer_into_feedback_dataset
 from multi_type_feedback.feedback_oracle import FeedbackOracle
 from multi_type_feedback.networks import (
@@ -395,8 +394,6 @@ class DynamicRLHF:
                 logger=self.wandb_logger,
                 log_every_n_steps=10,
             )
-
-            print("FB TYPE", feedback_type)
             
             trainer.fit(
                 self.reward_models[feedback_type],
@@ -565,7 +562,6 @@ class DynamicRLHF:
             print(f"\nIteration {iteration + 1}/{total_iterations}")
 
             feedback_counts, reward_metrics = self.train_iteration(sampling_strategy)
-            print(feedback_counts, reward_metrics)
 
             # Print progress
             print("\nFeedback counts:")
@@ -616,7 +612,7 @@ def main():
     parser.add_argument(
         "--n-feedback-per-iteration",
         type=int,
-        default=20,
+        default=30,
         help="Feedback Instances collected per iteration",
     )
     parser.add_argument(
@@ -634,7 +630,7 @@ def main():
     parser.add_argument(
         "--reward-training-epochs",
         type=int,
-        default=3,
+        default=5,
         help="Number of epochs",
     )
     parser.add_argument(
@@ -652,7 +648,7 @@ def main():
     parser.add_argument(
         "--feedback-buffer-size",
         type=int,
-        default=2000,
+        default=1000,
         help="Maximum size of the feedback buffer",
     )
     parser.add_argument(
@@ -694,6 +690,8 @@ def main():
             "feedback_types": args.feedback_types,
             "n_feedback_per_iteration": args.n_feedback_per_iteration,
             "rl_steps_per_iteration": args.rl_steps_per_iteration,
+            "reward_training_epochs": args.reward_training_epochs,
+            "feedback_buffer_size": args.feedback_buffer_size,
         },
         sync_tensorboard=True,
     )

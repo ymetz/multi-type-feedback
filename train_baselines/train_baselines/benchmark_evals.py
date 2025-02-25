@@ -112,9 +112,11 @@ def process_algorithm_results(model_base_path: str, algorithm: str = None, full_
                     "seed": the_dict["seed"],
                     "eval_score": evals,
                 }
-            else:
+            else:                
                 result_dict = {
                     **the_dict,
+                    "algorithm": the_dict["algorithm"] if "algorithm" in the_dict else the_dict["algo"],
+                    "environment": the_dict["environment"] if "environment" in the_dict else the_dict["env"],
                     "run": run_dir,
                     "seed": the_dict["seed"],
                     "eval_score": evals,
@@ -133,7 +135,7 @@ def main():
         prog="CollectResults",
         description="Collecting results from multiple algorithm runs",
     )
-    parser.add_argument("--model-base-path", default="../gt_agents")  # Updated default path
+    parser.add_argument("--model-base-path", default="train_baselines/gt_agents")  # Updated default path
     parser.add_argument(
         "--algorithms",
         nargs="+",

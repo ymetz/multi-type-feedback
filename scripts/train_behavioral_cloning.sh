@@ -57,7 +57,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env noise algo n_feedback <<< $combination
-        echo "python mutli-type-feedback/train_bc.py --environment $env --seed $seed --algo $algo --n-feedback $n_feedback --noise-level $noise &" >> $sbatch_script
+        echo "python multi_type_feedback/train_bc.py --environment $env --seed $seed --algo $algo --n-feedback $n_feedback --noise-level $noise &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish
