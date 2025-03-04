@@ -30,7 +30,6 @@ from imitation.rewards.reward_function import RewardFn
 from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
 from wandb.integration.sb3 import WandbCallback
 
-
 # For using HER with GoalEnv
 from stable_baselines3 import HerReplayBuffer
 from stable_baselines3.common.base_class import BaseAlgorithm
@@ -80,6 +79,7 @@ from train_baselines.utils import (
     linear_schedule,
 )
 import train_baselines.impala_policy as impala_policy
+#from train_baselines.continuous_wandb_callback import ContinuousWandbCallback
 
 
 class ExperimentManager:
@@ -130,6 +130,7 @@ class ExperimentManager:
         show_progress: bool = False,
         reward_function: RewardFn = None,
         use_wandb_callback: bool = False,
+        wandb_callback_continuous: bool = False, # for iterative training
     ):
         super().__init__()
         self.algo = algo
@@ -205,6 +206,7 @@ class ExperimentManager:
         # For training with reward function wrapper
         self.reward_function = reward_function
         self.use_wandb_callback = use_wandb_callback
+        self.wandb_callback_continuous = wandb_callback_continuous
 
         # Logging
         self.log_folder = log_folder
@@ -620,7 +622,11 @@ class ExperimentManager:
 
         # append wandb callback
         if self.use_wandb_callback:
-            self.callbacks.append(WandbCallback())
+            if not self.wandb_callback_continuous:
+                self.callbacks.append(WandbCallback())
+            else:
+                pass
+                #self.callbacks.append(ContinuousWandbCallback())
 
     @staticmethod
     def entry_point(env_id: str) -> str:

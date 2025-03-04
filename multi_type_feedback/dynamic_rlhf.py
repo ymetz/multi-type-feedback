@@ -24,6 +24,8 @@ from multi_type_feedback.networks import (
     calculate_single_reward_loss,
 )
 from multi_type_feedback.utils import TrainingUtils, get_project_root, RewardVecEnvWrapper
+from multi_type_feedback.wandb_logger import ContinuousWandbLogger
+from multi_type_feedback.continuous_wandb_sb3_logger import create_continuous_wandb_logger
 
 def one_hot_vector(k, max_val):
     vec = np.zeros(max_val)
@@ -86,7 +88,7 @@ class DynamicRLHF:
         hyperparams: Dict[str, Any] = None,  # Hyperparameters from ExperimentManager
         seed: int = None,
         wandb_logger: Any = None,
-        tensorboard_log: str = "",
+        custom_sb3_logger: Any = None,
     ):
         self.oracle = oracle
         self.env = env
@@ -104,10 +106,6 @@ class DynamicRLHF:
         self._hyperparams = hyperparams or {}
         self.seed = seed
         self.wandb_logger = wandb_logger
-        self.tensorboard_log = tensorboard_log
-
-        unique_id = str(uuid.uuid4())[:8]
-        self.tb_log_name = f"tb_log_{unique_id}"
         
         self.action_one_hot = isinstance(self.env.action_space, gym.spaces.Discrete)
         if self.action_one_hot:
@@ -118,6 +116,9 @@ class DynamicRLHF:
 
         # Initialize RL agent
         self.rl_agent = self._init_rl_agent()
+
+        # set custom logger
+        self.rl_agent.set_logger(custom_sb3_logger)
 
         # Initialize reward models
         self.reward_models = self._init_reward_models()
@@ -135,7 +136,7 @@ class DynamicRLHF:
                 verbose=1, 
                 seed=self.seed,
                 device=self.device,
-                tensorboard_log=self.tensorboard_log,
+                #tensorboard_log=self.tensorboard_log,
                 **self._hyperparams
             )
         else:
@@ -144,7 +145,7 @@ class DynamicRLHF:
                 verbose=1, 
                 seed=self.seed,
                 device=self.device,
-                tensorboard_log=self.tensorboard_log,
+                #tensorboard_log=self.tensorboard_log,
                 **self._hyperparams
             )
 
@@ -372,6 +373,12 @@ class DynamicRLHF:
                     self.feedback_buffers[feedback_type].append(feedback)
 
     def train_reward_models(self):
+        """
+        Train reward models without advancing the global step counter.
+        
+        Returns:
+            Dictionary of reward metrics for each feedback type
+        """
         reward_metrics = {}
         
         for feedback_type in self.feedback_types:
@@ -380,21 +387,19 @@ class DynamicRLHF:
                 continue
                 
             # Create dataset from buffer
-            dataset = BufferDataset(
-                buffer_data
-            )
+            dataset = BufferDataset(buffer_data)
     
-            # Train model
+            # Use a simple trainer with no wandb logging
             trainer = Trainer(
                 max_epochs=self.reward_training_epochs,
                 accelerator="auto",
                 devices="auto",
                 enable_progress_bar=False,
-                accumulate_grad_batches=32, # Virtual batch size 
-                logger=self.wandb_logger,
-                log_every_n_steps=10,
+                accumulate_grad_batches=32,  # Virtual batch size 
+                logger=False,  # Disable logging during training
             )
             
+            # Train the model
             trainer.fit(
                 self.reward_models[feedback_type],
                 DataLoader(
@@ -406,14 +411,12 @@ class DynamicRLHF:
                 ),
             )
     
-            # Retrieve the final logged metrics for this model
-            # "train_loss" will exist if you logged it with on_epoch=True
+            # Get final metrics
             final_metrics = trainer.callback_metrics
-            
-            reward_metrics[feedback_type] = float(final_metrics.get("train_loss", -1.0))
-
+            loss_value = float(final_metrics.get("train_loss", -1.0))
+            reward_metrics[feedback_type] = loss_value
+    
         return reward_metrics
-
 
     def compute_ensemble_reward(self, state: np.ndarray, action: np.ndarray) -> np.ndarray:
         device = self.device  # or whichever device you prefer
@@ -503,16 +506,14 @@ class DynamicRLHF:
     
         return final_rewards.cpu().numpy()  # shape: [batch_size,]
 
-
+    
     def train_iteration(self, sampling_strategy: str = "random"):
-        """Run one iteration of the training loop."""
-        # Collect trajectories
-        """Run one iteration of the training loop."""
+        """Run one iteration of the training loop with controlled step counting."""
         # Collect trajectories
         trajectories, initial_states = self.collect_trajectories(
             self.n_feedback_per_iteration
         )
-
+    
         # Get feedback based on sampling strategy
         if sampling_strategy == "random":
             feedback, feedback_counts = self.sample_feedback_random(
@@ -525,18 +526,34 @@ class DynamicRLHF:
         
         # Update feedback buffers
         self.update_feedback_buffers(feedback)
-
-        # Train reward models
+    
+        # Train reward models (with logging disabled)
         reward_metrics = self.train_reward_models()
-
+    
         # Train RL agent with updated reward models
+        # This is where steps will advance
         self.train_rl_agent()
+    
+        # If no custom callback found, try to get num_timesteps from the agent
+        global_step = self.rl_agent.num_timesteps
 
-        # Log metrics
+        # Also log via our Lightning logger if available
         if self.wandb_logger is not None:
-            metrics = {"feedback_counts": feedback_counts, **reward_metrics}
-            wandb.log(metrics)
-
+            if hasattr(self.wandb_logger, 'log_reward_metrics'):
+                self.wandb_logger.log_reward_metrics(
+                    reward_metrics=reward_metrics,
+                    feedback_counts=feedback_counts,
+                    step=global_step
+                )
+            elif wandb.run is not None:
+                # Fallback logging directly to wandb
+                metrics_to_log = {}
+                for feedback_type, loss in reward_metrics.items():
+                    metrics_to_log[f"reward_model/{feedback_type}_loss"] = loss
+                for feedback_type, count in feedback_counts.items():
+                    metrics_to_log[f"feedback/{feedback_type}_count"] = count
+                wandb.log(metrics_to_log, step=global_step)
+    
         return feedback_counts, reward_metrics
 
     def train_rl_agent(self):
@@ -548,7 +565,7 @@ class DynamicRLHF:
             total_timesteps=self.rl_steps_per_iteration,
             reset_num_timesteps=False,
             callback=callback,
-            tb_log_name=self.tb_log_name,
+            #tb_log_name=self.tb_log_name,
         )
 
     def train(self, total_iterations: int, sampling_strategy: str = "random"):
@@ -557,24 +574,26 @@ class DynamicRLHF:
         if self.callbacks:
             for callback in self.callbacks:
                 callback.init_callback(self.rl_agent)
-
+    
         for iteration in range(total_iterations):
             print(f"\nIteration {iteration + 1}/{total_iterations}")
-
+    
             feedback_counts, reward_metrics = self.train_iteration(sampling_strategy)
-
+    
             # Print progress
             print("\nFeedback counts:")
             for feedback_type, count in feedback_counts.items():
                 print(f"{feedback_type}: {count}")
-
+    
             print("\nReward model losses:")
             for feedback_type, loss in reward_metrics.items():
                 print(f"{feedback_type}: {loss:.4f}")
-
-        if self.wandb_logger is not None:
-            wandb.finish()
-
+    
+        if self.wandb_logger is not None and hasattr(self.wandb_logger, 'experiment'):
+            # Only finish if we own the wandb run
+            if self.wandb_logger.experiment is wandb.run:
+                wandb.finish()
+    
         # Cleanup callbacks if they exist
         if self.callbacks:
             for callback in self.callbacks:
@@ -693,16 +712,10 @@ def main():
             "reward_training_epochs": args.reward_training_epochs,
             "feedback_buffer_size": args.feedback_buffer_size,
         },
-        sync_tensorboard=True,
+        #sync_tensorboard=True,
     )
 
-    wandb_logger = WandbLogger(
-        #roject=wandb_project_name,
-        #name=f"DYNAMIC_RL_{algorithm}_{env_name}_{','.join(feedback_types)}",
-    )
-    #except:
-    #    print("Could not initialze W&B")
-    #    wandb_logger = None
+    continuous_lightning_logger = ContinuousWandbLogger()
 
     # Create expert manager
     exp_manager = ExperimentManager(
@@ -713,7 +726,8 @@ def main():
         eval_freq=5000,
         n_eval_episodes=5,
         use_wandb_callback=True,
-        tensorboard_log="tb_logs",
+        #tensorboard_log="tb_logs",
+        wandb_callback_continuous=True,
     )
 
     # Setup experiment and get hyperparameters
@@ -721,6 +735,15 @@ def main():
 
     # Create environment
     rl_env = exp_manager.create_envs(n_envs=exp_manager.n_envs)
+
+    # Custom SB3 Logger
+    custom_sb3_logger = create_continuous_wandb_logger(
+        global_step_offset=0,
+        run_id=wandb.run.id,  # Reuse the same W&B run
+        additional_formats=["stdout"],
+        folder="logs",
+        n_envs=exp_manager.n_envs,
+    )
 
     # Create DynamicRLHF with ExperimentManager's hyperparameters and callbacks
     drlhf = DynamicRLHF(
@@ -738,8 +761,8 @@ def main():
         hyperparams=hyperparams,
         callbacks=exp_manager.callbacks,
         device=device,
-        wandb_logger=wandb_logger,
-        tensorboard_log=exp_manager.tensorboard_log,
+        wandb_logger=continuous_lightning_logger,
+        custom_sb3_logger=custom_sb3_logger,
         seed=args.seed,
     )
 

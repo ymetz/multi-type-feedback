@@ -34,39 +34,25 @@ def truncated_uniform_vectorized(mean, width, low=0, upp=9):
 
 
 def truncated_gaussian_vectorized(mean, width, low=0, upp=9, min_width=1e-6):
-    """
-    Generate samples from a truncated Gaussian distribution with proper handling of zero variance.
-
-    Args:
-        mean: Mean of the distribution
-        width: Width parameter (typically proportional to standard deviation)
-        low: Lower bound of the truncation
-        upp: Upper bound of the truncation
-        min_width: Minimum allowed width to prevent numerical issues
-    """
     # Handle scalar inputs
     scalar_input = np.isscalar(mean) and np.isscalar(width)
     mean = np.atleast_1d(mean)
     width = np.atleast_1d(width)
-
-    # Ensure width is at least min_width to prevent division by zero
+    
+    # Ensure width is positive to avoid numerical issues
     width = np.maximum(width, min_width)
-
+    
     # Calculate the bounds of the distribution
-    lower = np.maximum(mean - width / 2, low)
-    upper = np.minimum(mean + width / 2, upp)
-
+    lower = np.maximum(mean - width/2, low)
+    upper = np.minimum(mean + width/2, upp)
+    
     # Calculate parameters for truncated normal distribution
-    sigma = width / 4  # 4 sigma range
-    a = (lower - mean) / sigma
-    b = (upper - mean) / sigma
-
-    result = np.where(
-        width <= min_width * 1.1,  # Using 1.1 to account for floating point comparison
-        mean + np.random.normal(0, min_width / 10, size=mean.shape),  # Tiny noise
-        truncnorm.rvs(a, b, loc=mean, scale=sigma, size=mean.shape),
-    )
-
+    a = (lower - mean) / (width/4)  # 4 sigma range
+    b = (upper - mean) / (width/4)
+    
+    # Generate samples from truncated normal distribution
+    result = truncnorm.rvs(a, b, loc=mean, scale=width/4, size=mean.shape)
+    
     return result[0] if scalar_input else result
 
 
@@ -87,6 +73,7 @@ class FeedbackDataset(Dataset):
         segment_len: int = 50,
         env=None,
         seed: int = 1234,
+        zero_tolerance: float = 1e6,
     ):
         """Initialize dataset."""
         print("Loading dataset...")
@@ -229,38 +216,39 @@ class FeedbackDataset(Dataset):
                 if noise_level > 0.0:
 
                     # Calculate statistics across all data points, keeping the feature dimensions
-                    obs_min = np.min(obs, axis=0)
-                    obs_max = np.max(obs, axis=0)
-                    obs_std = np.std(obs, axis=0)
+                    obs_min, obs_max, obs_std = np.min(obs, axis=0), np.max(obs, axis=0), np.std(obs, axis=0)
+                    non_zero_obs_std = obs_std > zero_tolerance
 
-                    acts_min = np.min(actions, axis=0)
-                    acts_max = np.max(actions, axis=0)
-                    acts_std = np.std(actions, axis=0)
-
+                    acts_min, acts_max, acts_std = np.min(actions, axis=0), np.max(actions, axis=0), np.std(actions, axis=0)
+                    non_zero_acts_std = acts_std > zero_tolerance
+                    
                     # Process each batch separately
                     noisy_obs = []
                     noisy_actions = []
 
+                    # TODO: Check if this for loop is actually necessary...shouldn't it just work as a batch
                     for i in range(obs.shape[0]):
                         # Add noise to each batch independently
-                        noisy_obs.append(
-                            truncated_gaussian_vectorized(
-                                mean=obs[i],
-                                width=np.array(noise_level)
-                                * obs_std,  # obs_std is already per-feature
-                                low=obs_min,
-                                upp=obs_max,
+                        
+                        obs_for_noise = obs[i]
+                        if np.any(non_zero_obs_std):
+                            obs_for_noise[:, non_zero_obs_std] = truncated_gaussian_vectorized(
+                                mean=obs_for_noise[:, non_zero_obs_std], 
+                                width=np.array(noise_level) * obs_std[non_zero_obs_std], 
+                                low=obs_min[non_zero_obs_std],
+                                upp=obs_max[non_zero_obs_std],
                             )
-                        )
+                        noisy_obs.append(obs_for_noise)
 
-                        noisy_actions.append(
-                            truncated_gaussian_vectorized(
-                                mean=actions[i],
-                                width=np.array(noise_level) * acts_std,
-                                low=acts_min,
-                                upp=acts_max,
+                        acts_for_noise = actions[i]
+                        if np.any(non_zero_acts_std):
+                            acts_for_noise[:, non_zero_acts_std] = truncated_gaussian_vectorized(
+                                mean=acts_for_noise[:, non_zero_acts_std], 
+                                width=np.array(noise_level) * acts_std[non_zero_acts_std], 
+                                low=acts_min[non_zero_acts_std],
+                                upp=acts_max[non_zero_acts_std],
                             )
-                        )
+                        noisy_actions.append(acts_for_noise)
 
                     obs = np.stack(noisy_obs)
                     actions = np.stack(noisy_actions)
