@@ -32,7 +32,6 @@ class WandbOutputFormat(KVWriter):
         global_step_offset: int = 0,
         config: Optional[Dict[str, Any]] = None,
         run_id: Optional[str] = None,
-        n_envs: Optional[int] = 1,
     ):
             
         with wb_telemetry.context() as tel:
@@ -40,7 +39,6 @@ class WandbOutputFormat(KVWriter):
             
         self.global_step = global_step_offset
         self._is_closed = False
-        self.n_envs = n_envs
         
     def write(self, key_values: Dict[str, Any], key_excluded: Dict[str, Tuple[str, ...]], step: int = 0) -> None:
         """
@@ -139,7 +137,6 @@ class ContinuousWandbLogger(Logger):
         self,
         folder: Optional[str] = None,
         global_step_offset: int = 0,
-        n_envs: int = 1,
         config: Optional[Dict[str, Any]] = None,
         run_id: Optional[str] = None,
         output_formats: Optional[list] = None,
@@ -149,7 +146,6 @@ class ContinuousWandbLogger(Logger):
             global_step_offset=global_step_offset,
             config=config,
             run_id=run_id,
-            n_envs=n_envs,
         )
         
         # Combine with any additional output formats
@@ -175,7 +171,6 @@ class ContinuousWandbLogger(Logger):
 def create_continuous_wandb_logger(
     folder: Optional[str] = None,
     global_step_offset: int = 0,
-    n_envs: int = 1,
     config: Optional[Dict[str, Any]] = None,
     run_id: Optional[str] = None,
     additional_formats: Optional[list[str]] = None,
@@ -205,7 +200,6 @@ def create_continuous_wandb_logger(
     return ContinuousWandbLogger(
         folder=folder,
         global_step_offset=global_step_offset,
-        n_envs=n_envs,
         config=config,
         run_id=run_id,
         output_formats=additional_log_formats,

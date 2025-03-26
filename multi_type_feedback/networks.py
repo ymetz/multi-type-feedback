@@ -13,10 +13,6 @@ from torch.nn.functional import log_softmax, mse_loss, nll_loss
 
 from masksembles.torch import Masksembles1D, Masksembles2D
 
-# Loss functions
-single_reward_loss = nn.MSELoss()
-
-
 def calculate_mse_loss(network: LightningModule, batch: Tensor):
     """Calculate the mean squared error loss for the reward."""
     return mse_loss(network(batch[0]), batch[1].unsqueeze(1), reduction="sum")
@@ -36,14 +32,9 @@ def calculate_mle_loss(network: LightningModule, batch: Tensor):
 
 def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
-    (
-        pair_obs,
-        pair_actions,
-    ), preferred_indices = batch  # preferred_indices: (batch_size,)
-
-    # Unpack observations and actions for both trajectories
-    obs1, obs2 = pair_obs[0], pair_actions[0]
-    actions1, actions2 = pair_obs[1], pair_actions[1]
+    pair_data, preferred_indices = batch
+    
+    (obs1, actions1, mask1), (obs2, actions2, mask2) = pair_data
 
     # Compute network outputs
     outputs1 = network(
@@ -52,8 +43,8 @@ def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     outputs2 = network(obs2, actions2)
 
     # Sum over sequence dimension
-    rewards1 = outputs1.sum(dim=1).squeeze(-1)  # Shape: (batch_size,)
-    rewards2 = outputs2.sum(dim=1).squeeze(-1)
+    rewards1 = (outputs1 * mask1).sum(dim=1).squeeze(-1)
+    rewards2 = (outputs2 * mask2).sum(dim=1).squeeze(-1)
 
     # Stack rewards and compute log softmax
     rewards = torch.stack([rewards1, rewards2], dim=1)  # Shape: (batch_size, 2)
@@ -67,18 +58,20 @@ def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
 
 def calculate_single_reward_loss(network: LightningModule, batch: Tensor):
     """Calculate the MSE loss between prediction and actual reward."""
-    (observations, actions), targets = batch
+    data, targets = batch
+    
+    (observations, actions, masks) = data
     # Network output: (batch_size, segment_length, output_dim)
     outputs = network(observations, actions)
 
     # Sum over the sequence dimension to get total rewards per segment
-    total_rewards = outputs.sum(dim=1)  # Shape: (batch_size, output_dim)
+    total_rewards = (outputs * masks).sum(dim=1).squeeze(-1)
 
     # Ensure targets have the correct shape
     targets = targets.float().unsqueeze(1)  # Shape: (batch_size, 1)
 
     # Compute loss
-    loss = single_reward_loss(total_rewards, targets)
+    loss = nn.MSELoss()(total_rewards, targets)
 
     return loss
 
@@ -86,7 +79,7 @@ def calculate_single_reward_loss(network: LightningModule, batch: Tensor):
 # Lightning networks
 
 
-class LightningNetwork(LightningModule):
+class SingleNetwork(LightningModule):
     """Neural network to model the RL agent's reward using Pytorch Lightning."""
 
     def __init__(
@@ -102,12 +95,14 @@ class LightningNetwork(LightningModule):
         activation_function: Type[nn.Module] = nn.ReLU,
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,
+        masksemble_scale: float = 1.8,
     ):
         super().__init__()
 
         self.loss_function = loss_function
         self.learning_rate = learning_rate
         self.ensemble_count = ensemble_count
+        self.masksemble_scale = masksemble_scale
         obs_space, action_space = input_spaces
 
         action_is_discrete = isinstance(action_space, gym.spaces.Discrete)
@@ -130,7 +125,7 @@ class LightningNetwork(LightningModule):
                     Masksembles1D(
                         channels=layers_unit[idx + 1],
                         n=self.ensemble_count,
-                        scale=1.8,
+                        scale=self.masksemble_scale,
                     ).float()
                 )
 
@@ -142,7 +137,7 @@ class LightningNetwork(LightningModule):
             if self.ensemble_count > 1:
                 layers.append(
                     Masksembles1D(
-                        channels=output_dim, n=self.ensemble_count, scale=1.8
+                        channels=output_dim, n=self.ensemble_count, scale=self.masksemble_scale
                     ).float()
                 )
 
@@ -205,7 +200,7 @@ class LightningNetwork(LightningModule):
         return optimizer
 
 
-class LightningCnnNetwork(LightningModule):
+class SingleCnnNetwork(LightningModule):
     """Neural network to model the RL agent's reward using Pytorch Lightning,
     based on the Impapala CNN architecture. Use given layer_num, with a single
     fully connected layer"""
@@ -223,12 +218,14 @@ class LightningCnnNetwork(LightningModule):
         activation_function: Type[nn.Module] = nn.ReLU,
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,
+        masksemble_scale: float = 1.8,
     ):
         super().__init__()
 
         self.loss_function = loss_function
         self.learning_rate = learning_rate
         self.ensemble_count = ensemble_count
+        self.masksemble_scale = masksemble_scale
         obs_space, action_space = input_spaces
         input_channels = obs_space.shape[0]
 
@@ -245,7 +242,7 @@ class LightningCnnNetwork(LightningModule):
         action_shape = action_space.shape if action_space.shape else 1
         self.action_in = nn.Linear(action_shape, action_hidden_dim)
         self.masksemble_out = Masksembles1D(
-            channels=action_hidden_dim, n=self.ensemble_count, scale=1.8
+            channels=action_hidden_dim, n=self.ensemble_count, scale=self.masksemble_scale
         ).float()
 
         self.fc = nn.Linear(
@@ -263,12 +260,12 @@ class LightningCnnNetwork(LightningModule):
         return nn.Sequential(
             nn.ReLU(),
             Masksembles2D(
-                channels=in_channels, n=self.ensemble_count, scale=1.8
+                channels=in_channels, n=self.ensemble_count, scale=self.masksemble_scale
             ).float(),
             self.conv_layer(in_channels, in_channels),
             nn.ReLU(),
             Masksembles2D(
-                channels=in_channels, n=self.ensemble_count, scale=1.8
+                channels=in_channels, n=self.ensemble_count, scale=self.masksemble_scale
             ).float(),
             self.conv_layer(in_channels, in_channels),
         )

@@ -3,6 +3,7 @@ import os
 import random
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+import pytorch_lightning
 
 import gymnasium as gym
 import numpy as np
@@ -256,4 +257,44 @@ class RewardVecEnvWrapper(VecEnvWrapper):
         Reset the environment and return initial observations.
         """
         return self.venv.reset()
+
+
+class L2RegulationCallback(pytorch_lightning.Callback):
+    """Callback to dynamically adjust L2 regularization to keep validation loss in target range."""
+    
+    def __init__(self, initial_l2=0.01, min_ratio=1.1, max_ratio=1.5):
+        super().__init__()
+        self.initial_l2 = initial_l2
+        self.min_ratio = min_ratio  # Minimum acceptable val/train loss ratio
+        self.max_ratio = max_ratio  # Maximum acceptable val/train loss ratio
+        self.current_l2 = initial_l2
+        self.train_loss = None
+    
+    def on_train_epoch_start(self, trainer, pl_module):
+        # Apply current L2 regularization
+        for param_group in trainer.optimizers[0].param_groups:
+            param_group['weight_decay'] = self.current_l2
+    
+    def on_train_epoch_end(self, trainer, pl_module):
+        # Store training loss
+        self.train_loss = float(trainer.callback_metrics.get('train_loss', 0.0))
+    
+    def on_validation_epoch_end(self, trainer, pl_module):
+        # Skip adjustment if missing losses
+        if self.train_loss is None or 'val_loss' not in trainer.callback_metrics:
+            return
+            
+        val_loss = float(trainer.callback_metrics['val_loss'])
+        loss_ratio = val_loss / self.train_loss
+        
+        # Adjust L2 regularization based on validation/training loss ratio
+        if loss_ratio < self.min_ratio:
+            # Increase regularization if validation is too far from training
+            self.current_l2 = min(1.0, self.current_l2 * 1.2)
+        elif loss_ratio > self.max_ratio:
+            # Reduce regularization if validation is too close to training
+            self.current_l2 = max(1e-6, self.current_l2 * 0.8)
+            
+        # Log current L2 value
+        trainer.logger.log_metrics({'l2_regularization': self.current_l2})
 
