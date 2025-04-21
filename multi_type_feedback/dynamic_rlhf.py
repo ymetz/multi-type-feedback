@@ -263,6 +263,8 @@ class DynamicRLHF:
     def train_iteration(self, sampling_strategy: str = "random"):
         """Run one iteration of the training loop."""
         # Collect trajectories
+        """Run one iteration of the training loop."""
+        # Collect trajectories
         trajectories, initial_states = self.collect_trajectories(
             self.n_feedback_per_iteration
         )
@@ -277,30 +279,13 @@ class DynamicRLHF:
                 trajectories, initial_states
             )
 
-        print("WANTING TO UPDATE", feedback)
+        print("UPDATING FEEDBACK BUFFERS", feedback, feedback_counts)
 
         # Update feedback buffers
         self.update_feedback_buffers(feedback)
 
-        # Ensure buffer data is in correct format before creating dataset
-        for feedback_type, buffer in self.feedback_buffers.items():
-            if buffer:
-                self.feedback_buffers[feedback_type] = [
-                    (obs, label, weight) 
-                    for obs, label, weight in buffer
-                ]
-
         # Train reward models
         reward_metrics = self.train_reward_models()
-
-        # Calculate mean uncertainties for logging
-        mean_uncertainties = defaultdict(list)
-        if sampling_strategy == "uncertainty":
-            for f in feedback:
-                if "selected_uncertainty" in f:
-                    mean_uncertainties["selected_uncertainty"].append(
-                        f["selected_uncertainty"]
-                    )
 
         # Train RL agent with updated reward models
         self.train_rl_agent()
@@ -308,23 +293,6 @@ class DynamicRLHF:
         # Log metrics
         if self.enable_wandb:
             metrics = {"feedback_counts": feedback_counts, **reward_metrics}
-
-            # Add uncertainty metrics if available
-            if mean_uncertainties:
-                metrics.update(
-                    {
-                        "mean_selected_uncertainty": np.mean(
-                            mean_uncertainties["selected_uncertainty"]
-                        ),
-                        "max_selected_uncertainty": np.max(
-                            mean_uncertainties["selected_uncertainty"]
-                        ),
-                        "min_selected_uncertainty": np.min(
-                            mean_uncertainties["selected_uncertainty"]
-                        ),
-                    }
-                )
-
             wandb.log(metrics)
 
         return feedback_counts, reward_metrics
@@ -470,41 +438,6 @@ class DynamicRLHF:
             final_reward = sum(rewards) / len(rewards)
 
         return final_reward
-
-    def train_iteration(self, sampling_strategy: str = "random"):
-        """Run one iteration of the training loop."""
-        # Collect trajectories
-        trajectories, initial_states = self.collect_trajectories(
-            self.n_feedback_per_iteration
-        )
-
-        # Get feedback based on sampling strategy
-        if sampling_strategy == "random":
-            feedback, feedback_counts = self.sample_feedback_random(
-                trajectories, initial_states
-            )
-        else:  # uncertainty
-            feedback, feedback_counts = self.sample_feedback_uncertainty(
-                trajectories, initial_states
-            )
-
-        print("UPDATING FEEDBACK BUFFERS", feedback, feedback_counts)
-
-        # Update feedback buffers
-        self.update_feedback_buffers(feedback)
-
-        # Train reward models
-        reward_metrics = self.train_reward_models()
-
-        # Train RL agent with updated reward models
-        self.train_rl_agent()
-
-        # Log metrics
-        if self.enable_wandb:
-            metrics = {"feedback_counts": feedback_counts, **reward_metrics}
-            wandb.log(metrics)
-
-        return feedback_counts, reward_metrics
 
     def train_rl_agent(self):
         """Train RL agent using current reward models."""
