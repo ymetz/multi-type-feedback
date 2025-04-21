@@ -7,32 +7,24 @@ import warnings
 from collections import OrderedDict
 from pathlib import Path
 from pprint import pprint
-import procgen
-
-# metaworld support
-import metaworld
-from train_baselines.utils import make_vec_metaworld_env
-
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import gymnasium as gym
 import numpy as np
 import optuna
+import procgen
 import torch as th
 import yaml
 from gymnasium import spaces
 from huggingface_sb3 import EnvironmentName
+from imitation.rewards.reward_function import RewardFn
+from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
 from optuna.pruners import BasePruner, MedianPruner, NopPruner, SuccessiveHalvingPruner
 from optuna.samplers import BaseSampler, RandomSampler, TPESampler
 from optuna.study import MaxTrialsCallback
 from optuna.trial import TrialState
 from optuna.visualization import plot_optimization_history, plot_param_importances
 from sb3_contrib.common.vec_env import AsyncEval
-
-from imitation.rewards.reward_function import RewardFn
-from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
-from wandb.integration.sb3 import WandbCallback
-
 
 # For using HER with GoalEnv
 from stable_baselines3 import HerReplayBuffer
@@ -59,20 +51,27 @@ from stable_baselines3.common.vec_env import (
     DummyVecEnv,
     SubprocVecEnv,
     VecEnv,
+    VecExtractDictObs,
     VecFrameStack,
+    VecMonitor,
     VecNormalize,
     VecTransposeImage,
     is_vecenv_wrapped,
-    VecMonitor,
-    VecExtractDictObs,
 )
 
 # For custom activation fn
 from torch import nn as nn
+from wandb.integration.sb3 import WandbCallback
+
+import train_baselines.impala_policy as impala_policy
 
 # Register custom envs
 import train_baselines.import_envs  # noqa: F401
-from train_baselines.callbacks import SaveVecNormalizeCallback, TrialEvalCallback, MetaworldCompatibleEvalCallback
+from train_baselines.callbacks import (
+    MetaworldCompatibleEvalCallback,
+    SaveVecNormalizeCallback,
+    TrialEvalCallback,
+)
 from train_baselines.hyperparams_opt import HYPERPARAMS_SAMPLER
 from train_baselines.utils import (
     ALGOS,
@@ -81,8 +80,8 @@ from train_baselines.utils import (
     get_latest_run_id,
     get_wrapper_class,
     linear_schedule,
+    make_vec_metaworld_env,
 )
-import train_baselines.impala_policy as impala_policy
 
 
 class ExperimentManager:
@@ -271,6 +270,29 @@ class ExperimentManager:
 
         self._save_config(saved_hyperparams)
         return model, saved_hyperparams
+
+    def get_hyperparam_config_for_algo(
+        self,
+    ) -> Optional[Tuple[BaseAlgorithm, Dict[str, Any]]]:
+        """
+        Read hyperparameters, pre-process them (create schedules, wrappers, callbacks, action noise objects)
+        create the environment and possibly the model.
+
+        :return: the initialized RL model
+        """
+        unprocessed_hyperparams, saved_hyperparams = self.read_hyperparameters()
+        (
+            hyperparams,
+            self.env_wrapper,
+            self.callbacks,
+            self.vec_env_wrapper,
+        ) = self._preprocess_hyperparams(unprocessed_hyperparams)
+
+        self.create_log_folder()
+        self.create_callbacks()
+
+        self._save_config(saved_hyperparams)
+        return hyperparams
 
     def learn(self, model: BaseAlgorithm) -> None:
         """

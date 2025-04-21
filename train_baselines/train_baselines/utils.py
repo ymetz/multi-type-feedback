@@ -6,12 +6,15 @@ from copy import deepcopy
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import gymnasium as gym
-from gymnasium.wrappers import TimeLimit
+
+# metaworld compatability
+import metaworld
+import metaworld.envs.mujoco.env_dict as _envs_dict
 import stable_baselines3 as sb3  # noqa: F401
 import torch as th  # noqa: F401
 import yaml
-import os
 from gymnasium import spaces
+from gymnasium.wrappers import TimeLimit
 from huggingface_hub import HfApi
 from huggingface_sb3 import EnvironmentName, ModelName
 from sb3_contrib import ARS, QRDQN, TQC, TRPO, RecurrentPPO
@@ -30,13 +33,10 @@ from stable_baselines3.common.vec_env import (
     VecNormalize,
 )
 
-# metaworld compatability
-import metaworld
-import metaworld.envs.mujoco.env_dict as _envs_dict
-from train_baselines.wrappers import MetaWorldMonitor
-
 # For custom activation fn
 from torch import nn as nn
+
+from train_baselines.wrappers import MetaWorldMonitor
 
 ALGOS: Dict[str, Type[BaseAlgorithm]] = {
     "a2c": A2C,

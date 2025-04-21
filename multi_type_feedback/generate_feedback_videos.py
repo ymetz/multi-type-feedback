@@ -7,19 +7,15 @@ import re
 from pathlib import Path
 from typing import List, Type, Union
 
-# necessary to import ale_py/procgen, otherwise it will not be found
-import ale_py
 import cv2
 import gymnasium as gym
 import numpy as np
 import pandas as pd
-import procgen
 import torch
 from gymnasium.wrappers.stateful_observation import FrameStackObservation
 from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper
 from procgen import ProcgenGym3Env
-from train_baselines.wrappers import Gym3ToGymnasium
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import AtariWrapper
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
@@ -27,6 +23,8 @@ from torch import Tensor
 
 from multi_type_feedback.datatypes import FeedbackDataset
 from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
+from multi_type_feedback.utils import TrainingUtils  # noqa: F401
+from train_baselines.wrappers import Gym3ToGymnasium
 
 
 def predict_expert_value(

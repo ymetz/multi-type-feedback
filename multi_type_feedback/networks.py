@@ -7,11 +7,10 @@ import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn.functional as F
+from masksembles.torch import Masksembles1D, Masksembles2D
 from pytorch_lightning import LightningModule
 from torch import Tensor, nn
-from torch.nn.functional import log_softmax, mse_loss, nll_loss
-
-from masksembles.torch import Masksembles1D, Masksembles2D
+from torch.nn.functional import mse_loss, nll_loss
 
 # Loss functions
 single_reward_loss = nn.MSELoss()
@@ -98,7 +97,7 @@ class LightningNetwork(LightningModule):
         action_hidden_dim: int,  # not used here
         loss_function: Callable[[LightningModule, Tensor], Tensor],
         learning_rate: float,
-        cnn_channels: list[int] = None, # not used, just for compatability
+        cnn_channels: list[int] = None,  # not used, just for compatability
         activation_function: Type[nn.Module] = nn.ReLU,
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,
@@ -190,7 +189,7 @@ class LightningNetwork(LightningModule):
     def training_step(self, batch: Tensor):
         """Compute the loss for training."""
         loss = self.loss_function(self, batch)
-        self.log("train_loss", loss, prog_bar=True)
+        self.log("train_loss", loss, on_epoch=True, prog_bar=True)
 
         return loss
 

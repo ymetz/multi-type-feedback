@@ -1,4 +1,3 @@
-import argparse
 import bisect
 import itertools
 import os
@@ -7,34 +6,24 @@ import random
 import re
 import tempfile
 import warnings
-from itertools import chain
 from pathlib import Path
-from typing import Iterator, List, Tuple, Type, Union
+from typing import List, Type, Union
 
 # necessary to import ale_py/procgen, otherwise it will not be found
-import ale_py
 import gymnasium as gym
 import numpy as np
-import pandas as pd
-import procgen
 import torch
-from gymnasium.wrappers.stateful_observation import FrameStackObservation
-from gymnasium.wrappers.transform_observation import TransformObservation
-from minigrid.wrappers import FlatObsWrapper
-from numpy.typing import NDArray
 from sklearn.cluster import MiniBatchKMeans
 from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
-from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
-from multi_type_feedback.utils import TrainingUtils, get_project_root
+
+from multi_type_feedback.utils import TrainingUtils
 
 try:
     from train_baselines.benchmark_evals import collect_results
 except ImportError:
     collect_results = None
-
 
 
 def predict_expert_value(
@@ -285,7 +274,7 @@ def get_preference_pairs(segments, opt_gaps, n_feedback, tolerance=0.25):
     return preferences
 
 
-def get_preference_pairs_descript(clusters, rews, n_feedback, tolerance=0.25):
+def get_preference_pairs_descript(clusters, rews, n_feedback, tolerance=0.01):
     all_pairs = list(enumerate(itertools.combinations(range(len(clusters)), 2)))
     random.shuffle(all_pairs)
 
@@ -305,7 +294,7 @@ def get_preference_pairs_descript(clusters, rews, n_feedback, tolerance=0.25):
                 break
 
     if len(preferences) < n_feedback:
-        raise ValueError(
+        print(
             f"Could only generate {len(preferences)} preferences with the given tolerance. Increase the number of segments, decrease the tolerance, or decrease n_feedback."
         )
 
@@ -420,7 +409,9 @@ def generate_feedback(
 
         if model_file != "random":
             # replace the _1 index by other possible indices, this only works if all models have exactly the same number of checkpoints
-            model_path = checkpoints_dir.replace("_1", f"_{random.choice(possible_checkpoint_indices)}")
+            model_path = checkpoints_dir.replace(
+                "_1", f"_{random.choice(possible_checkpoint_indices)}"
+            )
             model = model_class.load(
                 os.path.join(model_path, model_file),
                 custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0},
@@ -668,7 +659,10 @@ def main():
         "--top-n-models", type=int, default=3, help="Top N models to use"
     )
     parser.add_argument(
-        "--expert-model-base-path", type=str, default="train_baselines/gt_agents", help="Expert model base path"
+        "--expert-model-base-path",
+        type=str,
+        default="train_baselines/gt_agents",
+        help="Expert model base path",
     )
     args = parser.parse_args()
 
@@ -676,25 +670,29 @@ def main():
     device = TrainingUtils.get_device()
 
     feedback_id, _ = TrainingUtils.get_model_ids(args)
-    feedback_path = (
-        Path(args.save_folder) / f"{feedback_id}.pkl"
-    )
+    feedback_path = Path(args.save_folder) / f"{feedback_id}.pkl"
 
     environment = TrainingUtils.setup_environment(args.environment, args.seed)
-    
+
     # try to load most recent benchmark scores for expert models, works if experts were created via train_baselines
     # scripts
     if collect_results is not None:
         try:
-            collect_results("../"+args.expert_model_base_path.replace("\\","/").split("/")[-1], [args.algorithm], str(get_project_root() / args.expert_model_base_path))
+            collect_results(
+                args.expert_model_base_path.replace("\\", "/"),
+                [args.algorithm],
+                str(args.expert_model_base_path),
+            )
         except:
-            warnings.warn("""No expert benchmark results could be found. Only random policies are available. Make sure to train expert models with train_baselines,
-                          or change the path. Experts need to be trained with an SB3 MonitorWrapper and EvalCallback to retreive benchmark score""")
-    
+            warnings.warn(
+                """No expert benchmark results could be found. Only random policies are available. Make sure to train expert models with train_baselines,
+                          or change the path. Experts need to be trained with an SB3 MonitorWrapper and EvalCallback to retreive benchmark score"""
+            )
+
     expert_models = TrainingUtils.load_expert_models(
         args.environment,
         args.algorithm,
-        str(get_project_root() / args.expert_model_base_path),
+        str(args.expert_model_base_path),
         environment,
         args.top_n_models,
     )
@@ -704,7 +702,7 @@ def main():
         expert_models=expert_models,
         environment=environment,
         environment_name=args.environment,
-        checkpoints_path=str(get_project_root() / args.expert_model_base_path),
+        checkpoints_path=str(args.expert_model_base_path),
         total_steps_factor=args.n_steps_factor,
         n_feedback=args.n_feedback,
         segment_len=args.segment_len,

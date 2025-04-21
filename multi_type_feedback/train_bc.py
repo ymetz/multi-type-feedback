@@ -1,26 +1,18 @@
 """Module for training a behavioral cloning agent using demonstrations."""
 
-import argparse
 import os
 import pickle
-from os import path
 from pathlib import Path
 
 # register custom envs
-import ale_py
 import gymnasium as gym
-import highway_env
-import minigrid
 import numpy as np
-import torch
+import wandb
 from imitation.algorithms import bc
 from imitation.data import rollout
 from imitation.data.types import Trajectory
-from train_baselines.utils import ppo_make_metaworld_env
 from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.utils import set_random_seed
 
-import wandb
 from multi_type_feedback.utils import TrainingUtils
 
 
@@ -71,8 +63,8 @@ def load_demonstrations(
             )
 
         if len(acts) <= 1:
-            continue  # very short trajectory does not work
             print("SKIPPING VERY SHORT TRAJECTORY")
+            continue  # very short trajectory does not work
 
         observations.append(obs)
 
@@ -156,7 +148,7 @@ def main():
         action_space=environment.action_space,
         demonstrations=trajectories,  # We'll manually pass transitions
         batch_size=args.batch_size,
-        rng=rng,
+        rng=np.random.default_rng(args.seed),
         device="cuda:0",
         # learning_rate=args.learning_rate,
     )
@@ -175,7 +167,7 @@ def main():
         )
 
     # Save the trained policy
-    save_path = os.path.join("agents", f"BC_{MODEL_ID}")
+    save_path = os.path.join("agents", f"BC_{model_id}")
     os.makedirs(save_path, exist_ok=True)
     bc_trainer.policy.save(os.path.join(save_path, "bc_policy"))
 

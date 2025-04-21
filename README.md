@@ -19,7 +19,7 @@ This repository contains code for training and evaluating reinforcement learning
 Trains PPO agents on various environments:
 
 ```bash
-python train_baselines/train.py --algo ppo --env <environment> --verbose 0 --save-freq <frequency> --seed <seed> --gym-packages procgen ale_py --log-folder train_baselines/gt_agents
+python train_baselines/train.py --algo ppo --env <environment> --verbose 0 --save-freq <frequency> --seed <seed> --gym-packages procgen ale_py --log-folder gt_agents
 ```
 
 Environments: Ant-v5, Swimmer-v5, HalfCheetah-v5, Hopper-v5, Atari, Procgen, ...
@@ -33,7 +33,7 @@ Generates feedback for trained agents:
 python multi_type_feedback/generate_feedback.py --algorithm ppo --environment <env> --seed <seed> --n-feedback 10000 --save-folder feedback
 ```
 
-Note: The script looks in the gt_agents folder for trained agents. Abd expects that the `python train_baselines/benchmark_envs.py` script has been run to generate the evaluation scores.
+Note: The script looks in the gt_agents folder for trained agents. Abd expects that the `python train_baselines/train_baselines/benchmark.py` script has been run to generate the evaluation scores.
 
 ### 3. Reward Model Training (`multi_type_feedback/train_reward_model.py`)
 
@@ -76,7 +76,7 @@ For detailed parameters and options, refer to the individual script files.
 
 ## Additional files for figure generation and plotting
 
-- `train_baselines/benchmark_envs.py`: Benchmark trained agents on various environments
+- `train_baselines/benchmark.py`: Benchmark trained agents on various environments
 - `multi_type_feedback/Analyze_Generated_Feedback.ipynb`: Jupyter notebook for analyzing generated feedback
 - `multi_type_feedback/Analyze_Reward_Model_Predictions.ipynb`: Jupyter notebook for analyzing reward models
 - `multi_type_feedback/Generate_RL_result_curves.ipynb`: Jupyter notebook for generating RL result curves

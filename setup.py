@@ -21,7 +21,8 @@ setup(
     install_requires=[
         "torch",
         "torchvision",
-        "gymnasium==1.0.0",
+        "swig",
+        "gymnasium[box2d]==1.0.0",
         "lightning",
         "minigrid",
         "mujoco",
@@ -36,7 +37,9 @@ setup(
         "stable-baselines3",
         f"imitation @ {get_abs_path('dependencies/imitation')}",
         f"masksembles @ {get_abs_path('dependencies/masksembles')}",
-        "train_baselines" @ {get_abs_path('train_baselines')}", 
+        f"train_baselines @ {get_abs_path('train_baselines')}",
     ],
+    # install requires for tests
+    tests_require=["pytest", "black", "ruff", "pytest-cov", "mypy"],
     python_requires=">=3.9",
 )

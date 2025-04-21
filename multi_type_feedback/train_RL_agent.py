@@ -1,37 +1,19 @@
 """Module for training an RL agent."""
 
-import argparse
 import os
-import sys
 import typing
-from os import path
-from pathlib import Path
 
 # register custom envs
-import ale_py
-import gymnasium as gym
-import highway_env
-import minigrid
 import numpy
-import numpy as np
-import pytorch_lightning as pl
 import torch
 from imitation.rewards.reward_function import RewardFn
-from train_baselines.exp_manager import ExperimentManager
-from train_baselines.utils import ALGOS, StoreDict
-from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.utils import set_random_seed
 
-import wandb
-from multi_type_feedback.datatypes import FeedbackType
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
-    calculate_pairwise_loss,
-    calculate_single_reward_loss,
 )
 from multi_type_feedback.utils import TrainingUtils
-from wandb.integration.sb3 import WandbCallback
+from train_baselines.exp_manager import ExperimentManager
 
 
 class CustomReward(RewardFn):

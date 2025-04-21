@@ -1,10 +1,12 @@
+import os
 import pickle
+import random
 from typing import List, Tuple, Union
 
 import numpy as np
 import torch
 from numpy.typing import NDArray
-from scipy.stats import truncnorm, uniform
+from scipy.stats import truncnorm
 from torch.utils.data import Dataset
 
 from multi_type_feedback.datatypes import FeedbackData, FeedbackType, SegmentT
@@ -87,6 +89,7 @@ class FeedbackDataset(Dataset):
         segment_len: int = 50,
         env=None,
         seed: int = 1234,
+        discount_factor: float = 0.99,
     ):
         """Initialize dataset."""
         print("Loading dataset...")
@@ -313,7 +316,6 @@ class FeedbackDataset(Dataset):
                 [e * -1 for e in feedback_data["opt_gaps"]]
             ), np.max([e * -1 for e in feedback_data["opt_gaps"]])
             rew_diff = np.abs(rews_max - rews_min)
-            gamma = discount_factors[env_name]
 
             flipped = 0
             for comp in feedback_data["corrections"]:
@@ -347,10 +349,10 @@ class FeedbackDataset(Dataset):
                 # add noise and recompute preferences
                 if noise_level > 0.0:
                     rews1 = discounted_sum_numpy(
-                        np.array([p[2] for p in comp[0]]), gamma
+                        np.array([p[2] for p in comp[0]]), discount_factor
                     )
                     rews2 = discounted_sum_numpy(
-                        np.array([p[2] for p in comp[1]]), gamma
+                        np.array([p[2] for p in comp[1]]), discount_factor
                     )
 
                     rew1 = truncated_gaussian_vectorized(
@@ -376,7 +378,6 @@ class FeedbackDataset(Dataset):
                     self.targets.append(((obs, actions), (obs2, actions2)))
                     self.preds.append(1)
         elif feedback_type == "descriptive":
-
             cluster_rews = np.array([cr[2] for cr in feedback_data["description"]])
             cluster_rew_min, cluster_rew_max = cluster_rews.min(), cluster_rews.max()
             cluster_rew_diff = np.abs(cluster_rew_max - cluster_rew_min)
@@ -400,7 +401,6 @@ class FeedbackDataset(Dataset):
                 else:
                     self.preds.append(cluster_representative[2])
         elif feedback_type == "descriptive_preference":
-
             cluster_rews = np.array([cr[2] for cr in feedback_data["description"]])
             cluster_rew_min, cluster_rew_max = cluster_rews.min(), cluster_rews.max()
             cluster_rew_diff = np.abs(cluster_rew_max - cluster_rew_min)
@@ -486,7 +486,7 @@ class FeedbackDataset(Dataset):
 
 
 class LoadFeedbackDataset(FeedbackDataset):
-    """ Load feedback dataset from file. """
+    """Load feedback dataset from file."""
 
     def __init__(
         self,
@@ -498,6 +498,7 @@ class LoadFeedbackDataset(FeedbackDataset):
         segment_len: int = 50,
         env=None,
         seed: int = 1234,
+        discount_factor: float = 0.99,
     ):
 
         with open(dataset_path, "rb") as feedback_file:
@@ -512,7 +513,22 @@ class LoadFeedbackDataset(FeedbackDataset):
             segment_len,
             env,
             seed,
+            discount_factor,
         )
+
+
+class BufferDataset(Dataset):
+
+    def __init__(self, buffer):
+        self.buffer = buffer
+
+    def __len__(self):
+        """Return size of dataset."""
+        return len(self.buffer)
+
+    def __getitem__(self, index):
+        """Return item with given index."""
+        return self.buffer[index]
 
 
 FEEDBACK_TYPE_TO_KEY = {
@@ -521,8 +537,9 @@ FEEDBACK_TYPE_TO_KEY = {
     "demonstrative": "demos",
     "corrective": "corrections",
     "descriptive": "description",
-    "descriptive_preference": "description_preference"
+    "descriptive_preference": "description_preference",
 }
+
 
 def load_flat_buffer_into_feedback_dataset(
     feedback_buffer: List[SegmentT], feedback_type: FeedbackType

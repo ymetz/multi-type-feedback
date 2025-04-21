@@ -1,19 +1,13 @@
 #!/bin/bash
 
 #envs=("HalfCheetah-v5" "Walker2d-v5" "Swimmer-v5")
-#envs=("Ant-v5" "Hopper-v5" "Humanoid-v5")
-#envs=("metaworld-pick-place-v2" "metaworld-button-press-v2")
 #envs=("metaworld-sweep-into-v2" "metaworld-pick-place-v2" "metaworld-button-press-v2")
-#envs=("highway-fast-v0" "roundabout-v0")    # ("merge-v0" "highway-fast-v0" "roundabout-v0")
-#envs=("highway-fast-v0")
-envs=("Humanoid-v5")
-#seeds=(1789 1687123 12 912391 330)
-seeds=(1789 1687123 12)
-#feedback_types=("evaluative" "comparative" "demonstrative" "corrective" "descriptive" "descriptive_preference")
-feedback_types=("evaluative" "comparative" "corrective" "demonstrative" "descriptive" "descriptive_preference")
-#feedback_types=("corrective")
+
+envs=("LunarLander-v3" "Acrobat-v1" "MountainCar-v0")
+seeds=(1789 1687123 12 912391 330)
 noise_levels=(0.1 0.25 0.5 0.75)
 n_feedbacks=(-1)
+feedback_types=("evaluative" "comparative" "demonstrative" "corrective" "descriptive" "descriptive_preference")
 #n_feedbacks=(5000 2500 1250 750)
 
 
@@ -66,7 +60,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env feedback noise n_feedback <<< $combination
-        echo "python mutli-type-feedback/train_RL_agent.py --algorithm sac --environment $env --feedback-type $feedback --seed $seed --n-feedback $n_feedback --noise-level $noise &" >> $sbatch_script
+        echo "python multi_type_feedback/train_RL_agent.py --algorithm sac --environment $env --feedback-type $feedback --seed $seed --n-feedback $n_feedback --noise-level $noise &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

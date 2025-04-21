@@ -1,11 +1,11 @@
-from typing import Any, ClassVar, Dict, Optional, SupportsFloat, Tuple, Union, List
+import csv
+import json
+import os
+import time
+from typing import Any, ClassVar, Dict, List, Optional, SupportsFloat, Tuple, Union
 
 import gymnasium as gym
 import numpy as np
-import time
-import os
-import csv
-import json
 from gym3.interop import _vt2space
 from gym3.types import multimap
 from gymnasium import spaces
@@ -13,7 +13,7 @@ from gymnasium.core import ObsType
 from sb3_contrib.common.wrappers import (
     TimeFeatureWrapper,
 )  # noqa: F401 (backward compatibility)
-from stable_baselines3.common.type_aliases import GymResetReturn, GymStepReturn, GymObs
+from stable_baselines3.common.type_aliases import GymObs, GymResetReturn, GymStepReturn
 
 
 class TruncatedOnSuccessWrapper(gym.Wrapper):

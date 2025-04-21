@@ -7,25 +7,23 @@ import re
 from pathlib import Path
 from typing import List, Type, Union
 
-# necessary to import ale_py/procgen, otherwise it will not be found
-import ale_py
 import gymnasium as gym
-import highway_env
 import numpy as np
 import pandas as pd
-import procgen
 import torch
 from gymnasium.wrappers.stateful_observation import FrameStackObservation
 from gymnasium.wrappers.transform_observation import TransformObservation
 from minigrid.wrappers import FlatObsWrapper
-from procgen import ProcgenGym3Env
-from train_baselines.utils import ppo_make_metaworld_env
-from train_baselines.wrappers import Gym3ToGymnasium
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-from torch import Tensor
+
 from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
+from multi_type_feedback.utils import (
+    TrainingUtils,  # noqa: F401, import for env loading
+)
+from train_baselines.utils import ppo_make_metaworld_env
+from train_baselines.wrappers import Gym3ToGymnasium
 
 
 def one_hot_vector(k, max_val):
@@ -329,6 +327,8 @@ def main():
 
     if "procgen" in args.environment:
         _, short_name, _ = args.environment.split("-")
+        from procgen import ProcgenGym3Env
+
         environment = Gym3ToGymnasium(ProcgenGym3Env(num=1, env_name=short_name))
         environment = SaveResetEnvWrapper(
             TransformObservation(

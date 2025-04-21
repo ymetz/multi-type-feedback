@@ -1,33 +1,18 @@
 """Module for training a reward model from the generated feedback."""
 
-import argparse
 import math
 import os
-import pickle
-import random
-from os import path
-from pathlib import Path
-from random import randint, randrange
-from typing import List, Tuple, Union
+from typing import Union
 
-import ale_py
-import gymnasium as gym
-import numpy as np
 import torch
-from gymnasium.wrappers.stateful_observation import FrameStackObservation
-from gymnasium.wrappers.transform_observation import TransformObservation
-from minigrid.wrappers import FlatObsWrapper
-from numpy.typing import NDArray
+import wandb
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
-from train_baselines.wrappers import Gym3ToGymnasium
-from stable_baselines3.common.atari_wrappers import AtariWrapper
-from stable_baselines3.common.vec_env import VecExtractDictObs
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, random_split
 
-import wandb
+from multi_type_feedback.datatypes import FeedbackType
 from multi_type_feedback.feedback_dataset import FeedbackDataset, LoadFeedbackDataset
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
@@ -35,7 +20,6 @@ from multi_type_feedback.networks import (
     calculate_pairwise_loss,
     calculate_single_reward_loss,
 )
-from multi_type_feedback.datatypes import FeedbackType
 from multi_type_feedback.utils import TrainingUtils
 
 # for convenice sake, todo: make dynamic in the future
@@ -160,10 +144,16 @@ def main():
         "--no-loading-bar", action="store_true", help="Disable loading bar"
     )
     parser.add_argument(
-        "--feedback-folder", type=str, default="feedback", help="Folder to load feedback from"
+        "--feedback-folder",
+        type=str,
+        default="feedback",
+        help="Folder to load feedback from",
     )
     parser.add_argument(
-        "--save-folder", type=str, default="reward_models", help="Save folder for trained reward models"
+        "--save-folder",
+        type=str,
+        default="reward_models",
+        help="Save folder for trained reward models",
     )
     args = parser.parse_args()
 
@@ -211,6 +201,9 @@ def main():
         env=environment if args.feedback_type == "demonstrative" else None,
         env_name=args.environment,
         seed=args.seed,
+        discount_factor=discount_factors.get(
+            args.environment, 0.99
+        ),  # adapt for custom envs
     )
 
     train_reward_model(

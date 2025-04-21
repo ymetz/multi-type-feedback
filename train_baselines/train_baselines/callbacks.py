@@ -2,20 +2,24 @@ import os
 import tempfile
 import time
 import warnings
-import numpy as np
 from copy import deepcopy
 from functools import wraps
 from threading import Thread
-from typing import Optional, Type, Union, Dict, Any
+from typing import Any, Dict, List, Optional, Type, Union
 
-import optuna
 import gymnasium as gym
+import numpy as np
+import optuna
 from sb3_contrib import TQC
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, EventCallback
-from stable_baselines3.common.logger import TensorBoardOutputFormat
-from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.logger import TensorBoardOutputFormat
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    VecEnv,
+    sync_envs_normalization,
+)
 
 
 class TrialEvalCallback(EvalCallback):

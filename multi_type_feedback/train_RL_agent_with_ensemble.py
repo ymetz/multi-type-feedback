@@ -1,28 +1,20 @@
 """Module for training an RL agent with weighted ensemble of reward functions."""
 
-import argparse
 import os
-import sys
 import typing
-from os import path
-from pathlib import Path
-import gymnasium as gym
-import numpy
-import pytorch_lightning as pl
-import torch
-from imitation.rewards.reward_function import RewardFn
-from train_baselines.exp_manager import ExperimentManager
-from train_baselines.utils import ALGOS, StoreDict
-from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.utils import set_random_seed
-from multi_type_feedback.utils import TrainingUtils
 
+import numpy
+import torch
 import wandb
-from multi_type_feedback.datatypes import FeedbackType
+from imitation.rewards.reward_function import RewardFn
+from stable_baselines3.common.utils import set_random_seed
+
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
 )
+from multi_type_feedback.utils import TrainingUtils
+from train_baselines.exp_manager import ExperimentManager
 
 
 class CustomReward(RewardFn):
@@ -101,16 +93,18 @@ class CustomReward(RewardFn):
             rewards = torch.empty(len(self.reward_models), state.shape[0]).to(
                 self.device
             )
-            state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(
-                0
-            )
+            state = torch.as_tensor(
+                state, device=self.device, dtype=torch.float
+            ).unsqueeze(0)
             actions = torch.as_tensor(
                 actions, device=self.device, dtype=torch.float
             ).unsqueeze(0)
 
             for model_index, reward_model in enumerate(self.reward_models):
                 if reward_model.ensemble_count > 1:
-                    model_state = state.expand(reward_model.ensemble_count, *state.shape[1:])
+                    model_state = state.expand(
+                        reward_model.ensemble_count, *state.shape[1:]
+                    )
                     model_actions = actions.expand(
                         reward_model.ensemble_count, *actions.shape[1:]
                     )
