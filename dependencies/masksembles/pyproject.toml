@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "masksembles"
+version = "1.1"
+description = "Official implementation of Masksembles approach"
+readme = "README.md"
+authors = [
+    {name = "Nikita Durasov", email = "yassnda@gmail.com"}
+]
+urls = {Homepage = "https://github.com/nikitadurasov/masksembles"}
+
+[tool.setuptools.packages.find]
+# This replaces setuptools.find_packages()
+where = ["."]
+
+[tool.flake8]
+max-line-length = 120

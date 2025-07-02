@@ -6,12 +6,11 @@ from copy import deepcopy
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import gymnasium as gym
-from gymnasium.wrappers import TimeLimit
 import stable_baselines3 as sb3  # noqa: F401
 import torch as th  # noqa: F401
 import yaml
-import os
 from gymnasium import spaces
+from gymnasium.wrappers import TimeLimit
 from huggingface_hub import HfApi
 from huggingface_sb3 import EnvironmentName, ModelName
 from sb3_contrib import ARS, QRDQN, TQC, TRPO, RecurrentPPO
@@ -29,11 +28,6 @@ from stable_baselines3.common.vec_env import (
     VecFrameStack,
     VecNormalize,
 )
-
-# metaworld compatability
-import metaworld
-import metaworld.envs.mujoco.env_dict as _envs_dict
-from train_baselines.wrappers import MetaWorldMonitor
 
 # For custom activation fn
 from torch import nn as nn
@@ -525,20 +519,6 @@ def get_model_path(
 
 
 # ======= Metaworld compabtability ========
-
-
-def ppo_make_metaworld_env(env_id, seed):
-    env_name = env_id.replace("metaworld-", "")
-    env_cls = _envs_dict.ALL_V2_ENVIRONMENTS[env_name]
-    env = env_cls()
-
-    env._freeze_rand_vec = False
-    env._set_task_called = True
-    env.seed(seed)
-
-    return TimeLimit(env, 500)
-
-
 def make_vec_metaworld_env(
     env_id: str,
     n_envs: int = 1,
@@ -572,13 +552,17 @@ def make_vec_metaworld_env(
     :param monitor_kwargs: Keyword arguments to pass to the ``Monitor`` class constructor.
     :return: The wrapped environment
     """
+    import metaworld  # noqa: F401 - for registration of MetaWorld environments
+
+    from train_baselines.wrappers import MetaWorldMonitor
+
     env_kwargs = {} if env_kwargs is None else env_kwargs
     vec_env_kwargs = {} if vec_env_kwargs is None else vec_env_kwargs
     monitor_kwargs = {} if monitor_kwargs is None else monitor_kwargs
 
     def make_env(rank):
         def _init():
-            env = ppo_make_metaworld_env(env_id, seed + rank)
+            env = gym.make("Meta-World/MT1", env_name=env_id, seed=seed, **env_kwargs)
             if seed is not None:
                 env.action_space.seed(seed + rank)
             # Wrap the env in a Monitor wrapper

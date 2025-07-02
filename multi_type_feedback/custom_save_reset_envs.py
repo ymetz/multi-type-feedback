@@ -5,7 +5,14 @@ import numpy as np
     For a list of supported environments, see the CUSTOM_ENVS dict at the bottom of the file
 """
 
-from gymnasium.envs.box2d.lunar_lander import VIEWPORT_W, VIEWPORT_H, SCALE, FPS, LEG_DOWN
+from gymnasium.envs.box2d.lunar_lander import (
+    FPS,
+    LEG_DOWN,
+    SCALE,
+    VIEWPORT_H,
+    VIEWPORT_W,
+)
+
 
 class LunarLanderSaveLoadWrapper(gym.Wrapper):
     """
@@ -13,10 +20,18 @@ class LunarLanderSaveLoadWrapper(gym.Wrapper):
     It captures the dynamic state of the lander and its legs, and restores them
     by first calling reset() (to reinitialize the Box2D world) and then setting the state.
     """
+
     def __init__(self, env):
         super().__init__(env)
         # Dynamically import constants (Box2D-related) only when needed.
-        from gymnasium.envs.box2d.lunar_lander import VIEWPORT_W, VIEWPORT_H, SCALE, FPS, LEG_DOWN
+        from gymnasium.envs.box2d.lunar_lander import (
+            FPS,
+            LEG_DOWN,
+            SCALE,
+            VIEWPORT_H,
+            VIEWPORT_W,
+        )
+
         self.VIEWPORT_W = VIEWPORT_W
         self.VIEWPORT_H = VIEWPORT_H
         self.SCALE = SCALE
@@ -34,7 +49,10 @@ class LunarLanderSaveLoadWrapper(gym.Wrapper):
             raise ValueError("Lander does not exist. Cannot save state.")
         state = {
             "lander": {
-                "position": (self.unwrapped.lander.position.x, self.unwrapped.lander.position.y),
+                "position": (
+                    self.unwrapped.lander.position.x,
+                    self.unwrapped.lander.position.y,
+                ),
                 "angle": self.unwrapped.lander.angle,
                 "linearVelocity": (
                     self.unwrapped.lander.linearVelocity.x,
@@ -52,7 +70,9 @@ class LunarLanderSaveLoadWrapper(gym.Wrapper):
             ],
             # Save wind indices if wind is enabled.
             "wind_idx": self.unwrapped.wind_idx if self.unwrapped.enable_wind else None,
-            "torque_idx": self.unwrapped.torque_idx if self.unwrapped.enable_wind else None,
+            "torque_idx": (
+                self.unwrapped.torque_idx if self.unwrapped.enable_wind else None
+            ),
             "prev_shaping": self.unwrapped.prev_shaping,
         }
         return state
@@ -84,7 +104,9 @@ class LunarLanderSaveLoadWrapper(gym.Wrapper):
 
         if self.unwrapped.enable_wind:
             self.unwrapped.wind_idx = state.get("wind_idx", self.unwrapped.wind_idx)
-            self.unwrapped.torque_idx = state.get("torque_idx", self.unwrapped.torque_idx)
+            self.unwrapped.torque_idx = state.get(
+                "torque_idx", self.unwrapped.torque_idx
+            )
         self.unwrapped.prev_shaping = state.get("prev_shaping", None)
 
         return self.get_obs()
@@ -96,22 +118,24 @@ class LunarLanderSaveLoadWrapper(gym.Wrapper):
         """
         pos = self.unwrapped.lander.position
         vel = self.unwrapped.lander.linearVelocity
-        obs = np.array([
-            (pos.x - self.VIEWPORT_W / self.SCALE / 2) / (self.VIEWPORT_W / self.SCALE / 2),
-            (pos.y - (self.unwrapped.helipad_y + self.LEG_DOWN / self.SCALE)) /
-                (self.VIEWPORT_H / self.SCALE / 2),
-            vel.x * (self.VIEWPORT_W / self.SCALE / 2) / self.FPS,
-            vel.y * (self.VIEWPORT_H / self.SCALE / 2) / self.FPS,
-            self.unwrapped.lander.angle,
-            20.0 * self.unwrapped.lander.angularVelocity / self.FPS,
-            1.0 if self.unwrapped.legs[0].ground_contact else 0.0,
-            1.0 if self.unwrapped.legs[1].ground_contact else 0.0,
-        ], dtype=np.float32)
+        obs = np.array(
+            [
+                (pos.x - self.VIEWPORT_W / self.SCALE / 2)
+                / (self.VIEWPORT_W / self.SCALE / 2),
+                (pos.y - (self.unwrapped.helipad_y + self.LEG_DOWN / self.SCALE))
+                / (self.VIEWPORT_H / self.SCALE / 2),
+                vel.x * (self.VIEWPORT_W / self.SCALE / 2) / self.FPS,
+                vel.y * (self.VIEWPORT_H / self.SCALE / 2) / self.FPS,
+                self.unwrapped.lander.angle,
+                20.0 * self.unwrapped.lander.angularVelocity / self.FPS,
+                1.0 if self.unwrapped.legs[0].ground_contact else 0.0,
+                1.0 if self.unwrapped.legs[1].ground_contact else 0.0,
+            ],
+            dtype=np.float32,
+        )
         return obs
 
 
 CUSTOM_SAVE_RESET_WRAPPERS = {
     "LunarLander": lambda env: LunarLanderSaveLoadWrapper(env),
 }
-
-    

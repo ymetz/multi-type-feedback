@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "procgen"
+dynamic = ["version"]
+description = "Procedurally Generated Game-Like RL Environments"
+readme = "README.md"
+authors = [
+    {name = "OpenAI"}
+]
+urls = {Homepage = "https://github.com/openai/procgen"}
+requires-python = ">=3.6.0"
+dependencies = [
+    "gym3>=0.3.3,<1.0.0",
+    "filelock>=3.0.0,<4.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==6.2.5",
+    "pytest-benchmark==3.4.1",
+]
+
+[tool.setuptools]
+packages = ["procgen"]
+
+[tool.setuptools.package-data]
+procgen = [
+    "version.txt",
+    "data/**",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "procgen.__version__"}
+
+[tool.setuptools_scm]
+# Alternative: use setuptools_scm for git-based versioning
+# Remove the dynamic version line above if using this
+# write_to = "procgen/_version.py"
+
+# Note: Custom build logic needs to be handled separately
+# You'll need to create a custom build backend or use setuptools hooks

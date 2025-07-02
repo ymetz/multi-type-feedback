@@ -1,28 +1,21 @@
 """Module for training an RL agent with weighted ensemble of reward functions."""
 
-import argparse
 import os
-import sys
 import typing
-from os import path
-from pathlib import Path
+
 import gymnasium as gym
 import numpy
-import pytorch_lightning as pl
 import torch
 from imitation.rewards.reward_function import RewardFn
-from train_baselines.exp_manager import ExperimentManager
-from train_baselines.utils import ALGOS, StoreDict
-from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.utils import set_random_seed
-from multi_type_feedback.utils import TrainingUtils
 
 import wandb
-from multi_type_feedback.datatypes import FeedbackType
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
 )
+from multi_type_feedback.utils import TrainingUtils
+from train_baselines.exp_manager import ExperimentManager
 
 
 class CustomReward(RewardFn):
@@ -33,6 +26,8 @@ class CustomReward(RewardFn):
         reward_model_cls: typing.Union[LightningNetwork, LightningCnnNetwork] = None,
         reward_model_paths: list[str] = [],
         vec_env_norm_fn: typing.Callable = None,
+        action_is_discrete: bool = False,
+        action_dim: int = 1,
         device: str = "cuda",
         inverse_scaling: bool = False,
     ):
@@ -45,6 +40,9 @@ class CustomReward(RewardFn):
             for path in reward_model_paths
         ]
 
+        self.action_is_discrete = action_is_discrete
+        self.n_discrete_actions = action_dim
+
         self.rewards = []
         self.expert_rewards = []
         self.counter = 0
@@ -54,6 +52,23 @@ class CustomReward(RewardFn):
         self.squared_distance_from_mean = None
 
         self.inverse_scaling = inverse_scaling
+
+    def _one_hot_encode_batch(self, actions: torch.Tensor) -> torch.Tensor:
+        """
+        Convert nested batch of discrete actions to one-hot encoded format.
+
+        Args:
+            actions: Tensor of shape (1, batch_size) containing discrete action indices
+
+        Returns:
+            one_hot_actions: Tensor of shape (1, batch_size, n_discrete_actions)
+        """
+        outer_batch, inner_batch = actions.shape
+        one_hot = torch.zeros(
+            (outer_batch, inner_batch, self.n_discrete_actions), device=self.device
+        )
+        actions = actions.long().unsqueeze(-1)  # Add dimension for scatter
+        return one_hot.scatter_(2, actions, 1)
 
     def standardize_rewards(self, rewards: torch.Tensor):
         """
@@ -101,16 +116,21 @@ class CustomReward(RewardFn):
             rewards = torch.empty(len(self.reward_models), state.shape[0]).to(
                 self.device
             )
-            state = torch.as_tensor(state, device=self.device, dtype=torch.float).unsqueeze(
-                0
-            )
+            state = torch.as_tensor(
+                state, device=self.device, dtype=torch.float
+            ).unsqueeze(0)
             actions = torch.as_tensor(
                 actions, device=self.device, dtype=torch.float
             ).unsqueeze(0)
 
+            if self.action_is_discrete:
+                actions = self._one_hot_encode_batch(actions)
+
             for model_index, reward_model in enumerate(self.reward_models):
                 if reward_model.ensemble_count > 1:
-                    model_state = state.expand(reward_model.ensemble_count, *state.shape[1:])
+                    model_state = state.expand(
+                        reward_model.ensemble_count, *state.shape[1:]
+                    )
                     model_actions = actions.expand(
                         reward_model.ensemble_count, *actions.shape[1:]
                     )
@@ -210,6 +230,14 @@ def main():
     else:
         architecture_cls = LightningNetwork
 
+    # we initialize just for the action space, there should be a more elegant way
+    # to initialize the CustomRewardFn in the Exp. Manager
+    action_space = gym.make(args.environment).action_space
+    action_is_discrete = isinstance(action_space, gym.spaces.Discrete)
+    action_dim = (
+        numpy.prod(action_space.shape) if not action_is_discrete else action_space.n
+    )
+
     # ================ Load correct reward function model ===================
     exp_manager = ExperimentManager(
         args,
@@ -224,6 +252,8 @@ def main():
             reward_model_cls=architecture_cls,
             reward_model_paths=reward_model_paths,
             inverse_scaling=args.inverse_scaling,
+            action_is_discrete=action_is_discrete,
+            action_dim=action_dim,
             device=DEVICE,
         ),
         use_wandb_callback=True,

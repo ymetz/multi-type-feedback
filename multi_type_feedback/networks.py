@@ -7,11 +7,11 @@ import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn.functional as F
+from masksembles.torch import Masksembles1D, Masksembles2D
 from pytorch_lightning import LightningModule
 from torch import Tensor, nn
-from torch.nn.functional import log_softmax, mse_loss, nll_loss
+from torch.nn.functional import mse_loss, nll_loss
 
-from masksembles.torch import Masksembles1D, Masksembles2D
 
 def calculate_mse_loss(network: LightningModule, batch: Tensor):
     """Calculate the mean squared error loss for the reward."""
@@ -33,7 +33,7 @@ def calculate_mle_loss(network: LightningModule, batch: Tensor):
 def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
     pair_data, preferred_indices = batch
-    
+
     (obs1, actions1, mask1), (obs2, actions2, mask2) = pair_data
 
     # Compute network outputs
@@ -59,7 +59,7 @@ def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
 def calculate_single_reward_loss(network: LightningModule, batch: Tensor):
     """Calculate the MSE loss between prediction and actual reward."""
     data, targets = batch
-    
+
     (observations, actions, masks) = data
     # Network output: (batch_size, segment_length, output_dim)
     outputs = network(observations, actions)
@@ -91,7 +91,7 @@ class SingleNetwork(LightningModule):
         action_hidden_dim: int,  # not used here
         loss_function: Callable[[LightningModule, Tensor], Tensor],
         learning_rate: float,
-        cnn_channels: list[int] = None, # not used, just for compatability
+        cnn_channels: list[int] = None,  # not used, just for compatability
         activation_function: Type[nn.Module] = nn.ReLU,
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,
@@ -137,7 +137,9 @@ class SingleNetwork(LightningModule):
             if self.ensemble_count > 1:
                 layers.append(
                     Masksembles1D(
-                        channels=output_dim, n=self.ensemble_count, scale=self.masksemble_scale
+                        channels=output_dim,
+                        n=self.ensemble_count,
+                        scale=self.masksemble_scale,
                     ).float()
                 )
 
@@ -242,7 +244,9 @@ class SingleCnnNetwork(LightningModule):
         action_shape = action_space.shape if action_space.shape else 1
         self.action_in = nn.Linear(action_shape, action_hidden_dim)
         self.masksemble_out = Masksembles1D(
-            channels=action_hidden_dim, n=self.ensemble_count, scale=self.masksemble_scale
+            channels=action_hidden_dim,
+            n=self.ensemble_count,
+            scale=self.masksemble_scale,
         ).float()
 
         self.fc = nn.Linear(

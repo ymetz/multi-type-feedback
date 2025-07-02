@@ -4,12 +4,8 @@ import pickle
 import pickle as pkl
 import random
 
-import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
 import torch
-from scipy.stats import pearsonr
-from sklearn.cluster import MiniBatchKMeans
 
 from multi_type_feedback.networks import LightningNetwork
 
@@ -99,8 +95,6 @@ def generate_correlation_data(
             ).unsqueeze(1),
         )
 
-    n_functions = len(reward_functions)
-
     # Compute rewards for all functions
     pred_rewards = []
     pred_std = []
@@ -111,8 +105,6 @@ def generate_correlation_data(
             pred_rewards.append(torch.mean(preds, axis=1).cpu().numpy())
             pred_std.append(torch.mean(preds, axis=1).cpu().numpy())
             print(f"Finished {i+1}/{len(rew_functions)} rew. function")
-
-    in_names = ["Ground Truth"] + rew_fn_types
 
     pred_rewards = [rews] + [pr.squeeze() for pr in pred_rewards]
 

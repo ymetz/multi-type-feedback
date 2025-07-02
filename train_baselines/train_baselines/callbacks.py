@@ -2,20 +2,61 @@ import os
 import tempfile
 import time
 import warnings
-import numpy as np
 from copy import deepcopy
 from functools import wraps
 from threading import Thread
-from typing import Optional, Type, Union, Dict, Any
+from typing import Any, Dict, List, Optional, Type, Union
 
-import optuna
 import gymnasium as gym
+import numpy as np
+import optuna
+from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
 from sb3_contrib import TQC
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, EventCallback
-from stable_baselines3.common.logger import TensorBoardOutputFormat
-from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.evaluation import evaluate_policy
+from stable_baselines3.common.logger import TensorBoardOutputFormat
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    VecEnv,
+    VecEnvWrapper,
+    VecNormalize,
+)
+
+
+def sync_envs_normalization_fixed(env: VecEnv, eval_env: VecEnv) -> None:
+    """
+    Synchronize the normalization statistics of an eval environment and train environment
+    when they are both wrapped in a ``VecNormalize`` wrapper.
+    Fixed: Ignores imitation.RewardVecEnvWrapper during unwrapping
+
+    :param env: Training env
+    :param eval_env: Environment used for evaluation.
+    """
+    env_tmp, eval_env_tmp = env, eval_env
+    while isinstance(env_tmp, VecEnvWrapper):
+        assert isinstance(eval_env_tmp, VecEnvWrapper), (
+            "Error while synchronizing normalization stats: expected the eval env to be "
+            f"a VecEnvWrapper but got {eval_env_tmp} instead. "
+            "This is probably due to the training env not being wrapped the same way as the evaluation env. "
+            f"Training env type: {env_tmp}."
+        )
+        if isinstance(env_tmp, VecNormalize):
+            assert isinstance(eval_env_tmp, VecNormalize), (
+                "Error while synchronizing normalization stats: expected the eval env to be "
+                f"a VecNormalize but got {eval_env_tmp} instead. "
+                "This is probably due to the training env not being wrapped the same way as the evaluation env. "
+                f"Training env type: {env_tmp}."
+            )
+            # Only synchronize if observation normalization exists
+            if hasattr(env_tmp, "obs_rms"):
+                eval_env_tmp.obs_rms = deepcopy(env_tmp.obs_rms)
+            eval_env_tmp.ret_rms = deepcopy(env_tmp.ret_rms)
+            # VecEnvNormalize comes before the RewardVecEnvWrapper, so just stop. Could only cause a problem if
+            # we somehow have multiple VecEnvNorm. -> default behavior would overwrite the inner one
+            break
+        env_tmp = env_tmp.venv
+        eval_env_tmp = eval_env_tmp.venv
 
 
 class TrialEvalCallback(EvalCallback):
@@ -121,6 +162,12 @@ class MetaworldCompatibleEvalCallback(EventCallback):
         self.warn = warn
 
         # Convert to VecEnv for consistency
+        print(
+            "MCC",
+            eval_env,
+            isinstance(eval_env, VecEnv),
+            isinstance(eval_env, VecEnvWrapper),
+        )
         if not isinstance(eval_env, VecEnv):
             eval_env = DummyVecEnv([lambda: eval_env])  # type: ignore[list-item, return-value]
 
@@ -181,7 +228,7 @@ class MetaworldCompatibleEvalCallback(EventCallback):
             # Sync training and eval env if there is VecNormalize
             if self.model.get_vec_normalize_env() is not None:
                 try:
-                    sync_envs_normalization(self.training_env, self.eval_env)
+                    sync_envs_normalization_fixed(self.training_env, self.eval_env)
                 except AttributeError as e:
                     raise AssertionError(
                         "Training and eval env are not wrapped the same way, "

@@ -38,21 +38,21 @@ def truncated_gaussian_vectorized(mean, width, low=0, upp=9, min_width=1e-6):
     scalar_input = np.isscalar(mean) and np.isscalar(width)
     mean = np.atleast_1d(mean)
     width = np.atleast_1d(width)
-    
+
     # Ensure width is positive to avoid numerical issues
     width = np.maximum(width, min_width)
-    
+
     # Calculate the bounds of the distribution
-    lower = np.maximum(mean - width/2, low)
-    upper = np.minimum(mean + width/2, upp)
-    
+    lower = np.maximum(mean - width / 2, low)
+    upper = np.minimum(mean + width / 2, upp)
+
     # Calculate parameters for truncated normal distribution
-    a = (lower - mean) / (width/4)  # 4 sigma range
-    b = (upper - mean) / (width/4)
-    
+    a = (lower - mean) / (width / 4)  # 4 sigma range
+    b = (upper - mean) / (width / 4)
+
     # Generate samples from truncated normal distribution
-    result = truncnorm.rvs(a, b, loc=mean, scale=width/4, size=mean.shape)
-    
+    result = truncnorm.rvs(a, b, loc=mean, scale=width / 4, size=mean.shape)
+
     return result[0] if scalar_input else result
 
 
@@ -216,12 +216,20 @@ class FeedbackDataset(Dataset):
                 if noise_level > 0.0:
 
                     # Calculate statistics across all data points, keeping the feature dimensions
-                    obs_min, obs_max, obs_std = np.min(obs, axis=0), np.max(obs, axis=0), np.std(obs, axis=0)
+                    obs_min, obs_max, obs_std = (
+                        np.min(obs, axis=0),
+                        np.max(obs, axis=0),
+                        np.std(obs, axis=0),
+                    )
                     non_zero_obs_std = obs_std > zero_tolerance
 
-                    acts_min, acts_max, acts_std = np.min(actions, axis=0), np.max(actions, axis=0), np.std(actions, axis=0)
+                    acts_min, acts_max, acts_std = (
+                        np.min(actions, axis=0),
+                        np.max(actions, axis=0),
+                        np.std(actions, axis=0),
+                    )
                     non_zero_acts_std = acts_std > zero_tolerance
-                    
+
                     # Process each batch separately
                     noisy_obs = []
                     noisy_actions = []
@@ -229,24 +237,30 @@ class FeedbackDataset(Dataset):
                     # TODO: Check if this for loop is actually necessary...shouldn't it just work as a batch
                     for i in range(obs.shape[0]):
                         # Add noise to each batch independently
-                        
+
                         obs_for_noise = obs[i]
                         if np.any(non_zero_obs_std):
-                            obs_for_noise[:, non_zero_obs_std] = truncated_gaussian_vectorized(
-                                mean=obs_for_noise[:, non_zero_obs_std], 
-                                width=np.array(noise_level) * obs_std[non_zero_obs_std], 
-                                low=obs_min[non_zero_obs_std],
-                                upp=obs_max[non_zero_obs_std],
+                            obs_for_noise[:, non_zero_obs_std] = (
+                                truncated_gaussian_vectorized(
+                                    mean=obs_for_noise[:, non_zero_obs_std],
+                                    width=np.array(noise_level)
+                                    * obs_std[non_zero_obs_std],
+                                    low=obs_min[non_zero_obs_std],
+                                    upp=obs_max[non_zero_obs_std],
+                                )
                             )
                         noisy_obs.append(obs_for_noise)
 
                         acts_for_noise = actions[i]
                         if np.any(non_zero_acts_std):
-                            acts_for_noise[:, non_zero_acts_std] = truncated_gaussian_vectorized(
-                                mean=acts_for_noise[:, non_zero_acts_std], 
-                                width=np.array(noise_level) * acts_std[non_zero_acts_std], 
-                                low=acts_min[non_zero_acts_std],
-                                upp=acts_max[non_zero_acts_std],
+                            acts_for_noise[:, non_zero_acts_std] = (
+                                truncated_gaussian_vectorized(
+                                    mean=acts_for_noise[:, non_zero_acts_std],
+                                    width=np.array(noise_level)
+                                    * acts_std[non_zero_acts_std],
+                                    low=acts_min[non_zero_acts_std],
+                                    upp=acts_max[non_zero_acts_std],
+                                )
                             )
                         noisy_actions.append(acts_for_noise)
 
@@ -472,7 +486,7 @@ class FeedbackDataset(Dataset):
 
 
 class LoadFeedbackDataset(FeedbackDataset):
-    """ Load feedback dataset from file. """
+    """Load feedback dataset from file."""
 
     def __init__(
         self,
@@ -503,10 +517,7 @@ class LoadFeedbackDataset(FeedbackDataset):
 
 class BufferDataset(Dataset):
 
-    def __init__(
-        self,
-        buffer
-    ):
+    def __init__(self, buffer):
         self.buffer = buffer
 
     def __len__(self):
@@ -515,7 +526,7 @@ class BufferDataset(Dataset):
 
     def __getitem__(self, index):
         """Return item with given index."""
-        return self.buffer[index]    
+        return self.buffer[index]
 
 
 FEEDBACK_TYPE_TO_KEY = {
@@ -524,8 +535,9 @@ FEEDBACK_TYPE_TO_KEY = {
     "demonstrative": "demos",
     "corrective": "corrections",
     "descriptive": "description",
-    "descriptive_preference": "description_preference"
+    "descriptive_preference": "description_preference",
 }
+
 
 def load_flat_buffer_into_feedback_dataset(
     feedback_buffer: List[SegmentT], feedback_type: FeedbackType

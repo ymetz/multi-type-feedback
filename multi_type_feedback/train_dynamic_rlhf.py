@@ -1,21 +1,23 @@
-from typing import Optional, Dict, Any, Tuple, List
 import os
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import gymnasium as gym
 import torch
 from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3.common.vec_env import VecEnv
 
-from train_baselines.train import ExperimentManager
 from multi_type_feedback.feedback_oracle import FeedbackOracle
 from multi_type_feedback.utils import TrainingUtils, get_project_root
+from train_baselines.train import ExperimentManager
+
 
 class DynamicRLHFExperimentManager(ExperimentManager):
     """
     Experiment manager specific to DynamicRLHF that inherits from the base ExperimentManager.
     This allows reuse of hyperparameter loading and evaluation callback functionality.
     """
+
     def __init__(
         self,
         args,
@@ -65,7 +67,9 @@ class DynamicRLHFExperimentManager(ExperimentManager):
         feedback_id, _ = TrainingUtils.get_model_ids(self.args)
         feedback_path = Path(self.args.reference_data_folder) / f"{feedback_id}.pkl"
 
-        environment = TrainingUtils.setup_environment(self.args.environment, self.args.seed)
+        environment = TrainingUtils.setup_environment(
+            self.args.environment, self.args.seed
+        )
         expert_models = TrainingUtils.load_expert_models(
             env_name=self.args.environment,
             algorithm=self.args.algorithm,
@@ -83,12 +87,12 @@ class DynamicRLHFExperimentManager(ExperimentManager):
 
         return model, oracle
 
-    def create_drlhf(self, oracle: FeedbackOracle, env: VecEnv) -> 'DynamicRLHF':
+    def create_drlhf(self, oracle: FeedbackOracle, env: VecEnv) -> "DynamicRLHF":
         """
         Create a DynamicRLHF instance with the loaded hyperparameters.
         """
         from multi_type_feedback.dynamic_rlhf import DynamicRLHF
-        
+
         return DynamicRLHF(
             oracle=oracle,
             env=env,
@@ -106,10 +110,11 @@ class DynamicRLHFExperimentManager(ExperimentManager):
             num_ensemble_models=self.args.num_ensemble_models,
         )
 
+
 def main():
     """Example usage of DynamicRLHFExperimentManager"""
     parser = TrainingUtils.setup_base_parser()
-    
+
     parser.add_argument(
         "--feedback-types",
         nargs="+",
@@ -161,16 +166,13 @@ def main():
         help="Number of epochs for reward model training",
     )
     parser.add_argument(
-        "--top-n-models", 
-        type=int, 
-        default=3, 
-        help="Top N models to use"
+        "--top-n-models", type=int, default=3, help="Top N models to use"
     )
     parser.add_argument(
-        "--expert-model-base-path", 
-        type=str, 
-        default="train_baselines/gt_agents", 
-        help="Expert model base path"
+        "--expert-model-base-path",
+        type=str,
+        default="train_baselines/gt_agents",
+        help="Expert model base path",
     )
     parser.add_argument(
         "--feedback-buffer-size",
@@ -190,9 +192,11 @@ def main():
     total_iterations = max(1, args.n_timesteps // args.rl_steps_per_iteration)
     print(f"\nTraining for {args.n_timesteps} total timesteps")
     print(f"Using {args.rl_steps_per_iteration} steps per iteration")
-    print(f"Will run for {total_iterations} iterations to approximate desired timesteps")
+    print(
+        f"Will run for {total_iterations} iterations to approximate desired timesteps"
+    )
     args = parser.parse_args()
-    
+
     exp_manager = DynamicRLHFExperimentManager(
         args=args,
         algo=args.algorithm,
@@ -201,18 +205,19 @@ def main():
         n_timesteps=args.n_timesteps,
         total_iterations=total_iterations,
     )
-    
+
     # Setup experiment
     model, oracle = exp_manager.setup_drlhf()
-    
+
     # Create environment
     env = exp_manager.create_envs(n_envs=1)
-    
+
     # Create DRLHF instance
     drlhf = exp_manager.create_drlhf(oracle, env)
-    
+
     # Train
     drlhf.train(sampling_strategy=exp_manager.sampling_strategy)
+
 
 if __name__ == "__main__":
     main()

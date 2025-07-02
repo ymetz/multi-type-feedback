@@ -5,16 +5,17 @@ import numpy as np
 from ale_py import AtariEnv
 from gymnasium.envs.mujoco import MujocoEnv
 from minigrid.minigrid_env import MiniGridEnv
-from train_baselines.wrappers import Gym3ToGymnasium
+
 from multi_type_feedback.custom_save_reset_envs import CUSTOM_SAVE_RESET_WRAPPERS
+from train_baselines.wrappers import Gym3ToGymnasium
 
 
 class SaveResetEnvWrapper(gym.Wrapper):
     def __init__(self, env):
         """
-            A Wrapper that ensure ability to save/load the state for a selected
-            set of enviornments. If you encounter an unsupported env, feel free to 
-            add them to the CUSTOM_SAVE_RESET_WRAPPERS dict
+        A Wrapper that ensure ability to save/load the state for a selected
+        set of enviornments. If you encounter an unsupported env, feel free to
+        add them to the CUSTOM_SAVE_RESET_WRAPPERS dict
         """
         super(SaveResetEnvWrapper, self).__init__(env)
 
@@ -63,7 +64,11 @@ class SaveResetEnvWrapper(gym.Wrapper):
         else:
             elapsed_steps = 0
 
-        return {"state": state, "observation": observation, "elapsed_steps": elapsed_steps}
+        return {
+            "state": state,
+            "observation": observation,
+            "elapsed_steps": elapsed_steps,
+        }
 
     def load_state(self, state_and_obs):
         """
@@ -80,7 +85,7 @@ class SaveResetEnvWrapper(gym.Wrapper):
         obs = state_and_obs["observation"]
         state = state_and_obs["state"]
         self._elapsed_steps = state_and_obs.get("elapsed_steps", 0)
-        
+
         if isinstance(self.unwrapped, MujocoEnv):
             # MuJoCo environment
             self.unwrapped.set_state(state["qpos"], state["qval"])
