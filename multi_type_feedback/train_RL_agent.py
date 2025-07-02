@@ -6,6 +6,7 @@ import typing
 # register custom envs
 import numpy
 import torch
+import gymnasium as gym
 from train_baselines.exp_manager import ExperimentManager
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
@@ -22,6 +23,8 @@ class CustomReward(RewardFn):
         reward_model_cls: typing.Union[LightningNetwork, LightningCnnNetwork] = None,
         reward_model_path: list[str] = [],
         vec_env_norm_fn: typing.Callable = None,
+        action_is_discrete: bool = False,
+        action_dim: int = 1,
         device: str = "cuda",
     ):
         """Initialize custom reward."""
@@ -35,7 +38,8 @@ class CustomReward(RewardFn):
         self.rewards = []
         self.expert_rewards = []
         self.counter = 0
-        self.n_discrete_actions = 5  # hard-code for highway-env for now
+        self.action_is_discrete = action_is_discrete
+        self.n_discrete_actions = action_dim
 
     def _one_hot_encode_batch(self, actions: torch.Tensor) -> torch.Tensor:
         """
@@ -70,7 +74,7 @@ class CustomReward(RewardFn):
             actions, device=self.device, dtype=torch.float
         ).unsqueeze(0)
 
-        if len(actions.shape) < 3:
+        if self.action_is_discrete:
             actions = self._one_hot_encode_batch(actions)
 
         with torch.no_grad():
@@ -129,6 +133,12 @@ def main():
         else LightningNetwork
     )
 
+    # we initialize just for the action space, there should be a more elegant way
+    # to initialize the CustomRewardFn in the Exp. Manager
+    action_space = gym.make(args.environment).action_space
+    action_is_discrete = isinstance(action_space, gym.spaces.Discrete)
+    action_dim = numpy.prod(action_space.shape) if not action_is_discrete else action_space.n
+
     exp_manager = ExperimentManager(
         args,
         args.algorithm,
@@ -141,6 +151,8 @@ def main():
             CustomReward(
                 reward_model_cls=architecture_cls,
                 reward_model_path=reward_model_path,
+                action_is_discrete=action_is_discrete,
+                action_dim=action_dim,
                 device=TrainingUtils.get_device(),
             )
             if args.feedback_type != "baseline"

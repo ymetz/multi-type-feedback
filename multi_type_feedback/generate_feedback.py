@@ -662,8 +662,6 @@ def main():
         "--expert-model-base-path",
         type=str,
         default="train_baselines/gt_agents",
-        help="Expert model base path",
-    )
     args = parser.parse_args()
 
     TrainingUtils.set_seeds(args.seed)
