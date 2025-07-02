@@ -6,14 +6,12 @@ import typing
 # register custom envs
 import numpy
 import torch
-from imitation.rewards.reward_function import RewardFn
-
+from train_baselines.exp_manager import ExperimentManager
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
 )
-from multi_type_feedback.utils import TrainingUtils
-from train_baselines.exp_manager import ExperimentManager
+from multi_type_feedback.utils import TrainingUtils, RewardFn
 
 
 class CustomReward(RewardFn):

@@ -17,7 +17,7 @@ import torch as th
 import yaml
 from gymnasium import spaces
 from huggingface_sb3 import EnvironmentName
-from imitation.rewards.reward_function import RewardFn
+from multi_type_feedback.utils import RewardFn
 from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
 from optuna.pruners import BasePruner, MedianPruner, NopPruner, SuccessiveHalvingPruner
 from optuna.samplers import BaseSampler, RandomSampler, TPESampler
@@ -82,6 +82,7 @@ from train_baselines.utils import (
     linear_schedule,
     make_vec_metaworld_env,
 )
+
 
 
 class ExperimentManager:

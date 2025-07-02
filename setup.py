@@ -22,7 +22,7 @@ setup(
         "torch",
         "torchvision",
         "swig",
-        "gymnasium[box2d]==1.0.0",
+        "gymnasium",
         "lightning",
         "minigrid",
         "mujoco",

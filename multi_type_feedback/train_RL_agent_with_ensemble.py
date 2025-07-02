@@ -6,14 +6,13 @@ import typing
 import numpy
 import torch
 import wandb
-from imitation.rewards.reward_function import RewardFn
 from stable_baselines3.common.utils import set_random_seed
 
 from multi_type_feedback.networks import (
     LightningCnnNetwork,
     LightningNetwork,
 )
-from multi_type_feedback.utils import TrainingUtils
+from multi_type_feedback.utils import TrainingUtils, RewardFn
 from train_baselines.exp_manager import ExperimentManager
 
 
