@@ -1,37 +1,15 @@
 import pickle
 import time
 import uuid
-from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
 
 import gymnasium as gym
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import torch
-from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import WandbLogger
-from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
-from torch.utils.data import DataLoader
 
 import wandb
 from multi_type_feedback.dynamic_rlhf import DynamicRLHF
-from multi_type_feedback.feedback_dataset import (
-    BufferDataset,
-    load_flat_buffer_into_feedback_dataset,
-)
 from multi_type_feedback.feedback_oracle import FeedbackOracle
-from multi_type_feedback.networks import (
-    LightningCnnNetwork,
-    LightningNetwork,
-    calculate_pairwise_loss,
-    calculate_single_reward_loss,
-)
 from multi_type_feedback.utils import (
-    RewardVecEnvWrapper,
     TrainingUtils,
     get_project_root,
 )
@@ -445,7 +423,7 @@ def main():
     parser.add_argument(
         "--expert-model-base-path",
         type=str,
-        default="train_baselines/gt_agents",
+        default="gt_agents",
         help="Expert model base path",
     )
     parser.add_argument(

@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Type, Union
 import gymnasium as gym
 import numpy as np
 import optuna
-from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
 from sb3_contrib import TQC
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, EventCallback
@@ -28,7 +27,6 @@ def sync_envs_normalization_fixed(env: VecEnv, eval_env: VecEnv) -> None:
     """
     Synchronize the normalization statistics of an eval environment and train environment
     when they are both wrapped in a ``VecNormalize`` wrapper.
-    Fixed: Ignores imitation.RewardVecEnvWrapper during unwrapping
 
     :param env: Training env
     :param eval_env: Environment used for evaluation.

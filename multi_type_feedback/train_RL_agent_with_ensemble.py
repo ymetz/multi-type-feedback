@@ -6,15 +6,15 @@ import typing
 import gymnasium as gym
 import numpy
 import torch
-from imitation.rewards.reward_function import RewardFn
+import wandb
 from stable_baselines3.common.utils import set_random_seed
 
 import wandb
 from multi_type_feedback.networks import (
-    LightningCnnNetwork,
-    LightningNetwork,
+    SingleCnnNetwork,
+    SingleNetwork,
 )
-from multi_type_feedback.utils import TrainingUtils
+from multi_type_feedback.utils import TrainingUtils, RewardFn
 from train_baselines.exp_manager import ExperimentManager
 
 
@@ -23,7 +23,7 @@ class CustomReward(RewardFn):
 
     def __init__(
         self,
-        reward_model_cls: typing.Union[LightningNetwork, LightningCnnNetwork] = None,
+        reward_model_cls: typing.Union[SingleNetwork, SingleCnnNetwork] = None,
         reward_model_paths: list[str] = [],
         vec_env_norm_fn: typing.Callable = None,
         action_is_discrete: bool = False,
@@ -226,9 +226,9 @@ def main():
 
     # ================ Load correct reward function model =================
     if "ALE/" in args.environment or "procgen" in args.environment:
-        architecture_cls = LightningCnnNetwork
+        architecture_cls = SingleCnnNetwork
     else:
-        architecture_cls = LightningNetwork
+        architecture_cls = SingleNetwork
 
     # we initialize just for the action space, there should be a more elegant way
     # to initialize the CustomRewardFn in the Exp. Manager

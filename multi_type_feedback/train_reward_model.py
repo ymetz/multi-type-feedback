@@ -15,8 +15,8 @@ import wandb
 from multi_type_feedback.datatypes import FeedbackType
 from multi_type_feedback.feedback_dataset import FeedbackDataset, LoadFeedbackDataset
 from multi_type_feedback.networks import (
-    LightningCnnNetwork,
-    LightningNetwork,
+    SingleCnnNetwork,
+    SingleNetwork,
     calculate_pairwise_loss,
     calculate_single_reward_loss,
 )
@@ -166,9 +166,9 @@ def main():
 
     # Setup reward model
     reward_model = (
-        LightningCnnNetwork
+        SingleCnnNetwork
         if "procgen" in args.environment or "ALE" in args.environment
-        else LightningNetwork
+        else SingleNetwork
     )(
         input_spaces=(environment.observation_space, environment.action_space),
         hidden_dim=256,

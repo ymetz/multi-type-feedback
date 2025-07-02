@@ -17,7 +17,7 @@ import torch as th
 import yaml
 from gymnasium import spaces
 from huggingface_sb3 import EnvironmentName
-from imitation.rewards.reward_function import RewardFn
+from multi_type_feedback.utils import RewardFn
 from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
 from optuna.pruners import BasePruner, MedianPruner, NopPruner, SuccessiveHalvingPruner
 from optuna.samplers import BaseSampler, RandomSampler, TPESampler
@@ -63,8 +63,6 @@ from stable_baselines3.common.vec_env import (
 from torch import nn as nn
 from wandb.integration.sb3 import WandbCallback
 
-import train_baselines.impala_policy as impala_policy
-
 # Register custom envs
 import train_baselines.import_envs  # noqa: F401
 from train_baselines.callbacks import (
@@ -84,6 +82,7 @@ from train_baselines.utils import (
 )
 
 # from train_baselines.continuous_wandb_callback import ContinuousWandbCallback
+
 
 
 class ExperimentManager:
@@ -132,7 +131,7 @@ class ExperimentManager:
         device: Union[th.device, str] = "auto",
         config: Optional[str] = None,
         show_progress: bool = False,
-        reward_function: RewardFn = None,
+        reward_function: Optional[RewardFn] = None,
         use_wandb_callback: bool = False,
         wandb_callback_continuous: bool = False,  # for iterative training
     ):

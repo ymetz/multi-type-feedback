@@ -1,4 +1,3 @@
-import argparse
 import bisect
 import itertools
 import os
@@ -7,28 +6,16 @@ import random
 import re
 import tempfile
 import warnings
-from itertools import chain
 from pathlib import Path
-from typing import Iterator, List, Tuple, Type, Union
+from typing import List, Type, Union
 
-# necessary to import ale_py/procgen, otherwise it will not be found
-import ale_py
 import gymnasium as gym
 import numpy as np
-import pandas as pd
-import procgen
 import torch
-from gymnasium.wrappers.stateful_observation import FrameStackObservation
-from gymnasium.wrappers.transform_observation import TransformObservation
-from minigrid.wrappers import FlatObsWrapper
-from numpy.typing import NDArray
 from sklearn.cluster import MiniBatchKMeans
 from stable_baselines3 import PPO, SAC
-from stable_baselines3.common.atari_wrappers import WarpFrame
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
-
-from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
 from multi_type_feedback.utils import TrainingUtils
 
 try:
@@ -672,7 +659,7 @@ def main():
     parser.add_argument(
         "--expert-model-base-path",
         type=str,
-        default="train_baselines/gt_agents",
+        default="gt_agents",
         help="Expert model base path",
     )
     args = parser.parse_args()

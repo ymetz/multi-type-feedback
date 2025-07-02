@@ -8,10 +8,8 @@ import numpy as np
 import pytorch_lightning
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import WandbLogger
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
-from stable_baselines3.common.vec_env import DummyVecEnv, VecMonitor
 from torch.utils.data import DataLoader
 
 import wandb
@@ -21,7 +19,6 @@ from multi_type_feedback.continuous_wandb_sb3_logger import (
 from multi_type_feedback.dynamic_rlhf_callback import RewardModelUpdateCallback
 from multi_type_feedback.feedback_dataset import (
     BufferDataset,
-    load_flat_buffer_into_feedback_dataset,
 )
 from multi_type_feedback.feedback_oracle import FeedbackOracle
 from multi_type_feedback.multi_head_networks import (
@@ -1205,7 +1202,7 @@ def main():
     parser.add_argument(
         "--expert-model-base-path",
         type=str,
-        default="train_baselines/gt_agents",
+        default="gt_agents",
         help="Expert model base path",
     )
     parser.add_argument(

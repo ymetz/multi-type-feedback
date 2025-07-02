@@ -8,14 +8,13 @@ import gymnasium as gym
 # register custom envs
 import numpy
 import torch
-from imitation.rewards.reward_function import RewardFn
-
-from multi_type_feedback.networks import (
-    LightningCnnNetwork,
-    LightningNetwork,
-)
-from multi_type_feedback.utils import TrainingUtils
+import gymnasium as gym
 from train_baselines.exp_manager import ExperimentManager
+from multi_type_feedback.networks import (
+   SingleCnnNetwork,
+   SingleNetwork,
+)
+from multi_type_feedback.utils import TrainingUtils, RewardFn
 
 
 class CustomReward(RewardFn):
@@ -23,9 +22,9 @@ class CustomReward(RewardFn):
 
     def __init__(
         self,
-        reward_model_cls: typing.Union[LightningNetwork, LightningCnnNetwork] = None,
+        reward_model_cls: typing.Union[SingleNetwork, SingleCnnNetwork] = None,
         reward_model_path: list[str] = [],
-        vec_env_norm_fn: typing.Callable = None,
+        vec_env_norm_fn: typing.Optional[typing.Callable] = None,
         action_is_discrete: bool = False,
         action_dim: int = 1,
         device: str = "cuda",
@@ -131,9 +130,9 @@ def main():
     )
 
     architecture_cls = (
-        LightningCnnNetwork
+        SingleCnnNetwork
         if "ALE/" in args.environment or "procgen" in args.environment
-        else LightningNetwork
+        else SingleNetwork
     )
 
     # we initialize just for the action space, there should be a more elegant way
