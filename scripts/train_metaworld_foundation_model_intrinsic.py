@@ -91,7 +91,6 @@ class StateEntropyReplayBuffer:
         self.obses = np.empty((capacity, *obs_shape), dtype=obs_dtype)
         self.next_obses = np.empty((capacity, *obs_shape), dtype=obs_dtype)
         self.actions = np.empty((capacity, *action_shape), dtype=np.float32)
-        self.extrinsic_rewards = np.empty((capacity, 1), dtype=np.float32)
         self.intrinsic_rewards = np.empty((capacity, 1), dtype=np.float32)
         self.not_dones = np.empty((capacity, 1), dtype=np.float32)
         self.not_dones_no_max = np.empty((capacity, 1), dtype=np.float32)
@@ -103,11 +102,10 @@ class StateEntropyReplayBuffer:
     def __len__(self):
         return self.capacity if self.full else self.idx
     
-    def add(self, obs, action, ext_reward, int_reward, next_obs, done, done_no_max, task_id):
+    def add(self, obs, action, int_reward, next_obs, done, done_no_max, task_id):
         """Add a transition to the buffer."""
         np.copyto(self.obses[self.idx], obs)
         np.copyto(self.actions[self.idx], action)
-        np.copyto(self.extrinsic_rewards[self.idx], ext_reward)
         np.copyto(self.intrinsic_rewards[self.idx], int_reward)
         np.copyto(self.next_obses[self.idx], next_obs)
         np.copyto(self.not_dones[self.idx], not done)
@@ -123,14 +121,13 @@ class StateEntropyReplayBuffer:
         
         obses = torch.as_tensor(self.obses[idxs], device=self.device).float()
         actions = torch.as_tensor(self.actions[idxs], device=self.device)
-        ext_rewards = torch.as_tensor(self.extrinsic_rewards[idxs], device=self.device)
         int_rewards = torch.as_tensor(self.intrinsic_rewards[idxs], device=self.device)
         next_obses = torch.as_tensor(self.next_obses[idxs], device=self.device).float()
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         not_dones_no_max = torch.as_tensor(self.not_dones_no_max[idxs], device=self.device)
         task_ids = torch.as_tensor(self.task_ids[idxs], device=self.device)
         
-        return obses, actions, ext_rewards, int_rewards, next_obses, not_dones, not_dones_no_max, task_ids
+        return obses, actions, int_rewards, next_obses, not_dones, not_dones_no_max, task_ids
     
     def sample_full_obs(self, batch_size=512):
         """Sample observations for state entropy calculation."""
@@ -344,7 +341,7 @@ class IntrinsicMotivationWorkspace:
             action = self.multi_env.action_space.sample()
             
             # Environment step
-            next_obs, ext_reward, done, info = self.multi_env.step(action)
+            next_obs, _, done, info = self.multi_env.step(action)
             
             # Compute intrinsic reward
             obs_tensor = torch.tensor(obs, device=self.device, dtype=torch.float32).unsqueeze(0)
@@ -360,20 +357,20 @@ class IntrinsicMotivationWorkspace:
             done_no_max = False if episode_step == 500 else done  # Metaworld max episode length
             
             self.replay_buffer.add(
-                obs, action, ext_reward, int_reward, next_obs, 
+                obs, action, int_reward, next_obs, 
                 done, done_no_max, task_id
             )
             
             # Update state encoder periodically
             if self.step % self.args.state_update_freq == 0 and len(self.replay_buffer) > self.args.batch_size:
-                obs_batch, _, _, _, _, _, _, _ = self.replay_buffer.sample(self.args.batch_size)
+                obs_batch, _, _, _, _, _, _ = self.replay_buffer.sample(self.args.batch_size)
                 diversity_loss = self.agent.update_state_encoder(obs_batch, None)
                 
                 if self.step % 1000 == 0:
                     self.logger.log({'exploration/diversity_loss': diversity_loss}, self.step)
             
             # Update counters
-            episode_reward += ext_reward
+            episode_reward += 0  # No extrinsic reward used
             episode_intrinsic_reward += int_reward
             episode_step += 1
             self.step += 1
@@ -422,10 +419,10 @@ class IntrinsicMotivationWorkspace:
         
         # Sample diverse training data
         n_samples = min(len(self.replay_buffer), self.args.foundation_training_samples)
-        obs, actions, ext_rewards, int_rewards, next_obs, _, _, task_ids = self.replay_buffer.sample(n_samples)
+        obs, actions, int_rewards, next_obs, _, _, task_ids = self.replay_buffer.sample(n_samples)
         
-        # Prepare training data (obs, actions) -> combined reward
-        combined_rewards = ext_rewards + self.args.intrinsic_weight * int_rewards
+        # Prepare training data (obs, actions) -> intrinsic reward only
+        combined_rewards = int_rewards
         
         # Convert to sequence format expected by SingleNetwork
         batch_size = obs.shape[0]
@@ -493,7 +490,6 @@ class IntrinsicMotivationWorkspace:
         buffer_data = {
             'obses': self.replay_buffer.obses[:len(self.replay_buffer)],
             'actions': self.replay_buffer.actions[:len(self.replay_buffer)],
-            'rewards': self.replay_buffer.extrinsic_rewards[:len(self.replay_buffer)],
             'intrinsic_rewards': self.replay_buffer.intrinsic_rewards[:len(self.replay_buffer)],
             'task_ids': self.replay_buffer.task_ids[:len(self.replay_buffer)]
         }
