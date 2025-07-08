@@ -171,6 +171,11 @@ class DynamicRLHF:
         # Initialize reward models
         self.reward_models = self._init_reward_models()
 
+        # Initialize Welford's algorithm state for reward standardization
+        self.reward_mean = None
+        self.squared_distance_from_mean = None
+        self.reward_counters = None
+
         if apply_random_response_handling:
             self._apply_random_response_handling()
 
@@ -941,6 +946,46 @@ class DynamicRLHF:
         """Train reward models with default number of epochs."""
         return self._train_reward_models_with_epochs(self.reward_training_epochs)
 
+    def standardize_rewards(self, rewards: torch.Tensor):
+        """
+        Standardizes the input using the rolling mean and standard deviation of the rewards.
+        Uses Welford's algorithm for numerically stable online computation.
+
+        Input should be a tensor of shape (batch_size, model_count).
+        """
+        model_count = rewards.shape[1]
+
+        if self.reward_mean is None:
+            self.reward_mean = torch.zeros(model_count).to(self.device)
+
+        if self.squared_distance_from_mean is None:
+            self.squared_distance_from_mean = torch.zeros(model_count).to(self.device)
+
+        if self.reward_counters is None:
+            self.reward_counters = torch.zeros(model_count).to(self.device)
+
+        standard_deviation = torch.ones(model_count).to(self.device)
+
+        for batch_idx in range(rewards.shape[0]):
+            for reward_index in range(model_count):
+                reward = rewards[batch_idx, reward_index]
+                
+                # Welford's algorithm for calculating running mean and variance
+                self.reward_counters[reward_index] += 1
+
+                difference = reward - self.reward_mean[reward_index]
+                self.reward_mean[reward_index] += difference / self.reward_counters[reward_index]
+                new_difference = reward - self.reward_mean[reward_index]
+                self.squared_distance_from_mean[reward_index] += difference * new_difference
+
+                if self.reward_counters[reward_index] > 1:
+                    variance = self.squared_distance_from_mean[reward_index] / (self.reward_counters[reward_index] - 1)
+                    standard_deviation[reward_index] = torch.sqrt(variance)
+
+                rewards[batch_idx, reward_index] = (reward - self.reward_mean[reward_index]) / standard_deviation[reward_index]
+
+        return rewards
+
     def compute_ensemble_reward(
         self, state: np.ndarray, action: np.ndarray
     ) -> np.ndarray:
@@ -1089,175 +1134,11 @@ class DynamicRLHF:
         stacked_rewards = torch.stack(model_rewards, dim=0)
         stacked_uncerts = torch.stack(model_uncertainties, dim=0)
 
-        # Calculate final rewards => shape [batch_size,]
-        batch_size = state.shape[0]
-        final_rewards = torch.zeros(batch_size, device=device, dtype=torch.float32)
-
-        # Loop over each environment in the batch
-        for i in range(batch_size):
-            # For the i-th environment, gather all model rewards/uncertainties
-            r_i = stacked_rewards[:, i]  # shape (#models,)
-            u_i = stacked_uncerts[:, i]  # shape (#models,)
-
-            if torch.any(u_i > 0):
-                # If any model has a positive uncertainty, weight by 1 / uncertainty
-                w_i = torch.where(u_i > 0, 1.0 / u_i, torch.ones_like(u_i))
-                # Normalize weights
-                w_i /= w_i.sum()
-                final_rewards[i] = (r_i * w_i).sum()
-            else:
-                # Otherwise, just average over the models
-                final_rewards[i] = r_i.mean()
-
-        return final_rewards.cpu().numpy()  # shape: [batch_size,]
-
-    def compute_ensemble_reward(
-        self, state: np.ndarray, action: np.ndarray
-    ) -> np.ndarray:
-        """
-        Compute ensemble reward prediction based on model architecture.
-        Modified to handle different reward model architectures.
-        """
-        device = self.device
-
-        # Handle one-hot encoding for discrete actions
-        if self.action_one_hot:
-            action = vectorized_one_hot_vector(np.array(action), self.one_hot_dim)
-
-        # Add batch dimension to actions if not present
-        if len(action.shape) < 2:
-            action = np.expand_dims(action, axis=0)
-
-        # Convert to torch tensors of shape [batch_size, ...]
-        state_tensor = torch.as_tensor(
-            state, device=device, dtype=torch.float32
-        ).unsqueeze(1)
-        action_tensor = torch.as_tensor(
-            action, device=device, dtype=torch.float32
-        ).unsqueeze(1)
-
-        # Lists to accumulate each model's reward and uncertainty
-        model_rewards = []
-        model_uncertainties = []
-
-        with torch.no_grad():
-            if self.reward_model_type == "separate":
-                # Original implementation: separate models for each feedback type
-                for feedback_type, reward_model in self.reward_models.items():
-                    # Only use models which have some feedback
-                    if len(self.feedback_buffers[feedback_type]) == 0:
-                        continue
-
-                    if reward_model.ensemble_count > 1:
-                        # Expand along ensemble dimension
-                        st_expanded = state_tensor.repeat(
-                            reward_model.ensemble_count,
-                            *[1] * (len(state_tensor.shape) - 1),
-                        )
-                        act_expanded = action_tensor.repeat(
-                            reward_model.ensemble_count,
-                            *[1] * (len(action_tensor.shape) - 1),
-                        )
-
-                        # Get predictions
-                        predictions = reward_model(st_expanded, act_expanded)
-
-                        # Make sure we reduce the final dimension if necessary
-                        if predictions.dim() == 3 and predictions.shape[-1] == 1:
-                            predictions = predictions.squeeze(-1)
-
-                        mean_reward, uncertainty = compute_grouped(
-                            predictions, reward_model.ensemble_count
-                        )
-                    else:
-                        # Single model in the ensemble
-                        predictions = reward_model(state_tensor, action_tensor)
-                        if predictions.dim() == 2 and predictions.shape[1] == 1:
-                            predictions = predictions.squeeze(-1)
-                        mean_reward = predictions
-                        uncertainty = torch.zeros_like(mean_reward)
-
-                    # Collect
-                    model_rewards.append(mean_reward)  # shape [batch_size,]
-                    model_uncertainties.append(uncertainty)  # shape [batch_size,]
-
-            elif self.reward_model_type == "multi-head":
-                # Multi-head model: get predictions from each head
-                multi_head_model = list(self.reward_models.values())[
-                    0
-                ]  # Only one model
-
-                # Get predictions for all heads at once
-                st_expanded = state_tensor.repeat(
-                    multi_head_model.ensemble_count,
-                    *[1] * (len(state_tensor.shape) - 1),
-                )
-                act_expanded = action_tensor.repeat(
-                    multi_head_model.ensemble_count,
-                    *[1] * (len(action_tensor.shape) - 1),
-                )
-
-                # Forward pass with no specific feedback type to get all heads
-                all_outputs = multi_head_model(st_expanded, act_expanded)
-
-                # Process each feedback type's output
-                for feedback_type, outputs in all_outputs.items():
-                    # Only use heads which have some feedback
-                    if len(self.feedback_buffers[feedback_type]) == 0:
-                        continue
-
-                    # Make sure we reduce the final dimension if necessary
-                    if outputs.dim() == 3 and outputs.shape[-1] == 1:
-                        outputs = outputs.squeeze(-1)
-
-                    mean_reward, uncertainty = compute_grouped(
-                        outputs, multi_head_model.ensemble_count
-                    )
-
-                    # Collect
-                    model_rewards.append(mean_reward)  # shape [batch_size,]
-                    model_uncertainties.append(uncertainty)  # shape [batch_size,]
-
-            elif self.reward_model_type == "unified":
-                # Unified model: get predictions for each feedback type
-                unified_model = list(self.reward_models.values())[0]  # Only one model
-
-                # For each feedback type that has data, get predictions
-                for feedback_type in self.feedback_types:
-                    # Only use feedback types which have some feedback
-                    if len(self.feedback_buffers[feedback_type]) == 0:
-                        continue
-
-                    # Expand along ensemble dimension
-                    st_expanded = state_tensor.repeat(
-                        unified_model.ensemble_count,
-                        *[1] * (len(state_tensor.shape) - 1),
-                    )
-                    act_expanded = action_tensor.repeat(
-                        unified_model.ensemble_count,
-                        *[1] * (len(action_tensor.shape) - 1),
-                    )
-
-                    # Forward pass with specific feedback type
-                    predictions = unified_model(
-                        st_expanded, act_expanded, feedback_type
-                    )
-
-                    mean_reward, uncertainty = compute_grouped(
-                        predictions, unified_model.ensemble_count
-                    )
-
-                    # Collect
-                    model_rewards.append(mean_reward)  # shape [batch_size,]
-                    model_uncertainties.append(uncertainty)  # shape [batch_size,]
-
-        # If no models have feedback, return zeros for the entire batch
-        if not model_rewards:
-            return np.zeros(state.shape[0], dtype=np.float32)
-
-        # Stack across models => shape (#models, batch_size)
-        stacked_rewards = torch.stack(model_rewards, dim=0)
-        stacked_uncerts = torch.stack(model_uncertainties, dim=0)
+        # Apply standardization using Welford's algorithm
+        # Transpose to (batch_size, #models) for standardization, then transpose back
+        rewards_for_standardization = stacked_rewards.transpose(0, 1)  # shape (batch_size, #models)
+        standardized_rewards = self.standardize_rewards(rewards_for_standardization)
+        stacked_rewards = standardized_rewards.transpose(0, 1)  # back to (#models, batch_size)
 
         # Calculate final rewards => shape [batch_size,]
         batch_size = state.shape[0]
@@ -1280,8 +1161,6 @@ class DynamicRLHF:
                 final_rewards[i] = r_i.mean()
 
         return final_rewards.cpu().numpy()  # shape: [batch_size,]
-
-    # ... (rest of the methods remain the same)
 
     def train(self, total_timesteps: int, sampling_strategy: str = "random"):
         """

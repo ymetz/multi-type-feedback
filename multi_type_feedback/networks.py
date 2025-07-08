@@ -68,7 +68,7 @@ def calculate_single_reward_loss(network: LightningModule, batch: Tensor):
     total_rewards = (outputs * masks).sum(dim=1).squeeze(-1)
 
     # Ensure targets have the correct shape
-    targets = targets.float().unsqueeze(1)  # Shape: (batch_size, 1)
+    targets = targets.float().squeeze()  # Shape: (batch_size,)
 
     # Compute loss
     loss = nn.MSELoss()(total_rewards, targets)
