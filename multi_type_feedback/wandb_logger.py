@@ -3,10 +3,9 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Union
 
+import wandb
 from lightning.pytorch.loggers.wandb import WandbLogger
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
-
-import wandb
 
 
 class ContinuousWandbLogger(WandbLogger):

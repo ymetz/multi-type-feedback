@@ -9,12 +9,11 @@ import torch
 import wandb
 from stable_baselines3.common.utils import set_random_seed
 
-import wandb
 from multi_type_feedback.networks import (
     SingleCnnNetwork,
     SingleNetwork,
 )
-from multi_type_feedback.utils import TrainingUtils, RewardFn
+from multi_type_feedback.utils import RewardFn, TrainingUtils
 from train_baselines.exp_manager import ExperimentManager
 
 

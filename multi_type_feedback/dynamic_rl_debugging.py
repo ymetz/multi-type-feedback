@@ -5,8 +5,8 @@ from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
-
 import wandb
+
 from multi_type_feedback.dynamic_rlhf import DynamicRLHF
 from multi_type_feedback.feedback_oracle import FeedbackOracle
 from multi_type_feedback.utils import (

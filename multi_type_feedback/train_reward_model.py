@@ -5,13 +5,13 @@ import os
 from typing import Union
 
 import torch
+import wandb
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.loggers import WandbLogger
 from torch.utils.data import DataLoader, random_split
 
-import wandb
 from multi_type_feedback.datatypes import FeedbackType
 from multi_type_feedback.feedback_dataset import FeedbackDataset, LoadFeedbackDataset
 from multi_type_feedback.networks import (

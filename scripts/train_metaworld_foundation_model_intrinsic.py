@@ -147,7 +147,7 @@ class StateEntropyReplayBuffer:
 class StateEntropyAgent:
     """Agent for intrinsic motivation based on state entropy maximization."""
     
-    def __init__(self, obs_dim, action_dim, hidden_dim=256, lr=3e-4, device='cuda'):
+    def __init__(self, env, obs_dim, action_dim, hidden_dim=256, lr=3e-4, device='cuda'):
         self.device = device
         self.obs_dim = obs_dim
         self.action_dim = action_dim
@@ -164,7 +164,7 @@ class StateEntropyAgent:
         # Actor-critic networks (using SAC backbone)
         self.actor_critic = SAC(
             'MlpPolicy',
-            env=None,  # Will be set later
+            env=env,  # Must be set for initialization of SAC
             learning_rate=lr,
             buffer_size=100000,
             learning_starts=1000,
@@ -223,7 +223,7 @@ class IntrinsicMotivationWorkspace:
         TrainingUtils.set_seeds(args.seed)
         
         # Get metaworld tasks from ENV_POLICY_MAP (automatically includes v3 tasks)
-        self.metaworld_tasks = list(ENV_POLICY_MAP.keys())
+        self.metaworld_tasks = ["metaworld-" + env for env in list(ENV_POLICY_MAP.keys())]
         
         # Use subset of tasks if specified
         if args.n_tasks > 0:
@@ -246,6 +246,7 @@ class IntrinsicMotivationWorkspace:
         
         # Setup agent
         self.agent = StateEntropyAgent(
+            gym.make("Meta-World/MT1", env_name="assembly-v3"), # just use a random one, not used further
             obs_dim, action_dim, 
             hidden_dim=args.hidden_dim,
             lr=args.learning_rate,
@@ -266,8 +267,8 @@ class IntrinsicMotivationWorkspace:
         
         # Setup logging
         self.logger = WandbLogger(
-            project_name=args.wandb_project,
-            run_name=f"metaworld_foundation_intrinsic_{args.seed}",
+            project=args.wandb_project,
+            name=f"metaworld_foundation_intrinsic_{args.seed}",
             config=vars(args)
         )
         
@@ -286,7 +287,8 @@ class IntrinsicMotivationWorkspace:
             
             for _ in range(100):  # Short episodes for evaluation
                 action = self.multi_env.action_space.sample()
-                obs, _, done, _ = self.multi_env.step(action)
+                obs, _, terminated, truncated, _ = self.multi_env.step(action)
+                done = terminated or truncated
                 episode_states.append(obs)
                 
                 if done:
@@ -341,14 +343,16 @@ class IntrinsicMotivationWorkspace:
             action = self.multi_env.action_space.sample()
             
             # Environment step
-            next_obs, _, done, info = self.multi_env.step(action)
+            next_obs, _, terminated, truncated, info = self.multi_env.step(action)
+            done = terminated or truncated
             
             # Compute intrinsic reward
             obs_tensor = torch.tensor(obs, device=self.device, dtype=torch.float32).unsqueeze(0)
             if len(self.replay_buffer) > 100:  # Need some states for comparison
-                full_obs = self.replay_buffer.sample_full_obs(min(512, len(self.replay_buffer)))
-                int_reward = self.agent.compute_intrinsic_reward(obs_tensor, full_obs, k=min(10, len(self.replay_buffer)//10))
-                int_reward = int_reward.cpu().numpy()[0, 0]
+                with torch.no_grad():
+                    full_obs = self.replay_buffer.sample_full_obs(min(512, len(self.replay_buffer)))
+                    int_reward = self.agent.compute_intrinsic_reward(obs_tensor, full_obs, k=min(10, len(self.replay_buffer)//10))
+                    int_reward = int_reward.cpu().numpy()[0, 0]
             else:
                 int_reward = 1.0  # High reward for early exploration
             
@@ -367,7 +371,7 @@ class IntrinsicMotivationWorkspace:
                 diversity_loss = self.agent.update_state_encoder(obs_batch, None)
                 
                 if self.step % 1000 == 0:
-                    self.logger.log({'exploration/diversity_loss': diversity_loss}, self.step)
+                    self.logger.log_metrics({'exploration/diversity_loss': diversity_loss}, self.step)
             
             # Update counters
             episode_reward += 0  # No extrinsic reward used
@@ -377,7 +381,7 @@ class IntrinsicMotivationWorkspace:
             
             # Handle episode end
             if done or episode_step >= 500:
-                self.logger.log({
+                self.logger.log_metrics({
                     'exploration/episode_reward': episode_reward,
                     'exploration/episode_intrinsic_reward': episode_intrinsic_reward,
                     'exploration/episode_length': episode_step,
@@ -398,7 +402,7 @@ class IntrinsicMotivationWorkspace:
             # Periodic evaluation
             if self.step % self.args.eval_freq == 0:
                 diversity_metrics = self.evaluate_diversity()
-                self.logger.log({
+                self.logger.log_metrics({
                     'exploration/avg_pairwise_distance': diversity_metrics['avg_pairwise_distance'],
                     'exploration/state_coverage': diversity_metrics['state_coverage'],
                     'exploration/buffer_size': len(self.replay_buffer)
@@ -471,7 +475,7 @@ class IntrinsicMotivationWorkspace:
             
             if epoch % 10 == 0:
                 print(f"Foundation model epoch {epoch}: loss = {avg_loss:.4f}")
-                self.logger.log({'foundation/training_loss': avg_loss}, epoch)
+                self.logger.log_metrics({'foundation/training_loss': avg_loss}, epoch)
         
         print("Foundation model training completed!")
     
@@ -541,11 +545,10 @@ def main():
     parser.add_argument('--foundation-epochs', type=int, default=100, help='Training epochs for foundation model')
     parser.add_argument('--foundation-batch-size', type=int, default=128, help='Batch size for foundation model')
     parser.add_argument('--foundation-training-samples', type=int, default=100000, help='Number of samples for foundation training')
-    parser.add_argument('--intrinsic-weight', type=float, default=0.1, help='Weight for intrinsic rewards in foundation model')
     
     # General settings
     parser.add_argument('--seed', type=int, default=0, help='Random seed')
-    parser.add_argument('--save-dir', type=str, default='./models', help='Directory to save models')
+    parser.add_argument('--save-dir', type=str, default='./metaworld-models', help='Directory to save models')
     parser.add_argument('--wandb-project', type=str, default='metaworld-foundation-intrinsic', help='W&B project name')
     
     args = parser.parse_args()

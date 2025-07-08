@@ -3,13 +3,12 @@ import os
 from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
+import wandb
 
 # Import the Logger class from the Stable Baselines 3 logging module
 # This would typically be: from stable_baselines3.common.logger import Logger, KVWriter
 # For your code, adjust the import as needed
 from stable_baselines3.common.logger import KVWriter, Logger
-
-import wandb
 from wandb.sdk.lib import telemetry as wb_telemetry
 
 logger = logging.getLogger(__name__)

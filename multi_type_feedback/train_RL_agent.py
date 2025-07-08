@@ -8,13 +8,13 @@ import gymnasium as gym
 # register custom envs
 import numpy
 import torch
-import gymnasium as gym
-from train_baselines.exp_manager import ExperimentManager
+
 from multi_type_feedback.networks import (
-   SingleCnnNetwork,
-   SingleNetwork,
+    SingleCnnNetwork,
+    SingleNetwork,
 )
-from multi_type_feedback.utils import TrainingUtils, RewardFn
+from multi_type_feedback.utils import RewardFn, TrainingUtils
+from train_baselines.exp_manager import ExperimentManager
 
 
 class CustomReward(RewardFn):

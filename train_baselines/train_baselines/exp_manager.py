@@ -17,8 +17,8 @@ import torch as th
 import yaml
 from gymnasium import spaces
 from huggingface_sb3 import EnvironmentName
-from multi_type_feedback.utils import RewardFn
 from imitation.rewards.reward_wrapper import RewardVecEnvWrapper
+from multi_type_feedback.utils import RewardFn
 from optuna.pruners import BasePruner, MedianPruner, NopPruner, SuccessiveHalvingPruner
 from optuna.samplers import BaseSampler, RandomSampler, TPESampler
 from optuna.study import MaxTrialsCallback
@@ -84,7 +84,6 @@ from train_baselines.utils import (
 # from train_baselines.continuous_wandb_callback import ContinuousWandbCallback
 
 
-
 class ExperimentManager:
     """
     Experiment manager: read the hyperparameters,
@@ -122,7 +121,7 @@ class ExperimentManager:
         truncate_last_trajectory: bool = False,
         uuid_str: str = "",
         seed: int = 0,
-        log_interval: int = 0,
+        log_interval: int = -1,
         save_replay_buffer: bool = False,
         verbose: int = 1,
         vec_env_type: str = "dummy",

@@ -7,12 +7,12 @@ from pathlib import Path
 # register custom envs
 import gymnasium as gym
 import numpy as np
+import wandb
 from imitation.algorithms import bc
 from imitation.data import rollout
 from imitation.data.types import Trajectory
 from stable_baselines3.common.evaluation import evaluate_policy
 
-import wandb
 from multi_type_feedback.utils import TrainingUtils
 
 

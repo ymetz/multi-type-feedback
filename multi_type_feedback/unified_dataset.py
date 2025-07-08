@@ -49,6 +49,15 @@ def create_dataloaders_by_type(
     """
     dataloaders = {}
 
+    def create_collate_fn(feedback_type_str):
+        """Create a collate function that includes feedback type"""
+        def collate_fn(batch):
+            # Default collate the batch data
+            batch_data = torch.utils.data.dataloader.default_collate(batch)
+            # Add feedback type as the first element
+            return (feedback_type_str, batch_data)
+        return collate_fn
+
     for feedback_type, feedback_data in feedback_buffers.items():
         if not feedback_data:
             continue
@@ -70,6 +79,9 @@ def create_dataloaders_by_type(
             dataset, [train_size, val_size]
         )
 
+        # Create collate function for this feedback type
+        collate_fn = create_collate_fn(feedback_type)
+
         # Create data loaders
         train_loader = DataLoader(
             train_dataset,
@@ -77,6 +89,7 @@ def create_dataloaders_by_type(
             shuffle=True,
             pin_memory=True,
             drop_last=True,
+            collate_fn=collate_fn,
         )
 
         val_loader = DataLoader(
@@ -85,6 +98,7 @@ def create_dataloaders_by_type(
             shuffle=False,
             pin_memory=True,
             drop_last=True,
+            collate_fn=collate_fn,
         )
 
         dataloaders[feedback_type] = (train_loader, val_loader)

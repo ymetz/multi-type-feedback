@@ -2,7 +2,7 @@
 
 # Single environment for faster sweeping
 envs=("HalfCheetah-v5")
-seeds=(330 1687123 1789 330 1687123) #(1789 12 912391 330 1687123)
+seeds=(330) #(1789 12 912391 330 1687123)
 # Basic feedback types for initial sweep
 feedback_types=("evaluative comparative demonstrative corrective descriptive descriptive_preference" "evaluative comparative demonstrative corrective")
 #feedback_types=("evaluative" "comparative" "demonstrative" "corrective")
@@ -32,8 +32,8 @@ for seed in "${seeds[@]}"; do
                         # Create the job script with SLURM directives
                         cat <<EOT > $job_script
 #!/bin/bash
-#SBATCH --partition=single
-#SBATCH --cpus-per-task=2
+#SBATCH --partition=cpu,cpu_il
+#SBATCH --cpus-per-task=4
 #SBATCH --ntasks=1
 #SBATCH --job-name=hp_sweep_${job_counter}
 #SBATCH --time=04:30:00
@@ -50,18 +50,15 @@ python multi_type_feedback/dynamic_rlhf.py \
     --algorithm ppo \
     --environment $env \
     --feedback-types $feedback \
-    --reward-model-type unified \
+    --reward-model-type multi-head \
     --seed $seed \
     --n-feedback-per-iteration $n_feedback \
     --reward-training-epochs $epochs \
     --feedback-buffer-size $buffer_size \
     --reference-data-folder ../multi-type-feedback_iclr2025/rlhf/feedback \
-    --expert-model-base-path ../multi-type-feedback_iclr2025/main/gt_agents \
-    --wandb-project-name dynamic_rlhf_mujoco_fixed_length
+    --expert-model-base-path gt_agents \
+    --wandb-project-name dynamic_rlhf_cheetah
 EOT
-
-                        # Make the job script executable
-                        chmod +x $job_script
                         
                         # Submit the job
                         sbatch $job_script

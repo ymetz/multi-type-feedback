@@ -224,14 +224,14 @@ class MultiHeadNetwork(LightningModule):
     def training_step(self, batch, batch_idx):
         feedback_type, in_data = batch
 
-        loss = self._calculate_loss(in_data, feedback_type[0])
+        loss = self._calculate_loss(in_data, feedback_type)
         self.log(f"train_loss_{feedback_type}", loss, on_epoch=True, prog_bar=False)
         self.log("train_loss", loss, on_epoch=True, prog_bar=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
         feedback_type, in_data = batch
-        loss = self._calculate_loss(in_data, feedback_type[0])
+        loss = self._calculate_loss(in_data, feedback_type)
         self.log(f"val_loss_{feedback_type}", loss, on_epoch=True, prog_bar=False)
         self.log("val_loss", loss, on_epoch=True, prog_bar=False)
         return loss

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import pytorch_lightning
 import torch
+import wandb
 from gymnasium.wrappers import FrameStackObservation, TransformObservation
 from minigrid.wrappers import FlatObsWrapper
 from stable_baselines3 import PPO, SAC
@@ -21,7 +22,6 @@ from stable_baselines3.common.vec_env import (
     VecNormalize,
 )
 
-import wandb
 from multi_type_feedback.save_reset_wrapper import SaveResetEnvWrapper
 from train_baselines.wrappers import Gym3ToGymnasium
 
@@ -310,7 +310,8 @@ class L2RegulationCallback(pytorch_lightning.Callback):
 
         # Log current L2 value
         trainer.logger.log_metrics({"l2_regularization": self.current_l2})
-   
+
+
 class RewardFn(Protocol):
     """Abstract class for reward function.
 

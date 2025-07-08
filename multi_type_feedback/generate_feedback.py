@@ -16,6 +16,7 @@ from sklearn.cluster import MiniBatchKMeans
 from stable_baselines3 import PPO, SAC
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from torch import Tensor
+
 from multi_type_feedback.utils import TrainingUtils
 
 try:
