@@ -122,7 +122,7 @@ class ExperimentManager:
         truncate_last_trajectory: bool = False,
         uuid_str: str = "",
         seed: int = 0,
-        log_interval: int = 0,
+        log_interval: int = -1,
         save_replay_buffer: bool = False,
         verbose: int = 1,
         vec_env_type: str = "dummy",

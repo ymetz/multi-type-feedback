@@ -91,7 +91,6 @@ class StateEntropyReplayBuffer:
         self.obses = np.empty((capacity, *obs_shape), dtype=obs_dtype)
         self.next_obses = np.empty((capacity, *obs_shape), dtype=obs_dtype)
         self.actions = np.empty((capacity, *action_shape), dtype=np.float32)
-        self.extrinsic_rewards = np.empty((capacity, 1), dtype=np.float32)
         self.intrinsic_rewards = np.empty((capacity, 1), dtype=np.float32)
         self.not_dones = np.empty((capacity, 1), dtype=np.float32)
         self.not_dones_no_max = np.empty((capacity, 1), dtype=np.float32)
@@ -103,11 +102,10 @@ class StateEntropyReplayBuffer:
     def __len__(self):
         return self.capacity if self.full else self.idx
     
-    def add(self, obs, action, ext_reward, int_reward, next_obs, done, done_no_max, task_id):
+    def add(self, obs, action, int_reward, next_obs, done, done_no_max, task_id):
         """Add a transition to the buffer."""
         np.copyto(self.obses[self.idx], obs)
         np.copyto(self.actions[self.idx], action)
-        np.copyto(self.extrinsic_rewards[self.idx], ext_reward)
         np.copyto(self.intrinsic_rewards[self.idx], int_reward)
         np.copyto(self.next_obses[self.idx], next_obs)
         np.copyto(self.not_dones[self.idx], not done)
@@ -123,14 +121,13 @@ class StateEntropyReplayBuffer:
         
         obses = torch.as_tensor(self.obses[idxs], device=self.device).float()
         actions = torch.as_tensor(self.actions[idxs], device=self.device)
-        ext_rewards = torch.as_tensor(self.extrinsic_rewards[idxs], device=self.device)
         int_rewards = torch.as_tensor(self.intrinsic_rewards[idxs], device=self.device)
         next_obses = torch.as_tensor(self.next_obses[idxs], device=self.device).float()
         not_dones = torch.as_tensor(self.not_dones[idxs], device=self.device)
         not_dones_no_max = torch.as_tensor(self.not_dones_no_max[idxs], device=self.device)
         task_ids = torch.as_tensor(self.task_ids[idxs], device=self.device)
         
-        return obses, actions, ext_rewards, int_rewards, next_obses, not_dones, not_dones_no_max, task_ids
+        return obses, actions, int_rewards, next_obses, not_dones, not_dones_no_max, task_ids
     
     def sample_full_obs(self, batch_size=512):
         """Sample observations for state entropy calculation."""
@@ -150,7 +147,7 @@ class StateEntropyReplayBuffer:
 class StateEntropyAgent:
     """Agent for intrinsic motivation based on state entropy maximization."""
     
-    def __init__(self, obs_dim, action_dim, hidden_dim=256, lr=3e-4, device='cuda'):
+    def __init__(self, env, obs_dim, action_dim, hidden_dim=256, lr=3e-4, device='cuda'):
         self.device = device
         self.obs_dim = obs_dim
         self.action_dim = action_dim
@@ -167,7 +164,7 @@ class StateEntropyAgent:
         # Actor-critic networks (using SAC backbone)
         self.actor_critic = SAC(
             'MlpPolicy',
-            env=None,  # Will be set later
+            env=env,  # Must be set for initialization of SAC
             learning_rate=lr,
             buffer_size=100000,
             learning_starts=1000,
@@ -226,7 +223,7 @@ class IntrinsicMotivationWorkspace:
         TrainingUtils.set_seeds(args.seed)
         
         # Get metaworld tasks from ENV_POLICY_MAP (automatically includes v3 tasks)
-        self.metaworld_tasks = list(ENV_POLICY_MAP.keys())
+        self.metaworld_tasks = ["metaworld-" + env for env in list(ENV_POLICY_MAP.keys())]
         
         # Use subset of tasks if specified
         if args.n_tasks > 0:
@@ -249,6 +246,7 @@ class IntrinsicMotivationWorkspace:
         
         # Setup agent
         self.agent = StateEntropyAgent(
+            gym.make("Meta-World/MT1", env_name="assembly-v3"), # just use a random one, not used further
             obs_dim, action_dim, 
             hidden_dim=args.hidden_dim,
             lr=args.learning_rate,
@@ -269,8 +267,8 @@ class IntrinsicMotivationWorkspace:
         
         # Setup logging
         self.logger = WandbLogger(
-            project_name=args.wandb_project,
-            run_name=f"metaworld_foundation_intrinsic_{args.seed}",
+            project=args.wandb_project,
+            name=f"metaworld_foundation_intrinsic_{args.seed}",
             config=vars(args)
         )
         
@@ -289,7 +287,8 @@ class IntrinsicMotivationWorkspace:
             
             for _ in range(100):  # Short episodes for evaluation
                 action = self.multi_env.action_space.sample()
-                obs, _, done, _ = self.multi_env.step(action)
+                obs, _, terminated, truncated, _ = self.multi_env.step(action)
+                done = terminated or truncated
                 episode_states.append(obs)
                 
                 if done:
@@ -344,14 +343,16 @@ class IntrinsicMotivationWorkspace:
             action = self.multi_env.action_space.sample()
             
             # Environment step
-            next_obs, ext_reward, done, info = self.multi_env.step(action)
+            next_obs, _, terminated, truncated, info = self.multi_env.step(action)
+            done = terminated or truncated
             
             # Compute intrinsic reward
             obs_tensor = torch.tensor(obs, device=self.device, dtype=torch.float32).unsqueeze(0)
             if len(self.replay_buffer) > 100:  # Need some states for comparison
-                full_obs = self.replay_buffer.sample_full_obs(min(512, len(self.replay_buffer)))
-                int_reward = self.agent.compute_intrinsic_reward(obs_tensor, full_obs, k=min(10, len(self.replay_buffer)//10))
-                int_reward = int_reward.cpu().numpy()[0, 0]
+                with torch.no_grad():
+                    full_obs = self.replay_buffer.sample_full_obs(min(512, len(self.replay_buffer)))
+                    int_reward = self.agent.compute_intrinsic_reward(obs_tensor, full_obs, k=min(10, len(self.replay_buffer)//10))
+                    int_reward = int_reward.cpu().numpy()[0, 0]
             else:
                 int_reward = 1.0  # High reward for early exploration
             
@@ -360,27 +361,27 @@ class IntrinsicMotivationWorkspace:
             done_no_max = False if episode_step == 500 else done  # Metaworld max episode length
             
             self.replay_buffer.add(
-                obs, action, ext_reward, int_reward, next_obs, 
+                obs, action, int_reward, next_obs, 
                 done, done_no_max, task_id
             )
             
             # Update state encoder periodically
             if self.step % self.args.state_update_freq == 0 and len(self.replay_buffer) > self.args.batch_size:
-                obs_batch, _, _, _, _, _, _, _ = self.replay_buffer.sample(self.args.batch_size)
+                obs_batch, _, _, _, _, _, _ = self.replay_buffer.sample(self.args.batch_size)
                 diversity_loss = self.agent.update_state_encoder(obs_batch, None)
                 
                 if self.step % 1000 == 0:
-                    self.logger.log({'exploration/diversity_loss': diversity_loss}, self.step)
+                    self.logger.log_metrics({'exploration/diversity_loss': diversity_loss}, self.step)
             
             # Update counters
-            episode_reward += ext_reward
+            episode_reward += 0  # No extrinsic reward used
             episode_intrinsic_reward += int_reward
             episode_step += 1
             self.step += 1
             
             # Handle episode end
             if done or episode_step >= 500:
-                self.logger.log({
+                self.logger.log_metrics({
                     'exploration/episode_reward': episode_reward,
                     'exploration/episode_intrinsic_reward': episode_intrinsic_reward,
                     'exploration/episode_length': episode_step,
@@ -401,7 +402,7 @@ class IntrinsicMotivationWorkspace:
             # Periodic evaluation
             if self.step % self.args.eval_freq == 0:
                 diversity_metrics = self.evaluate_diversity()
-                self.logger.log({
+                self.logger.log_metrics({
                     'exploration/avg_pairwise_distance': diversity_metrics['avg_pairwise_distance'],
                     'exploration/state_coverage': diversity_metrics['state_coverage'],
                     'exploration/buffer_size': len(self.replay_buffer)
@@ -422,10 +423,10 @@ class IntrinsicMotivationWorkspace:
         
         # Sample diverse training data
         n_samples = min(len(self.replay_buffer), self.args.foundation_training_samples)
-        obs, actions, ext_rewards, int_rewards, next_obs, _, _, task_ids = self.replay_buffer.sample(n_samples)
+        obs, actions, int_rewards, next_obs, _, _, task_ids = self.replay_buffer.sample(n_samples)
         
-        # Prepare training data (obs, actions) -> combined reward
-        combined_rewards = ext_rewards + self.args.intrinsic_weight * int_rewards
+        # Prepare training data (obs, actions) -> intrinsic reward only
+        combined_rewards = int_rewards
         
         # Convert to sequence format expected by SingleNetwork
         batch_size = obs.shape[0]
@@ -474,7 +475,7 @@ class IntrinsicMotivationWorkspace:
             
             if epoch % 10 == 0:
                 print(f"Foundation model epoch {epoch}: loss = {avg_loss:.4f}")
-                self.logger.log({'foundation/training_loss': avg_loss}, epoch)
+                self.logger.log_metrics({'foundation/training_loss': avg_loss}, epoch)
         
         print("Foundation model training completed!")
     
@@ -493,7 +494,6 @@ class IntrinsicMotivationWorkspace:
         buffer_data = {
             'obses': self.replay_buffer.obses[:len(self.replay_buffer)],
             'actions': self.replay_buffer.actions[:len(self.replay_buffer)],
-            'rewards': self.replay_buffer.extrinsic_rewards[:len(self.replay_buffer)],
             'intrinsic_rewards': self.replay_buffer.intrinsic_rewards[:len(self.replay_buffer)],
             'task_ids': self.replay_buffer.task_ids[:len(self.replay_buffer)]
         }
@@ -545,11 +545,10 @@ def main():
     parser.add_argument('--foundation-epochs', type=int, default=100, help='Training epochs for foundation model')
     parser.add_argument('--foundation-batch-size', type=int, default=128, help='Batch size for foundation model')
     parser.add_argument('--foundation-training-samples', type=int, default=100000, help='Number of samples for foundation training')
-    parser.add_argument('--intrinsic-weight', type=float, default=0.1, help='Weight for intrinsic rewards in foundation model')
     
     # General settings
     parser.add_argument('--seed', type=int, default=0, help='Random seed')
-    parser.add_argument('--save-dir', type=str, default='./models', help='Directory to save models')
+    parser.add_argument('--save-dir', type=str, default='./metaworld-models', help='Directory to save models')
     parser.add_argument('--wandb-project', type=str, default='metaworld-foundation-intrinsic', help='W&B project name')
     
     args = parser.parse_args()
