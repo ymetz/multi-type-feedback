@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Single environment for faster sweeping
-envs=("HalfCheetah-v5")
-seeds=(330) #(1789 12 912391 330 1687123)
+envs=("Swimmer-v5" "Walker2d-v5")
+seeds=(1789 12 912391 330 1687123) #(1789 12 912391 330 1687123)
 # Basic feedback types for initial sweep
-feedback_types=("evaluative comparative demonstrative corrective descriptive descriptive_preference" "evaluative comparative demonstrative corrective")
+#feedback_types=("evaluative comparative demonstrative corrective descriptive descriptive_preference")
 #feedback_types=("evaluative" "comparative" "demonstrative" "corrective")
-#feedback_types=("supervised")
+feedback_types=("comparative")
 # Hyperparameter ranges
 n_feedback_per_iteration=(50)
 reward_training_epochs=(15)
@@ -36,7 +36,7 @@ for seed in "${seeds[@]}"; do
 #SBATCH --cpus-per-task=4
 #SBATCH --ntasks=1
 #SBATCH --job-name=hp_sweep_${job_counter}
-#SBATCH --time=04:30:00
+#SBATCH --time=02:00:00
 #SBATCH --output=logs/hp_sweep_${job_counter}_%j.out
 
 # Load necessary modules or activate environments
@@ -50,7 +50,7 @@ python multi_type_feedback/dynamic_rlhf.py \
     --algorithm ppo \
     --environment $env \
     --feedback-types $feedback \
-    --reward-model-type multi-head \
+    --reward-model-type separate \
     --seed $seed \
     --n-feedback-per-iteration $n_feedback \
     --reward-training-epochs $epochs \

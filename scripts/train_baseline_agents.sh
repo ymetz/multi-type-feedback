@@ -1,8 +1,8 @@
 #!/bin/bash
 # Define arrays
-envs=("HalfCheetah-v5")
+envs=("Walker2d-v5" "Swimmer-v5")
 seeds=(1789 1687123 12 912391 330)
-save_freqs=(50000)
+save_freqs=(50000 50000)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs

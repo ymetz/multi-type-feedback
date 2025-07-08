@@ -1343,9 +1343,11 @@ def main():
     )
     unique_id = str(uuid.uuid4())[:8]
 
+    reward_model_type = args.reward_model_type if len(args.feedback_types) > 1 else f"single_{''.join(args.feedback_types)}"
+
     # Initialize wandb
     wandb.init(
-        name=f"DYNAMIC_RL_{args.algorithm}_{args.environment}_{','.join(args.feedback_types)}_{unique_id}",
+        name=f"DYNAMIC_RL_{args.algorithm}_{args.environment}_{reward_model_type}_{args.seed}",
         project=args.wandb_project_name,
         config={
             "algorithm": args.algorithm,
