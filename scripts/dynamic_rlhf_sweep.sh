@@ -33,7 +33,7 @@ for seed in "${seeds[@]}"; do
                         cat <<EOT > $job_script
 #!/bin/bash
 #SBATCH --partition=cpu,cpu_il
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #SBATCH --ntasks=1
 #SBATCH --job-name=hp_sweep_${job_counter}
 #SBATCH --time=02:00:00
