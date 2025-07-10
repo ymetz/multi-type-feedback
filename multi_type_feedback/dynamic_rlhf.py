@@ -1,7 +1,7 @@
 import uuid
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import gymnasium as gym
 import numpy as np
@@ -32,8 +32,6 @@ from multi_type_feedback.networks import (
     calculate_single_reward_loss,
 )
 from multi_type_feedback.unified_dataset import (
-    MultiHeadDataModule,
-    UnifiedBufferDataset,
     create_dataloaders_by_type,
     create_unified_dataloaders,
 )
@@ -44,7 +42,6 @@ from multi_type_feedback.unified_networks import (
 from multi_type_feedback.utils import (
     L2RegulationCallback,
     RewardFn,
-    RewardVecEnvWrapper,
     TrainingUtils,
     get_project_root,
 )
@@ -198,7 +195,7 @@ class DynamicRLHF:
         if custom_sb3_logger:
             self.rl_agent.set_logger(custom_sb3_logger)
 
-    def _init_rl_agent(self):
+    def _init_rl_agent(self) -> Union[PPO, SAC]:
         """Initialize the RL agent using ExperimentManager."""
         if self.exp_manager:
             # Use ExperimentManager to create the model
@@ -442,7 +439,7 @@ class DynamicRLHF:
 
     def collect_trajectories(
         self, n_trajectories: int, env: gym.Env = None
-    ) -> List[Dict]:
+    ) -> Tuple[List[List[Tuple[np.ndarray, np.ndarray, float, bool]]], List[Any]]:
         """Collect trajectories using current policy."""
         if env is None:
             env = TrainingUtils.setup_environment(self.env_name, self.seed)
@@ -812,9 +809,106 @@ class DynamicRLHF:
 
         return trajectory_uncertainty
 
+    def compute_trajectory_overall_uncertainty(
+        self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]], 
+        strategy: str = "average"
+    ) -> float:
+        """
+        Compute overall uncertainty for a trajectory across all feedback types.
+        
+        Args:
+            trajectory: Single trajectory to compute uncertainty for
+            strategy: How to combine uncertainties across feedback types ("average", "min", "max")
+            
+        Returns:
+            Overall uncertainty score for the trajectory
+        """
+        uncertainties = []
+        
+        for feedback_type in self.feedback_types:
+            if len(self.feedback_buffers[feedback_type]) > 0:  # Only if model has been trained
+                uncertainty = self.compute_model_uncertainty(trajectory, feedback_type)
+                # Basic normalization could be added here if needed in the future
+                uncertainties.append(uncertainty)
+            else:
+                # If no feedback yet, set high uncertainty to encourage exploration
+                uncertainties.append(float("inf"))
+        
+        if not uncertainties:
+            return 0.0
+        
+        # Handle infinite uncertainties (untrained models)
+        if any(u == float("inf") for u in uncertainties):
+            return float("inf")
+        
+        # Combine uncertainties based on strategy
+        if strategy == "average":
+            return np.mean(uncertainties)
+        elif strategy == "min":
+            return np.min(uncertainties)
+        elif strategy == "max":
+            return np.max(uncertainties)
+        else:
+            raise ValueError(f"Unknown uncertainty combination strategy: {strategy}")
+    
+    def select_queries_by_uncertainty(
+        self, 
+        trajectories: List[List], 
+        initial_states: List[np.ndarray],
+        n_queries: int,
+        strategy: str = "average"
+    ) -> tuple[List[List], List[np.ndarray]]:
+        """
+        Select top N queries based on model uncertainty.
+        
+        Args:
+            trajectories: List of trajectories to select from
+            initial_states: Corresponding initial states
+            n_queries: Number of queries to select
+            strategy: How to combine uncertainties across feedback types
+            
+        Returns:
+            Selected trajectories and their initial states
+        """
+        if len(trajectories) <= n_queries:
+            return trajectories, initial_states
+        
+        # Compute overall uncertainty for each trajectory
+        trajectory_uncertainties = []
+        for trajectory in trajectories:
+            uncertainty = self.compute_trajectory_overall_uncertainty(trajectory, strategy)
+            trajectory_uncertainties.append(uncertainty)
+        
+        # Handle case where some trajectories have infinite uncertainty
+        finite_uncertainties = [u for u in trajectory_uncertainties if u != float("inf")]
+        if len(finite_uncertainties) < len(trajectory_uncertainties):
+            # Prioritize trajectories with infinite uncertainty (untrained models)
+            inf_indices = [i for i, u in enumerate(trajectory_uncertainties) if u == float("inf")]
+            finite_indices = [i for i, u in enumerate(trajectory_uncertainties) if u != float("inf")]
+            
+            # Take all infinite uncertainty trajectories first, then top finite ones
+            selected_indices = inf_indices[:n_queries]
+            if len(selected_indices) < n_queries:
+                remaining_needed = n_queries - len(selected_indices)
+                finite_uncertainties_with_idx = [(finite_indices[i], trajectory_uncertainties[finite_indices[i]]) 
+                                                for i in range(len(finite_indices))]
+                finite_uncertainties_with_idx.sort(key=lambda x: x[1], reverse=True)
+                selected_indices.extend([idx for idx, _ in finite_uncertainties_with_idx[:remaining_needed]])
+        else:
+            # All uncertainties are finite, select top N
+            uncertainty_with_idx = [(i, u) for i, u in enumerate(trajectory_uncertainties)]
+            uncertainty_with_idx.sort(key=lambda x: x[1], reverse=True)
+            selected_indices = [idx for idx, _ in uncertainty_with_idx[:n_queries]]
+        
+        # Return selected trajectories and initial states
+        selected_trajectories = [trajectories[i] for i in selected_indices]
+        selected_initial_states = [initial_states[i] for i in selected_indices]
+        
+        return selected_trajectories, selected_initial_states
+
     def sample_feedback_uncertainty(
         self, trajectories: List[List], initial_states: List[np.ndarray]
-    ) -> Dict:
+    ) -> tuple[List[Dict], Dict[str, int]]:
         """Sample feedback types based on ensemble variance for each reward model."""
         # Calculate uncertainties for each trajectory and feedback type
         trajectory_uncertainties = []
@@ -1162,7 +1256,7 @@ class DynamicRLHF:
 
         return final_rewards.cpu().numpy()  # shape: [batch_size,]
 
-    def train(self, total_timesteps: int, sampling_strategy: str = "random"):
+    def train(self, total_timesteps: int, sampling_strategy: str = "random", query_sampling_strategy: str = "none", query_sampling_multiplier: float = 2.0):
         """
         Run full training loop with a single call to learn() and using callbacks
         for reward model updates.
@@ -1173,6 +1267,8 @@ class DynamicRLHF:
             drlhf_agent=self,
             update_freq=self.rl_steps_per_iteration,
             sampling_strategy=sampling_strategy,
+            query_sampling_strategy=query_sampling_strategy,
+            query_sampling_multiplier=query_sampling_multiplier,
             verbose=1,
         )
 
@@ -1230,6 +1326,19 @@ def main():
         default="random",
         choices=["random", "uncertainty"],
         help="Feedback sampling strategy",
+    )
+    parser.add_argument(
+        "--query-sampling-strategy",
+        type=str,
+        default="none",
+        choices=["none", "average", "min", "max"],
+        help="Query selection strategy based on uncertainty",
+    )
+    parser.add_argument(
+        "--query-sampling-multiplier",
+        type=float,
+        default=2.0,
+        help="Multiplier for number of queries to sample before filtering",
     )
     parser.add_argument(
         "--reward-model-type",
@@ -1341,7 +1450,7 @@ def main():
         reference_data_path=feedback_path,
         noise_level=args.noise_level,
     )
-    unique_id = str(uuid.uuid4())[:8]
+    #unique_id = str(uuid.uuid4())[:8]
 
     reward_model_type = args.reward_model_type if len(args.feedback_types) > 1 else f"single_{''.join(args.feedback_types)}"
 
@@ -1378,7 +1487,6 @@ def main():
     # Setup experiment and get hyperparameters
     hyperparams = exp_manager.get_hyperparam_config_for_algo()
 
-    # Custom SB3 Logger
     custom_sb3_logger = create_continuous_wandb_logger(
         global_step_offset=0,
         run_id=wandb.run.id,  # Reuse the same W&B run
@@ -1411,9 +1519,13 @@ def main():
         exp_manager=exp_manager,
     )
 
-    # Train with the new approach
     n_timesteps = args.n_timesteps if args.n_timesteps > 0 else exp_manager.n_timesteps
-    drlhf.train(total_timesteps=n_timesteps, sampling_strategy=args.sampling_strategy)
+    drlhf.train(
+        total_timesteps=n_timesteps, 
+        sampling_strategy=args.sampling_strategy,
+        query_sampling_strategy=args.query_sampling_strategy,
+        query_sampling_multiplier=args.query_sampling_multiplier
+    )
 
 
 if __name__ == "__main__":

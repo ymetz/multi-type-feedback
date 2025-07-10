@@ -15,6 +15,8 @@ class RewardModelUpdateCallback(EventCallback):
     :param drlhf_agent: The DynamicRLHF agent instance
     :param update_freq: Number of timesteps between updates
     :param sampling_strategy: Strategy for sampling feedback ("random" or "uncertainty")
+    :param query_sampling_strategy: Strategy for query selection ("none", "average", "min", "max")
+    :param query_sampling_multiplier: Multiplier for number of queries to sample before filtering
     :param verbose: Verbosity level: 0 for no output, 1 for info messages
     """
 
@@ -23,12 +25,16 @@ class RewardModelUpdateCallback(EventCallback):
         drlhf_agent,
         update_freq: int = 5000,
         sampling_strategy: str = "random",
+        query_sampling_strategy: str = "none",
+        query_sampling_multiplier: float = 2.0,
         verbose: int = 0,
     ):
         super().__init__(callback=None, verbose=verbose)
         self.drlhf_agent = drlhf_agent
         self.update_freq = update_freq
         self.sampling_strategy = sampling_strategy
+        self.query_sampling_strategy = query_sampling_strategy
+        self.query_sampling_multiplier = query_sampling_multiplier
         self.last_update_timestep = 0
         self.update_count = 0
 
@@ -49,10 +55,46 @@ class RewardModelUpdateCallback(EventCallback):
                     f"\nReward model update #{self.update_count} at timestep {self.num_timesteps}"
                 )
 
+            # Determine number of trajectories to collect
+            n_feedback_needed = self.drlhf_agent.n_feedback_per_iteration
+            
+            if self.query_sampling_strategy != "none":
+                # Collect more trajectories for query selection
+                n_trajectories_to_collect = int(n_feedback_needed * self.query_sampling_multiplier)
+                if self.verbose > 0:
+                    print(f"Collecting {n_trajectories_to_collect} trajectories for query selection (need {n_feedback_needed})")
+            else:
+                n_trajectories_to_collect = n_feedback_needed
+
             # Collect trajectories
             trajectories, initial_states = self.drlhf_agent.collect_trajectories(
-                self.drlhf_agent.n_feedback_per_iteration
+                n_trajectories_to_collect
             )
+
+            # Apply query selection if enabled
+            if self.query_sampling_strategy != "none" and len(trajectories) > n_feedback_needed:
+                if self.verbose > 0:
+                    print(f"Selecting top {n_feedback_needed} queries using {self.query_sampling_strategy} strategy")
+                
+                # Select queries based on uncertainty
+                selected_trajectories, selected_initial_states = (
+                    self.drlhf_agent.select_queries_by_uncertainty(
+                        trajectories, initial_states, n_feedback_needed, self.query_sampling_strategy
+                    )
+                )
+                
+                # Log basic query selection metrics
+                if (
+                    hasattr(self.drlhf_agent, "wandb")
+                    and self.drlhf_agent.wandb.run is not None
+                ):
+                    query_metrics = {
+                        "query_selection/total_collected": len(trajectories),
+                        "query_selection/selected": len(selected_trajectories),
+                    }
+                    self.drlhf_agent.wandb.log(query_metrics, step=self.num_timesteps)
+                
+                trajectories, initial_states = selected_trajectories, selected_initial_states
 
             # Get feedback based on sampling strategy
             if self.sampling_strategy == "random":
