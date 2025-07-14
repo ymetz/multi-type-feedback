@@ -1,4 +1,5 @@
 import uuid
+import os
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -12,6 +13,7 @@ from pytorch_lightning import Trainer
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, CallbackList
 from torch.utils.data import DataLoader
+from stable_baselines3.common.logger import configure
 import torch.nn.functional as F
 
 from multi_type_feedback.continuous_wandb_sb3_logger import (
@@ -1128,6 +1130,13 @@ class DynamicRLHF:
         This collects diverse experiences before learning from human feedback.
         """
         env = TrainingUtils.setup_environment(self.env_name, self.seed)
+
+        # tmp logger just for exploration phase, do not use our WandB logger
+        explo_log_dir = os.path.join("logs", "pebble_exploration")
+        os.makedirs(explo_log_dir, exist_ok=True)
+        # set up logger
+        exploration_logger = configure(explo_log_dir, ["stdout"])
+        self.rl_agent.set_logger(exploration_logger)
         
         obs, _ = env.reset()
         self.exploration_observations.append(obs.copy())
@@ -1197,10 +1206,10 @@ class DynamicRLHF:
             else:
                 obs = next_obs
             
-            # Train agent with intrinsic rewards (periodically)
+            # Train agent with intrinsic rewards
             if step > 100 and step % 50 == 0:  # Start training after some data collection
-                self.rl_agent.train()
-        
+                self.rl_agent.train(gradient_steps=1)
+
         env.close()
         self.intrinsic_exploration_complete = True
         

@@ -1465,6 +1465,8 @@ def main():
             "rl_steps_per_iteration": args.rl_steps_per_iteration,
             "reward_training_epochs": args.reward_training_epochs,
             "feedback_buffer_size": args.feedback_buffer_size,
+            "reward_model_type": args.reward_model_type,
+            "query_sampling_strategy": args.query_sampling_strategy,
         },
     )
 

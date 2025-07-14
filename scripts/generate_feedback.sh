@@ -4,8 +4,8 @@
 #envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
 #envs=("ALE/Pong-v5" "ALE/BeamRider-v5" "ALE/MsPacman-v5" "ALE/Enduro-v5") #"ALE/Pong-v5" "ALE/BeamRider-v5" "ALE/MsPacman-v5" "ALE/Enduro-v5")
 #envs=("metaworld-sweep-into-v2" "metaworld-pick-place-v2" "metaworld-button-press-v2")
-envs=("LunarLander-v3")
-seeds=(1789 1687123 12 912391 330)
+envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
+seeds=(1789 12 912391 330 1687123)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -21,7 +21,7 @@ for seed in "${seeds[@]}"; do
 done
 
 # Set the batch size (number of jobs per GPU)
-batch_size=5
+batch_size=1
 total_combinations=${#combinations[@]}
 
 # Loop over the combinations in batches
@@ -33,16 +33,15 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
     sbatch_script="batch_job_$batch_id.sh"
     cat <<EOT > $sbatch_script
 #!/bin/bash
-#SBATCH --partition=gpu_4,gpu_8,gpu_4_a100
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=20
+#SBATCH --partition=cpu,cpu_il
+#SBATCH --cpus-per-task=8
 #SBATCH --ntasks=1
 #SBATCH --job-name=generate_feedback_$batch_id
 #SBATCH --time=04:00:00
-#SBATCH --output=logs/train_generate_feedback_${batch_id}_%j.out
+#SBATCH --output=logs/generate_feedback_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
-source /pfs/data5/home/kn/kn_kn/kn_pop257914/multi-type-feedback/venv/bin/activate
+source /pfs/data5/home/kn/kn_kn/kn_pop257914/ws_feedback_querying/venv/bin/activate
 
 # Run the training jobs in background
 EOT
@@ -50,7 +49,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env <<< $combination
-        echo "python multi_type_feedback/generate_feedback.py --algorithm ppo --environment $env --seed $seed --n-feedback 10000 --save-folder feedback &" >> $sbatch_script
+        echo "python multi_type_feedback/generate_feedback.py --algorithm sac --environment $env --seed $seed --n-feedback 10000 --save-folder feedback &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

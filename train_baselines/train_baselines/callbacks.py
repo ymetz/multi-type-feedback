@@ -32,9 +32,7 @@ def sync_envs_normalization_fixed(env: VecEnv, eval_env: VecEnv) -> None:
     :param eval_env: Environment used for evaluation.
     """
     env_tmp, eval_env_tmp = env, eval_env
-    print(env_tmp, eval_env_tmp)
     while isinstance(env_tmp, VecEnvWrapper):
-        print("WITHIN", env_tmp, eval_env_tmp)
         assert isinstance(eval_env_tmp, VecEnvWrapper), (
             "Error while synchronizing normalization stats: expected the eval env to be "
             f"a VecEnvWrapper but got {eval_env_tmp} instead. "
