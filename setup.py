@@ -32,7 +32,7 @@ setup(
         "highway-env",
         "metaworld @ git+https://github.com/Farama-Foundation/Metaworld.git@master#egg=metaworld",
         "gym3",
-        "procgen @ git+https://github.com/juancroldan/procgen",
+        #"procgen @ git+https://github.com/juancroldan/procgen",
         "opencv-python",
         "stable-baselines3",
         f"imitation @ {get_abs_path('dependencies/imitation')}",

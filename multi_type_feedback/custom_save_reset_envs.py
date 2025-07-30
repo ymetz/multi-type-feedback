@@ -5,15 +5,6 @@ import numpy as np
     For a list of supported environments, see the CUSTOM_ENVS dict at the bottom of the file
 """
 
-from gymnasium.envs.box2d.lunar_lander import (
-    FPS,
-    LEG_DOWN,
-    SCALE,
-    VIEWPORT_H,
-    VIEWPORT_W,
-)
-
-
 class LunarLanderSaveLoadWrapper(gym.Wrapper):
     """
     A wrapper that adds save_state and load_state methods to a LunarLander environment.
