@@ -32,8 +32,9 @@ def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tens
     
     for partition_id in unique_partitions:
         mask = partition_ids == partition_id
-        if mask.sum() < 2:  # Skip partitions with less than 2 examples
-            continue
+        # no minimal partition size right now
+        #if mask.sum() < 1:  # Skip partitions with less than 2 examples
+        #    continue
             
         partition_utility_diff = utility_diff[mask]
         partition_ranks = ranks[mask]

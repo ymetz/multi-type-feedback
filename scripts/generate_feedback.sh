@@ -37,7 +37,7 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
 #SBATCH --cpus-per-task=8
 #SBATCH --ntasks=1
 #SBATCH --job-name=generate_feedback_$batch_id
-#SBATCH --time=04:00:00
+#SBATCH --time=02:00:00
 #SBATCH --output=logs/generate_feedback_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
@@ -49,7 +49,7 @@ EOT
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env <<< $combination
-        echo "python multi_type_feedback/generate_feedback.py --algorithm sac --environment $env --seed $seed --n-feedback 10000 --save-folder feedback &" >> $sbatch_script
+        echo "python multi_type_feedback/generate_feedback.py --algorithm ppo --environment $env --seed $seed --n-feedback 5000 --save-folder feedback &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish
