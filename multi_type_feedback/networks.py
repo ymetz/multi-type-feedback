@@ -13,50 +13,93 @@ from torch import Tensor, nn
 from torch.nn.functional import mse_loss, nll_loss
 
 
+def compute_pl_log_likelihood_of_ranking(log_item_worths, ranking):
+    """
+    Computes the Plackett-Luce log-likelihood for the given ranking.
+
+    Args:
+        log_item_worths: Log of item worths (utilities in log-space)
+        ranking: Ranking indices
+
+    Returns:
+        Log-likelihood of the ranking
+    """
+    # Sort log-worths according to ranking
+    log_worths_ranked = torch.gather(log_item_worths, -1, ranking)
+
+    # Compute log-sum-exp of remaining items at each position
+    # For each position i, we need log(sum(exp(log_worths[j]))) for j >= i
+    log_denominators = []
+    for i in range(log_worths_ranked.shape[-1]):
+        remaining_log_worths = log_worths_ranked[..., i:]
+        # log sum exp for numerical stability
+        log_denominator = torch.logsumexp(remaining_log_worths, dim=-1)
+        log_denominators.append(log_denominator)
+
+    log_denominators = torch.stack(log_denominators, dim=-1)
+
+    log_result = torch.sum(log_worths_ranked - log_denominators, dim=-1)
+
+    return log_result
+
+
 def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tensor, divide_by_len: bool = False) -> Tensor:
     """
-    Compute RT-rank loss based on Plackett-Luce ranking model.
-    
+    Compute RT ranking loss with anchoring (a fixed reference point at 0 utility).
+
+    This method:
+    1. Assumes the preferred option always comes first (utility_diff may still be negative as it is a prediction)
+    2. Adds a virtual anchor with utility difference of 0 to each partition
+    3. Computes the Plackett-Luce ranking log-likelihood with the anchor
+
     Args:
-        utility_diff: Difference in utilities (rewards_chosen - rewards_rejected)
-        ranks: Synthetic preference strength (negative reward difference)
-        partition_ids: Partition IDs for stratification
-        divide_by_len: Whether to divide by partition length
-    
+        utility_diff: Tensor of utility differences (chosen - rejected)
+        ranks: Tensor of ranking values (can be response times or pre-computed ranks)
+        partition_ids: Tensor of partition IDs for grouping comparisons
+        divide_by_len: Whether to divide the loss by the number of items
+
     Returns:
-        RT-rank loss value
+        loss: Scalar loss value (negative log-likelihood)
     """
+    assert partition_ids is not None
+
     unique_partitions = torch.unique(partition_ids)
-    total_loss = 0.0
-    total_weight = 0.0
-    
-    for partition_id in unique_partitions:
-        mask = partition_ids == partition_id
-        if mask.sum() < 2:  # Skip partitions with less than 2 examples
-            continue
-            
-        partition_utility_diff = utility_diff[mask]
-        partition_ranks = ranks[mask]
-        
-        # Sort by rank (lower rank = higher preference strength)
-        sorted_indices = torch.argsort(partition_ranks)
-        sorted_utility_diff = partition_utility_diff[sorted_indices]
-        
-        # Compute Plackett-Luce loss for this partition
-        partition_loss = 0.0
-        n = len(sorted_utility_diff)
-        
-        for i in range(n - 1):
-            # For each position, compute probability of this item being ranked here
-            remaining_utilities = sorted_utility_diff[i:]
-            log_prob = sorted_utility_diff[i] - torch.logsumexp(remaining_utilities, dim=0)
-            partition_loss -= log_prob
-        
-        weight = 1.0 / n if divide_by_len else 1.0
-        total_loss += partition_loss * weight
-        total_weight += weight
-    
-    return total_loss / max(total_weight, 1e-8)
+    joint_log_likelihood = 0.0
+
+    total_items = 0
+    anchor_udiff = torch.zeros(1, device=utility_diff.device, dtype=utility_diff.dtype)
+    for partition in unique_partitions:
+        partition_mask = partition_ids == partition
+        n = int(partition_mask.sum())
+        assert n > 0
+
+        # Extract data for this partition
+        partition_udiff = utility_diff[partition_mask]
+        partition_ranks = ranks[partition_mask]
+
+        # Sort by rank values for ranking
+        # Lower values mean stronger preference
+        ranking = torch.argsort(partition_ranks)
+
+        # Add virtual anchor with utility diff of 0
+        augmented_udiff = torch.cat([partition_udiff, anchor_udiff])
+        anchor_idx = torch.tensor(
+            [len(ranking)], device=ranking.device, dtype=ranking.dtype
+        )
+        augmented_ranking = torch.cat([ranking, anchor_idx])
+
+        # Compute Plackett-Luce log likelihood
+        log_likelihood = compute_pl_log_likelihood_of_ranking(
+            augmented_udiff, augmented_ranking
+        )
+
+        joint_log_likelihood += log_likelihood
+        total_items += n
+
+    if divide_by_len:
+        return -joint_log_likelihood / total_items
+    else:
+        return -joint_log_likelihood
 
 
 def calculate_rtrank_pairwise_loss(network: LightningModule, batch: Tensor):
