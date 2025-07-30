@@ -59,6 +59,7 @@ def train_reward_model(
     enable_progress_bar=True,
     callback: Union[Callback, None] = None,
     num_ensemble_models: int = 4,
+    batch_size_multiplier: int = 4,
     noise_level: float = 0.0,
     n_feedback: int = -1,
     seed: int = 0,
@@ -75,7 +76,7 @@ def train_reward_model(
 
     train_loader = DataLoader(
         train_set,
-        batch_size=num_ensemble_models * 8,
+        batch_size=num_ensemble_models * batch_size_multiplier,
         shuffle=True,
         pin_memory=True,
         # num_workers=cpu_count,
@@ -85,7 +86,7 @@ def train_reward_model(
 
     val_loader = DataLoader(
         val_set,
-        batch_size=num_ensemble_models * 8,
+        batch_size=num_ensemble_models * batch_size_multiplier,
         pin_memory=True,
         num_workers=1,
         drop_last=True,
@@ -167,8 +168,8 @@ def main():
     parser.add_argument(
         "--stratifier",
         type=str,
-        default="knn",
-        choices=["knn", "std_window", "global"],
+        default="none",
+        choices=["knn", "std_window", "global", "none"],
         help="Stratification method for RT-rank loss",
     )
     args = parser.parse_args()
@@ -195,6 +196,8 @@ def main():
             stratifier = StdWindowStratifier(std_window=1.0, min_cluster_size=1)
         elif args.stratifier == "global":
             stratifier = GlobalPartitionStratifier(split_on_ties=False)
+        elif args.stratifier == "none":
+            stratifier = None
         else:
             raise ValueError(f"Unknown stratifier: {args.stratifier}")
 

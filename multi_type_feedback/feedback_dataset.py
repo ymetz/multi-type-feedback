@@ -198,15 +198,16 @@ class FeedbackDataset(Dataset):
                         upp=rews_max,
                     )
 
-                    if rew2_noisy > rew1_noisy:
+                    # put the "chosen" segment first
+                    if rew1_noisy > rew2_noisy:
                         self.targets.append(((obs, actions, mask), (obs2, actions2, mask2)))
                     else:
                         self.targets.append(((obs2, actions2, mask2), (obs, actions, mask)))
                         flipped += 1
-                    self.preds.append(comp[2])
+                    self.preds.append(0)
                 else:
                     self.targets.append(((obs, actions, mask), (obs2, actions2, mask2)))
-                    self.preds.append(comp[2])
+                    self.preds.append(0)
                 
                 self.ranks.append(synthetic_rank)
             

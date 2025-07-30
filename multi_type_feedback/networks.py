@@ -13,7 +13,7 @@ from torch import Tensor, nn
 from torch.nn.functional import mse_loss, nll_loss
 
 
-def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tensor, divide_by_len: bool = False) -> Tensor:
+def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tensor, divide_by_len: bool = True) -> Tensor:
     """
     Compute RT-rank loss based on Plackett-Luce ranking model.
     

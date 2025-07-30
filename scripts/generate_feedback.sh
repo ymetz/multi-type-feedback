@@ -4,8 +4,10 @@
 #envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
 #envs=("ALE/Pong-v5" "ALE/BeamRider-v5" "ALE/MsPacman-v5" "ALE/Enduro-v5") #"ALE/Pong-v5" "ALE/BeamRider-v5" "ALE/MsPacman-v5" "ALE/Enduro-v5")
 #envs=("metaworld-sweep-into-v2" "metaworld-pick-place-v2" "metaworld-button-press-v2")
-envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
-seeds=(1789 12 912391 330 1687123)
+#envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
+envs=("HalfCheetah-v5" "Walker2d-v5")
+#seeds=(1789 12 912391 330 1687123)
+seeds=(1687123)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
