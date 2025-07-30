@@ -99,9 +99,14 @@ def train_reward_model(
     )
 
     # initialise the wandb logger and name your wandb project
+    # Include rt_loss_weight in the run name if it's being used
+    run_name = reward_model_id
+    if rt_loss_weight > 0.0:
+        run_name = f"{reward_model_id}_rt{rt_loss_weight}"
+    
     wandb_logger = WandbLogger(
         project=wandb_project_name,
-        name=reward_model_id,
+        name=run_name,
         config={
             "feedback_type": feedback_type,
             "noise_level": noise_level,

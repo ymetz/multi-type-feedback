@@ -155,7 +155,13 @@ def calculate_mle_loss(network: LightningModule, batch: Tensor):
 
 def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
-    pair_data, preferred_indices = batch
+    # Handle both standard format and RT-rank format
+    if len(batch) == 4:
+        # RT-rank format: (pair_data, preferred_indices, ranks, partition_ids)
+        pair_data, preferred_indices, _, _ = batch
+    else:
+        # Standard format: (pair_data, preferred_indices)
+        pair_data, preferred_indices = batch
 
     (obs1, actions1, mask1), (obs2, actions2, mask2) = pair_data
 
@@ -332,9 +338,59 @@ class SingleNetwork(LightningModule):
             pref_loss, rtrank_loss = self.loss_function(self, batch)
             total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
             self.log("val_loss", total_loss, prog_bar=True)
+            
+            # Compute accuracy for comparative feedback
+            accuracy = self._compute_pairwise_accuracy(batch)
+            self.log("val_accuracy", accuracy, prog_bar=True)
         else:
             loss = self.loss_function(self, batch)
             self.log("val_loss", loss, prog_bar=True)
+            
+            # Compute accuracy for comparative feedback if applicable
+            if self._is_comparative_feedback(batch):
+                accuracy = self._compute_pairwise_accuracy(batch)
+                self.log("val_accuracy", accuracy, prog_bar=True)
+    
+    def _is_comparative_feedback(self, batch):
+        """Check if this is comparative feedback (pairwise comparison)."""
+        # Comparative feedback has pair_data structure
+        try:
+            if len(batch) >= 2:
+                pair_data = batch[0]
+                if isinstance(pair_data, tuple) and len(pair_data) == 2:
+                    return True
+        except Exception:
+            pass
+        return False
+    
+    def _compute_pairwise_accuracy(self, batch):
+        """Compute accuracy for pairwise comparisons."""
+        # Handle both standard format and RT-rank format
+        if len(batch) == 4:
+            # RT-rank format: (pair_data, preferred_indices, ranks, partition_ids)
+            pair_data, preferred_indices, _, _ = batch
+        else:
+            # Standard format: (pair_data, preferred_indices)
+            pair_data, preferred_indices = batch
+        
+        (obs1, actions1, mask1), (obs2, actions2, mask2) = pair_data
+        
+        # Compute network outputs
+        outputs1 = self(obs1, actions1)
+        outputs2 = self(obs2, actions2)
+        
+        # Sum over sequence dimension
+        rewards1 = (outputs1 * mask1).sum(dim=1).squeeze(-1)
+        rewards2 = (outputs2 * mask2).sum(dim=1).squeeze(-1)
+        
+        # Compute predictions (0 if first trajectory is better, 1 if second)
+        predictions = (rewards2 > rewards1).long()
+        
+        # Compute accuracy
+        correct = (predictions == preferred_indices).float()
+        accuracy = correct.mean()
+        
+        return accuracy
 
     def configure_optimizers(self):
         """Configure optimizer to optimize the neural network."""
@@ -484,9 +540,59 @@ class SingleCnnNetwork(LightningModule):
             pref_loss, rtrank_loss = self.loss_function(self, batch)
             total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
             self.log("val_loss", total_loss, prog_bar=True)
+            
+            # Compute accuracy for comparative feedback
+            accuracy = self._compute_pairwise_accuracy(batch)
+            self.log("val_accuracy", accuracy, prog_bar=True)
         else:
             loss = self.loss_function(self, batch)
             self.log("val_loss", loss, prog_bar=True)
+            
+            # Compute accuracy for comparative feedback if applicable
+            if self._is_comparative_feedback(batch):
+                accuracy = self._compute_pairwise_accuracy(batch)
+                self.log("val_accuracy", accuracy, prog_bar=True)
+    
+    def _is_comparative_feedback(self, batch):
+        """Check if this is comparative feedback (pairwise comparison)."""
+        # Comparative feedback has pair_data structure
+        try:
+            if len(batch) >= 2:
+                pair_data = batch[0]
+                if isinstance(pair_data, tuple) and len(pair_data) == 2:
+                    return True
+        except Exception:
+            pass
+        return False
+    
+    def _compute_pairwise_accuracy(self, batch):
+        """Compute accuracy for pairwise comparisons."""
+        # Handle both standard format and RT-rank format
+        if len(batch) == 4:
+            # RT-rank format: (pair_data, preferred_indices, ranks, partition_ids)
+            pair_data, preferred_indices, _, _ = batch
+        else:
+            # Standard format: (pair_data, preferred_indices)
+            pair_data, preferred_indices = batch
+        
+        (obs1, actions1, mask1), (obs2, actions2, mask2) = pair_data
+        
+        # Compute network outputs
+        outputs1 = self(obs1, actions1)
+        outputs2 = self(obs2, actions2)
+        
+        # Sum over sequence dimension
+        rewards1 = (outputs1 * mask1).sum(dim=1).squeeze(-1)
+        rewards2 = (outputs2 * mask2).sum(dim=1).squeeze(-1)
+        
+        # Compute predictions (0 if first trajectory is better, 1 if second)
+        predictions = (rewards2 > rewards1).long()
+        
+        # Compute accuracy
+        correct = (predictions == preferred_indices).float()
+        accuracy = correct.mean()
+        
+        return accuracy
 
     def configure_optimizers(self):
         """Configure optimizer to optimize the neural network."""
