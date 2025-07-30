@@ -13,6 +13,87 @@ from torch import Tensor, nn
 from torch.nn.functional import mse_loss, nll_loss
 
 
+def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tensor, divide_by_len: bool = False) -> Tensor:
+    """
+    Compute RT-rank loss based on Plackett-Luce ranking model.
+    
+    Args:
+        utility_diff: Difference in utilities (rewards_chosen - rewards_rejected)
+        ranks: Synthetic preference strength (negative reward difference)
+        partition_ids: Partition IDs for stratification
+        divide_by_len: Whether to divide by partition length
+    
+    Returns:
+        RT-rank loss value
+    """
+    unique_partitions = torch.unique(partition_ids)
+    total_loss = 0.0
+    total_weight = 0.0
+    
+    for partition_id in unique_partitions:
+        mask = partition_ids == partition_id
+        if mask.sum() < 2:  # Skip partitions with less than 2 examples
+            continue
+            
+        partition_utility_diff = utility_diff[mask]
+        partition_ranks = ranks[mask]
+        
+        # Sort by rank (lower rank = higher preference strength)
+        sorted_indices = torch.argsort(partition_ranks)
+        sorted_utility_diff = partition_utility_diff[sorted_indices]
+        
+        # Compute Plackett-Luce loss for this partition
+        partition_loss = 0.0
+        n = len(sorted_utility_diff)
+        
+        for i in range(n - 1):
+            # For each position, compute probability of this item being ranked here
+            remaining_utilities = sorted_utility_diff[i:]
+            log_prob = sorted_utility_diff[i] - torch.logsumexp(remaining_utilities, dim=0)
+            partition_loss -= log_prob
+        
+        weight = 1.0 / n if divide_by_len else 1.0
+        total_loss += partition_loss * weight
+        total_weight += weight
+    
+    return total_loss / max(total_weight, 1e-8)
+
+
+def calculate_rtrank_pairwise_loss(network: LightningModule, batch: Tensor):
+    """Calculate RT-rank enhanced pairwise loss for the better trajectory."""
+    if len(batch) == 4:
+        # RT-rank format: (pair_data, preferred_indices, ranks, partition_ids)
+        pair_data, preferred_indices, ranks, partition_ids = batch
+    else:
+        # Fallback to standard format: (pair_data, preferred_indices)
+        pair_data, preferred_indices = batch
+        ranks = torch.zeros(len(preferred_indices))
+        partition_ids = torch.zeros(len(preferred_indices), dtype=torch.long)
+    
+    (obs1, actions1, mask1), (obs2, actions2, mask2) = pair_data
+    
+    # Compute network outputs
+    outputs1 = network(obs1, actions1)
+    outputs2 = network(obs2, actions2)
+    
+    # Sum over sequence dimension WITH MASKING
+    rewards1 = (outputs1 * mask1).sum(dim=1).squeeze(-1)
+    rewards2 = (outputs2 * mask2).sum(dim=1).squeeze(-1)
+    
+    # Calculate utility difference
+    utility_diff = rewards1 - rewards2
+    
+    # Standard Bradley-Terry loss
+    rewards = torch.stack([rewards1, rewards2], dim=1)
+    log_probs = F.log_softmax(rewards, dim=1)
+    pref_loss = nll_loss(log_probs, preferred_indices)
+    
+    # RT-rank loss
+    rtrank_loss = compute_rtrank_loss(utility_diff, ranks, partition_ids)
+    
+    return pref_loss, rtrank_loss
+
+
 def calculate_mse_loss(network: LightningModule, batch: Tensor):
     """Calculate the mean squared error loss for the reward."""
     return mse_loss(network(batch[0]), batch[1].unsqueeze(1), reduction="sum")
@@ -96,6 +177,7 @@ class SingleNetwork(LightningModule):
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,
         masksemble_scale: float = 1.8,
+        rt_loss_weight: float = 0.0,
     ):
         super().__init__()
 
@@ -103,6 +185,7 @@ class SingleNetwork(LightningModule):
         self.learning_rate = learning_rate
         self.ensemble_count = ensemble_count
         self.masksemble_scale = masksemble_scale
+        self.rt_loss_weight = rt_loss_weight
         obs_space, action_space = input_spaces
 
         action_is_discrete = isinstance(action_space, gym.spaces.Discrete)
@@ -186,15 +269,30 @@ class SingleNetwork(LightningModule):
 
     def training_step(self, batch: Tensor):
         """Compute the loss for training."""
-        loss = self.loss_function(self, batch)
-        self.log("train_loss", loss, on_epoch=True, prog_bar=True)
-
-        return loss
+        if hasattr(self, 'rt_loss_weight') and self.rt_loss_weight > 0:
+            # RT-rank loss returns tuple (pref_loss, rtrank_loss)
+            pref_loss, rtrank_loss = self.loss_function(self, batch)
+            total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
+            
+            self.log("train_pref_loss", pref_loss, on_epoch=True, prog_bar=True)
+            self.log("train_rtrank_loss", rtrank_loss, on_epoch=True, prog_bar=True)
+            self.log("train_loss", total_loss, on_epoch=True, prog_bar=True)
+            
+            return total_loss
+        else:
+            loss = self.loss_function(self, batch)
+            self.log("train_loss", loss, on_epoch=True, prog_bar=True)
+            return loss
 
     def validation_step(self, batch: Tensor, _batch_idx: int):
         """Compute the loss for validation."""
-        loss = self.loss_function(self, batch)
-        self.log("val_loss", loss, prog_bar=True)
+        if hasattr(self, 'rt_loss_weight') and self.rt_loss_weight > 0:
+            pref_loss, rtrank_loss = self.loss_function(self, batch)
+            total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
+            self.log("val_loss", total_loss, prog_bar=True)
+        else:
+            loss = self.loss_function(self, batch)
+            self.log("val_loss", loss, prog_bar=True)
 
     def configure_optimizers(self):
         """Configure optimizer to optimize the neural network."""
@@ -221,6 +319,7 @@ class SingleCnnNetwork(LightningModule):
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,
         masksemble_scale: float = 1.8,
+        rt_loss_weight: float = 0.0,
     ):
         super().__init__()
 
@@ -228,6 +327,7 @@ class SingleCnnNetwork(LightningModule):
         self.learning_rate = learning_rate
         self.ensemble_count = ensemble_count
         self.masksemble_scale = masksemble_scale
+        self.rt_loss_weight = rt_loss_weight
         obs_space, action_space = input_spaces
         input_channels = obs_space.shape[0]
 
@@ -321,15 +421,30 @@ class SingleCnnNetwork(LightningModule):
 
     def training_step(self, batch: Tensor):
         """Compute the loss for training."""
-        loss = self.loss_function(self, batch)
-        self.log("train_loss", loss, prog_bar=True)
-
-        return loss
+        if hasattr(self, 'rt_loss_weight') and self.rt_loss_weight > 0:
+            # RT-rank loss returns tuple (pref_loss, rtrank_loss)
+            pref_loss, rtrank_loss = self.loss_function(self, batch)
+            total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
+            
+            self.log("train_pref_loss", pref_loss, on_epoch=True, prog_bar=True)
+            self.log("train_rtrank_loss", rtrank_loss, on_epoch=True, prog_bar=True)
+            self.log("train_loss", total_loss, on_epoch=True, prog_bar=True)
+            
+            return total_loss
+        else:
+            loss = self.loss_function(self, batch)
+            self.log("train_loss", loss, prog_bar=True)
+            return loss
 
     def validation_step(self, batch: Tensor, _batch_idx: int):
         """Compute the loss for validation."""
-        loss = self.loss_function(self, batch)
-        self.log("val_loss", loss, prog_bar=True)
+        if hasattr(self, 'rt_loss_weight') and self.rt_loss_weight > 0:
+            pref_loss, rtrank_loss = self.loss_function(self, batch)
+            total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
+            self.log("val_loss", total_loss, prog_bar=True)
+        else:
+            loss = self.loss_function(self, batch)
+            self.log("val_loss", loss, prog_bar=True)
 
     def configure_optimizers(self):
         """Configure optimizer to optimize the neural network."""

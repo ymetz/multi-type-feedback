@@ -18,6 +18,7 @@ from multi_type_feedback.networks import (
     SingleCnnNetwork,
     SingleNetwork,
     calculate_pairwise_loss,
+    calculate_rtrank_pairwise_loss,
     calculate_single_reward_loss,
 )
 from multi_type_feedback.utils import TrainingUtils
@@ -52,9 +53,7 @@ def train_reward_model(
     feedback_type: FeedbackType,
     dataset: FeedbackDataset,
     maximum_epochs: int = 100,
-    cpu_count: int = 4,
-    algorithm: str = "sac",
-    environment: str = "HalfCheetah-v3",
+    environment: str = "HalfCheetah-v5",
     gradient_clip_value: Union[float, None] = None,
     split_ratio: float = 0.8,
     enable_progress_bar=True,
@@ -65,6 +64,8 @@ def train_reward_model(
     seed: int = 0,
     wandb_project_name: str = "multi-type-rlhf",
     save_path: str = "reward_models",
+    rt_loss_weight: float = 0.0,
+    stratifier=None,
 ):
     """Train a reward model given trajectories data."""
     training_set_size = math.floor(split_ratio * len(dataset))
@@ -74,7 +75,7 @@ def train_reward_model(
 
     train_loader = DataLoader(
         train_set,
-        batch_size=num_ensemble_models,
+        batch_size=num_ensemble_models * 8,
         shuffle=True,
         pin_memory=True,
         # num_workers=cpu_count,
@@ -84,7 +85,7 @@ def train_reward_model(
 
     val_loader = DataLoader(
         val_set,
-        batch_size=num_ensemble_models,
+        batch_size=num_ensemble_models * 8,
         pin_memory=True,
         num_workers=1,
         drop_last=True,
@@ -106,6 +107,8 @@ def train_reward_model(
             "seed": seed,
             "environment": environment,
             "n_feedback": n_feedback,
+            "rt_loss_weight": rt_loss_weight,
+            "stratifier": str(type(stratifier).__name__) if stratifier else None,
         },
     )
 
@@ -117,7 +120,7 @@ def train_reward_model(
         gradient_clip_val=gradient_clip_value,
         enable_progress_bar=enable_progress_bar,
         logger=wandb_logger,
-        accumulate_grad_batches=32,
+        # accumulate_grad_batches=4,
         callbacks=[
             EarlyStopping(monitor="val_loss", mode="min", patience=5),
             checkpoint_callback,
@@ -155,6 +158,19 @@ def main():
         default="reward_models",
         help="Save folder for trained reward models",
     )
+    parser.add_argument(
+        "--rt-loss-weight",
+        type=float,
+        default=0.0,
+        help="Weight for RT-rank loss component (0.0 = disabled)",
+    )
+    parser.add_argument(
+        "--stratifier",
+        type=str,
+        default="knn",
+        choices=["knn", "std_window", "global"],
+        help="Stratification method for RT-rank loss",
+    )
     args = parser.parse_args()
 
     TrainingUtils.set_seeds(args.seed)
@@ -163,6 +179,24 @@ def main():
     )
 
     feedback_id, model_id = TrainingUtils.get_model_ids(args)
+
+    # Setup stratifier if RT-rank loss is enabled
+    stratifier = None
+    if args.rt_loss_weight > 0.0:
+        from multi_type_feedback.stratification import (
+            GlobalPartitionStratifier,
+            KnnStratifier,
+            StdWindowStratifier,
+        )
+        
+        if args.stratifier == "knn":
+            stratifier = KnnStratifier(partition_clusters=8, min_cluster_size=4)
+        elif args.stratifier == "std_window":
+            stratifier = StdWindowStratifier(std_window=1.0, min_cluster_size=1)
+        elif args.stratifier == "global":
+            stratifier = GlobalPartitionStratifier(split_on_ties=False)
+        else:
+            raise ValueError(f"Unknown stratifier: {args.stratifier}")
 
     # Setup reward model
     reward_model = (
@@ -187,10 +221,12 @@ def main():
         loss_function=(
             calculate_single_reward_loss
             if args.feedback_type in ["evaluative", "descriptive"]
-            else calculate_pairwise_loss
+            else (calculate_rtrank_pairwise_loss if args.rt_loss_weight > 0.0 
+                  else calculate_pairwise_loss)
         ),
         learning_rate=1e-5,
         ensemble_count=args.n_ensemble,
+        rt_loss_weight=args.rt_loss_weight,
     )
 
     dataset = LoadFeedbackDataset(
@@ -204,6 +240,7 @@ def main():
         discount_factor=discount_factors.get(
             args.environment, 0.99
         ),  # adapt for custom envs
+        stratifier=stratifier,
     )
 
     train_reward_model(
@@ -214,7 +251,6 @@ def main():
         maximum_epochs=100,
         split_ratio=0.85,
         environment=args.environment,
-        cpu_count=os.cpu_count() or 8,
         num_ensemble_models=args.n_ensemble,
         enable_progress_bar=not args.no_loading_bar,
         noise_level=args.noise_level,
@@ -222,6 +258,8 @@ def main():
         seed=args.seed,
         wandb_project_name=args.wandb_project_name,
         save_path=args.save_folder,
+        rt_loss_weight=args.rt_loss_weight,
+        stratifier=stratifier,
     )
 
 
