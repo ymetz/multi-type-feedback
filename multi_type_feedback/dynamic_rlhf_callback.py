@@ -146,6 +146,14 @@ class RewardModelUpdateCallback(EventCallback):
                 for feedback_type, loss in reward_metrics.items():
                     print(f"{feedback_type}: {loss:.4f}")
 
+            # Compute and log extended evaluation metrics after each iteration
+            try:
+                if hasattr(self.drlhf_agent, "_log_iteration_metrics"):
+                    self.drlhf_agent._log_iteration_metrics(step=global_step)
+            except Exception as e:
+                if self.verbose > 0:
+                    print(f"[WARN] Extended metric logging failed: {e}")
+
             # Update the last update timestep
             self.last_update_timestep = self.num_timesteps
 

@@ -195,6 +195,9 @@ class DynamicRLHF:
         if custom_sb3_logger:
             self.rl_agent.set_logger(custom_sb3_logger)
 
+        # Set up fixed evaluation/holdout sets for consistent tracking
+        self._init_eval_sets()
+
     def _init_rl_agent(self) -> Union[PPO, SAC]:
         """Initialize the RL agent using ExperimentManager."""
         if self.exp_manager:
@@ -246,6 +249,103 @@ class DynamicRLHF:
             return self._init_unified_reward_model(observation_space, action_space)
         else:
             raise ValueError(f"Unknown reward model type: {self.reward_model_type}")
+
+    def _init_eval_sets(self, holdout_segments: int = 64, pairwise_pairs: int = 64, ood_segments: int = 64):
+        """
+        Prepare small, fixed evaluation sets used across iterations to compute metrics.
+        - Supervised/evaluative/descriptive holdout segments with ground-truth totals
+        - Pairwise unordered holdout pairs with labels
+        - OOD holdout using random policy segments
+        """
+        try:
+            env = TrainingUtils.setup_environment(self.env_name, (self.seed or 0) + 123)
+            self.eval_holdout = []  # list of ((obs, act, mask), gt_total)
+            self.eval_holdout_sa = []  # list of (state, action, gt_step_reward)
+
+            # Collect segments using a random policy for a fixed distribution
+            for _ in range(max(holdout_segments, 8)):
+                trajectory = []
+                obs, _ = env.reset()
+                for _t in range(self.oracle.segment_len):
+                    action = env.action_space.sample()
+                    nobs, reward, terminated, truncated, _info = env.step(action)
+                    done = terminated or truncated
+                    a = one_hot_vector(action, env.action_space.n) if isinstance(env.action_space, gym.spaces.Discrete) else action
+                    trajectory.append((np.expand_dims(obs, axis=0), a, reward, done))
+                    # also stash per-step
+                    self.eval_holdout_sa.append((np.expand_dims(obs, axis=0), a, reward))
+                    obs = nobs
+                    if done:
+                        break
+                # Convert trajectory to supervised format and store
+                sup = self.oracle.get_supervised_feedback(trajectory)
+                # sup is list over steps; package as one segment to match training interface
+                obs_t = torch.vstack([s[0][0] for s in sup])
+                act_t = torch.vstack([s[0][1] for s in sup])
+                mask_t = torch.ones(obs_t.shape[0]).unsqueeze(-1)
+                # pad to segment_len for consistency
+                if obs_t.shape[0] < self.oracle.segment_len:
+                    pad = self.oracle.segment_len - obs_t.shape[0]
+                    obs_t = torch.cat([obs_t, torch.zeros(pad, *obs_t.shape[1:])], dim=0)
+                    act_t = torch.cat([act_t, torch.zeros(pad, *act_t.shape[1:])], dim=0)
+                    mask_t = torch.cat([mask_t, torch.zeros(pad, 1)], dim=0)
+                gt_total = sum([s[1].item() for s in sup])
+                self.eval_holdout.append(((obs_t, act_t, mask_t), float(gt_total)))
+
+            # Create pairwise unordered holdout pairs
+            self.eval_pairs = []  # list of (((o1,a1,m1),(o2,a2,m2)), label 0/1 where 1 means traj2 better)
+            for _ in range(max(pairwise_pairs, 8)):
+                traj1 = self.oracle.get_random_trajectory()
+                traj2 = self.oracle.get_random_trajectory()
+                # compute discounted returns for label
+                r1 = self.oracle._compute_discounted_return(traj1)  # noqa: SLF001
+                r2 = self.oracle._compute_discounted_return(traj2)
+                # tensors
+                obs1 = torch.vstack([torch.as_tensor(p[0]).float() for p in traj1])
+                act1 = torch.vstack([torch.as_tensor(p[1]).float() for p in traj1])
+                mask1 = torch.ones(len(traj1)).unsqueeze(-1)
+                if len(traj1) < self.oracle.segment_len:
+                    pad = self.oracle.segment_len - len(traj1)
+                    obs1 = torch.cat([obs1, torch.zeros(pad, *obs1.shape[1:])], dim=0)
+                    act1 = torch.cat([act1, torch.zeros(pad, *act1.shape[1:])], dim=0)
+                    mask1 = torch.cat([mask1, torch.zeros(pad, 1)], dim=0)
+                obs2 = torch.vstack([torch.as_tensor(p[0]).float() for p in traj2])
+                act2 = torch.vstack([torch.as_tensor(p[1]).float() for p in traj2])
+                mask2 = torch.ones(len(traj2)).unsqueeze(-1)
+                if len(traj2) < self.oracle.segment_len:
+                    pad = self.oracle.segment_len - len(traj2)
+                    obs2 = torch.cat([obs2, torch.zeros(pad, *obs2.shape[1:])], dim=0)
+                    act2 = torch.cat([act2, torch.zeros(pad, *act2.shape[1:])], dim=0)
+                    mask2 = torch.cat([mask2, torch.zeros(pad, 1)], dim=0)
+                label = 1 if r2 > r1 else 0
+                self.eval_pairs.append(((obs1, act1, mask1), (obs2, act2, mask2), label))
+
+            # OOD segments: collect expert-guided or random-with-noise
+            self.ood_holdout = []
+            for _ in range(max(ood_segments, 8)):
+                # try a high-return demo if available, else random
+                try:
+                    init_obs, _ = env.reset()
+                    init_state = env.save_state(observation=init_obs)
+                    demo = self.oracle._get_best_demonstration(init_state)
+                    src = demo if demo is not None else self.oracle.get_random_trajectory()
+                except Exception:
+                    src = self.oracle.get_random_trajectory()
+                sup = self.oracle.get_supervised_feedback(src)
+                obs_t = torch.vstack([s[0][0] for s in sup])
+                act_t = torch.vstack([s[0][1] for s in sup])
+                mask_t = torch.ones(obs_t.shape[0]).unsqueeze(-1)
+                if obs_t.shape[0] < self.oracle.segment_len:
+                    pad = self.oracle.segment_len - obs_t.shape[0]
+                    obs_t = torch.cat([obs_t, torch.zeros(pad, *obs_t.shape[1:])], dim=0)
+                    act_t = torch.cat([act_t, torch.zeros(pad, *act_t.shape[1:])], dim=0)
+                    mask_t = torch.cat([mask_t, torch.zeros(pad, 1)], dim=0)
+                gt_total = sum([s[1].item() for s in sup])
+                self.ood_holdout.append(((obs_t, act_t, mask_t), float(gt_total)))
+            env.close()
+        except Exception:
+            # Fallback: empty sets if env init fails
+            self.eval_holdout, self.eval_pairs, self.ood_holdout, self.eval_holdout_sa = [], [], [], []
 
     def _init_separate_reward_models(self, observation_space, action_space):
         """Initialize separate reward models for each feedback type (original implementation)."""
@@ -1255,6 +1355,342 @@ class DynamicRLHF:
                 final_rewards[i] = r_i.mean()
 
         return final_rewards.cpu().numpy()  # shape: [batch_size,]
+
+    def compute_ensemble_reward_with_uncertainty(self, state: np.ndarray, action: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Like compute_ensemble_reward, but also returns average model uncertainty per input."""
+        device = self.device
+        # Handle one-hot encoding
+        if self.action_one_hot:
+            action = vectorized_one_hot_vector(np.array(action), self.one_hot_dim)
+        if len(action.shape) < 2:
+            action = np.expand_dims(action, axis=0)
+        state_tensor = torch.as_tensor(state, device=device, dtype=torch.float32).unsqueeze(1)
+        action_tensor = torch.as_tensor(action, device=device, dtype=torch.float32).unsqueeze(1)
+        model_rewards, model_uncertainties = [], []
+        with torch.no_grad():
+            if self.reward_model_type == "separate":
+                for feedback_type, reward_model in self.reward_models.items():
+                    if len(self.feedback_buffers[feedback_type]) == 0:
+                        continue
+                    if reward_model.ensemble_count > 1:
+                        st_exp = state_tensor.repeat(reward_model.ensemble_count, *[1] * (len(state_tensor.shape) - 1))
+                        ac_exp = action_tensor.repeat(reward_model.ensemble_count, *[1] * (len(action_tensor.shape) - 1))
+                        preds = reward_model(st_exp, ac_exp)
+                        if preds.dim() == 3 and preds.shape[-1] == 1:
+                            preds = preds.squeeze(-1)
+                        mean_r, unc = compute_grouped(preds, reward_model.ensemble_count)
+                    else:
+                        preds = reward_model(state_tensor, action_tensor)
+                        if preds.dim() == 2 and preds.shape[1] == 1:
+                            preds = preds.squeeze(-1)
+                        mean_r = preds
+                        unc = torch.zeros_like(mean_r)
+                    model_rewards.append(mean_r)
+                    model_uncertainties.append(unc)
+            elif self.reward_model_type == "multi-head":
+                multi = list(self.reward_models.values())[0]
+                st_exp = state_tensor.repeat(multi.ensemble_count, *[1] * (len(state_tensor.shape) - 1))
+                ac_exp = action_tensor.repeat(multi.ensemble_count, *[1] * (len(action_tensor.shape) - 1))
+                all_outputs = multi(st_exp, ac_exp)
+                for feedback_type, outputs in all_outputs.items():
+                    if len(self.feedback_buffers[feedback_type]) == 0:
+                        continue
+                    if outputs.dim() == 3 and outputs.shape[-1] == 1:
+                        outputs = outputs.squeeze(-1)
+                    mean_r, unc = compute_grouped(outputs, multi.ensemble_count)
+                    model_rewards.append(mean_r)
+                    model_uncertainties.append(unc)
+            elif self.reward_model_type == "unified":
+                uni = list(self.reward_models.values())[0]
+                for feedback_type in self.feedback_types:
+                    if len(self.feedback_buffers[feedback_type]) == 0:
+                        continue
+                    st_exp = state_tensor.repeat(uni.ensemble_count, *[1] * (len(state_tensor.shape) - 1))
+                    ac_exp = action_tensor.repeat(uni.ensemble_count, *[1] * (len(action_tensor.shape) - 1))
+                    preds = uni(st_exp, ac_exp, feedback_type)
+                    if preds.dim() == 3 and preds.shape[-1] == 1:
+                        preds = preds.squeeze(-1)
+                    mean_r, unc = compute_grouped(preds, uni.ensemble_count)
+                    model_rewards.append(mean_r)
+                    model_uncertainties.append(unc)
+        if not model_rewards:
+            zeros = np.zeros(state.shape[0], dtype=np.float32)
+            return zeros, zeros
+        stacked_rewards = torch.stack(model_rewards, dim=0)
+        stacked_uncerts = torch.stack(model_uncertainties, dim=0)
+        rewards_for_standardization = stacked_rewards.transpose(0, 1)
+        standardized_rewards = self.standardize_rewards(rewards_for_standardization)
+        stacked_rewards = standardized_rewards.transpose(0, 1)
+        batch_size = state.shape[0]
+        final_rewards = torch.zeros(batch_size, device=device, dtype=torch.float32)
+        avg_uncert = torch.zeros(batch_size, device=device, dtype=torch.float32)
+        for i in range(batch_size):
+            r_i = stacked_rewards[:, i]
+            u_i = stacked_uncerts[:, i]
+            if torch.any(u_i > 0):
+                w_i = torch.where(u_i > 0, 1.0 / u_i, torch.ones_like(u_i))
+                w_i /= w_i.sum()
+                final_rewards[i] = (r_i * w_i).sum()
+            else:
+                final_rewards[i] = r_i.mean()
+            avg_uncert[i] = u_i.mean()
+        return final_rewards.cpu().numpy(), avg_uncert.cpu().numpy()
+
+    def _predict_segment_totals(self, feedback_type: str, batch_segments: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
+        """Predict total rewards and uncertainties for a batch of segments for a specific feedback type."""
+        device = self.device
+        if len(batch_segments) == 0:
+            return np.array([]), np.array([])
+        # Stack batch (B, T, D)
+        obs = torch.stack([s[0] for s in batch_segments]).to(device).float().unsqueeze(1)
+        actions = torch.stack([s[1] for s in batch_segments]).to(device).float().unsqueeze(1)
+        masks = torch.stack([s[2] for s in batch_segments]).to(device).float().unsqueeze(1)
+        with torch.no_grad():
+            if self.reward_model_type == "separate":
+                model = self.reward_models[feedback_type]
+                if model.ensemble_count > 1:
+                    rep = [model.ensemble_count] + [1] * (len(obs.shape) - 1)
+                    obs_r = obs.repeat(*rep)
+                    act_r = actions.repeat(*rep)
+                    out = model(obs_r, act_r)
+                    totals = (out * masks.repeat(*rep)).sum(dim=2).squeeze(-1)
+                    mean_r, unc = compute_grouped(totals, model.ensemble_count)
+                else:
+                    out = model(obs, actions)
+                    totals = (out * masks).sum(dim=2).squeeze(-1)
+                    mean_r, unc = totals, torch.zeros_like(totals)
+            elif self.reward_model_type == "multi-head":
+                model = list(self.reward_models.values())[0]
+                rep = [model.ensemble_count] + [1] * (len(obs.shape) - 1)
+                obs_r = obs.repeat(*rep)
+                act_r = actions.repeat(*rep)
+                out = model(obs_r, act_r, feedback_type)
+                totals = (out * masks.repeat(*rep)).sum(dim=2).squeeze(-1)
+                mean_r, unc = compute_grouped(totals, model.ensemble_count)
+            else:  # unified
+                model = list(self.reward_models.values())[0]
+                rep = [model.ensemble_count] + [1] * (len(obs.shape) - 1)
+                obs_r = obs.repeat(*rep)
+                act_r = actions.repeat(*rep)
+                out = model(obs_r, act_r, feedback_type)
+                totals = (out * masks.repeat(*rep)).sum(dim=2).squeeze(-1)
+                mean_r, unc = compute_grouped(totals, model.ensemble_count)
+        return mean_r.cpu().numpy(), unc.cpu().numpy()
+
+    @staticmethod
+    def _pearson_spearman(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:
+        if len(x) == 0 or len(y) == 0:
+            return float("nan"), float("nan")
+        x = np.asarray(x)
+        y = np.asarray(y)
+        x_mu, y_mu = x.mean(), y.mean()
+        vx, vy = x - x_mu, y - y_mu
+        denom = np.sqrt((vx**2).sum()) * np.sqrt((vy**2).sum()) + 1e-8
+        pearson = float(np.clip((vx * vy).sum() / denom, -1.0, 1.0))
+        # Spearman via ranking
+        rx = np.argsort(np.argsort(x))
+        ry = np.argsort(np.argsort(y))
+        rx_mu, ry_mu = rx.mean(), ry.mean()
+        vrx, vry = rx - rx_mu, ry - ry_mu
+        denom_s = np.sqrt((vrx**2).sum()) * np.sqrt((vry**2).sum()) + 1e-8
+        spearman = float(np.clip((vrx * vry).sum() / denom_s, -1.0, 1.0))
+        return pearson, spearman
+
+    @staticmethod
+    def _binary_roc_auc(y_true: np.ndarray, scores: np.ndarray) -> float:
+        """Compute ROC-AUC without sklearn. y_true in {0,1}."""
+        y = np.asarray(y_true).astype(np.int32)
+        s = np.asarray(scores).astype(np.float64)
+        # Rank scores, handle ties by average rank
+        order = np.argsort(s)
+        ranks = np.empty_like(order, dtype=np.float64)
+        ranks[order] = np.arange(1, len(s) + 1)
+        # average ranks for ties
+        _, inv, counts = np.unique(s, return_inverse=True, return_counts=True)
+        sum_ranks = np.bincount(inv, ranks)
+        avg_ranks = sum_ranks / counts
+        ranks = avg_ranks[inv]
+        n_pos = y.sum()
+        n_neg = len(y) - n_pos
+        if n_pos == 0 or n_neg == 0:
+            return float("nan")
+        sum_ranks_pos = (ranks * y).sum()
+        auc = (sum_ranks_pos - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
+        return float(auc)
+
+    def _rollout(self, n_episodes: int = 5) -> tuple[list[list[tuple]], list[float], list[float]]:
+        env = TrainingUtils.setup_environment(self.env_name, (self.seed or 0) + 321)
+        trajectories, returns, successes = [], [], []
+        for _ in range(n_episodes):
+            traj = []
+            obs, _ = env.reset()
+            ep_return = 0.0
+            ep_success = 0.0
+            for _t in range(self.oracle.segment_len):
+                if self.rl_agent is None:
+                    action = env.action_space.sample()
+                else:
+                    action, _ = self.rl_agent.predict(obs, deterministic=True)
+                nobs, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+                a = one_hot_vector(action, env.action_space.n) if isinstance(env.action_space, gym.spaces.Discrete) else action
+                traj.append((np.expand_dims(obs, axis=0), a, reward, done))
+                ep_return += reward
+                # Meta-World success proxy if provided
+                if isinstance(info, dict):
+                    if "success" in info:
+                        ep_success = max(ep_success, float(info["success"]))
+                    elif "is_success" in info:
+                        ep_success = max(ep_success, float(info["is_success"]))
+                obs = nobs
+                if done:
+                    break
+            returns.append(ep_return)
+            successes.append(ep_success)
+            trajectories.append(traj)
+        env.close()
+        return trajectories, returns, successes
+
+    def _log_iteration_metrics(self, step: int):
+        """Compute and log evaluation metrics at the end of an iteration/update."""
+        if not (hasattr(self, "wandb") and self.wandb.run is not None):
+            return
+        metrics = {}
+
+        # 1) Proxy Gap: compare downstream GT returns vs learned reward returns
+        try:
+            trajs, gt_returns, successes = self._rollout(n_episodes=5)
+            # predicted totals via learned reward
+            pred_returns = []
+            for traj in trajs:
+                states = np.squeeze(np.array([p[0] for p in traj]), axis=1)
+                actions = np.array([p[1] for p in traj])
+                preds = self.compute_ensemble_reward(states, actions)
+                pred_returns.append(float(preds.sum()))
+            pr, sr = self._pearson_spearman(np.array(gt_returns), np.array(pred_returns))
+            metrics.update({
+                "proxy_gap/gt_return_mean": float(np.mean(gt_returns)),
+                "proxy_gap/pred_return_mean": float(np.mean(pred_returns)),
+                "proxy_gap/pearson": pr,
+                "proxy_gap/spearman": sr,
+                "proxy_gap/abs_gap": float(np.mean(pred_returns) - np.mean(gt_returns)),
+            })
+            if len(successes) > 0:
+                metrics["external/win_rate"] = float(np.mean(successes))
+        except Exception:
+            pass
+
+        # 2) Reward model metrics per feedback type (correlation on holdout)
+        if hasattr(self, "eval_holdout") and self.eval_holdout:
+            for fb in self.feedback_types:
+                # Skip if we don't have a model for that type yet
+                if self.reward_model_type == "separate" and fb not in self.reward_models:
+                    continue
+                batch_segments = [h[0] for h in self.eval_holdout]
+                gt_totals = np.array([h[1] for h in self.eval_holdout])
+                try:
+                    preds, uncs = self._predict_segment_totals(fb, batch_segments)
+                except Exception:
+                    preds, uncs = np.array([]), np.array([])
+                if preds.size > 0:
+                    pr, sr = self._pearson_spearman(preds, gt_totals)
+                    metrics.update({
+                        f"reward_model/{fb}_pearson": pr,
+                        f"reward_model/{fb}_spearman": sr,
+                        f"reward_model/{fb}_mse": float(np.mean((preds - gt_totals) ** 2)),
+                        f"reward_model/{fb}_pred_mean": float(np.mean(preds)),
+                        f"reward_model/{fb}_pred_std": float(np.std(preds)),
+                        f"reward_model/{fb}_uncertainty_mean": float(np.mean(uncs)) if uncs.size > 0 else float("nan"),
+                    })
+
+        # Pairwise metrics: accuracy and ROC-AUC
+        if hasattr(self, "eval_pairs") and self.eval_pairs:
+            for fb in self.feedback_types:
+                if fb not in ["comparative", "demonstrative", "corrective", "descriptive_preference"]:
+                    continue
+                try:
+                    pair_segments = []
+                    labels = []
+                    for (o1, a1, m1), (o2, a2, m2), lbl in self.eval_pairs:
+                        pair_segments.append(((o1, a1, m1), (o2, a2, m2)))
+                        labels.append(lbl)
+                    left = [p[0] for p in pair_segments]
+                    right = [p[1] for p in pair_segments]
+                    l_pred, _ = self._predict_segment_totals(fb, left)
+                    r_pred, _ = self._predict_segment_totals(fb, right)
+                    if l_pred.size > 0 and r_pred.size > 0:
+                        scores = r_pred - l_pred
+                        preds = (scores > 0).astype(np.int32)
+                        acc = float(np.mean(preds == np.array(labels)))
+                        auc = self._binary_roc_auc(np.array(labels), scores)
+                        metrics.update({
+                            f"reward_model/{fb}_pair_acc": acc,
+                            f"reward_model/{fb}_pair_auc": auc,
+                        })
+                except Exception:
+                    continue
+
+        # 3) Predicted reward distribution and avg uncertainty on holdout SA
+        if hasattr(self, "eval_holdout_sa") and self.eval_holdout_sa:
+            try:
+                states = np.squeeze(np.array([s[0] for s in self.eval_holdout_sa]), axis=1)
+                actions = np.array([s[1] for s in self.eval_holdout_sa])
+                gt_step = np.array([s[2] for s in self.eval_holdout_sa])
+                pred, unc = self.compute_ensemble_reward_with_uncertainty(states, actions)
+                pr_s, sr_s = self._pearson_spearman(pred, gt_step)
+                # Reward hacking proxy: top 10% predicted but bottom 25% GT
+                top_p = np.percentile(pred, 90)
+                low_q = np.percentile(gt_step, 25)
+                hack_frac = float(np.mean((pred >= top_p) & (gt_step <= low_q)))
+                metrics.update({
+                    "pred_dist/pred_mean": float(np.mean(pred)),
+                    "pred_dist/pred_std": float(np.std(pred)),
+                    "pred_dist/pred_min": float(np.min(pred)),
+                    "pred_dist/pred_max": float(np.max(pred)),
+                    "uncertainty/avg": float(np.mean(unc)),
+                    "scale_offset/holdout_pred_mean": float(np.mean(pred)),
+                    "scale_offset/holdout_pred_std": float(np.std(pred)),
+                    "scale_offset/holdout_gt_mean": float(np.mean(gt_step)),
+                    "scale_offset/holdout_gt_std": float(np.std(gt_step)),
+                    "correlation/step_pearson": pr_s,
+                    "correlation/step_spearman": sr_s,
+                    "reward_hacking/frac_high_pred_low_gt": hack_frac,
+                })
+            except Exception:
+                pass
+
+        # 4) OOD vs ID performance (using ood_holdout totals)
+        try:
+            # ID correlation based on step-level above if available
+            id_pearson = metrics.get("correlation/step_pearson", float("nan"))
+            if hasattr(self, "ood_holdout") and self.ood_holdout:
+                segs = [h[0] for h in self.ood_holdout]
+                gt = np.array([h[1] for h in self.ood_holdout])
+                fb = "evaluative" if "evaluative" in self.feedback_types else self.feedback_types[0]
+                ood_pred, _ = self._predict_segment_totals(fb, segs)
+                ood_pr, ood_sr = self._pearson_spearman(ood_pred, gt)
+                metrics.update({
+                    "ood/pearson": ood_pr,
+                    "ood/spearman": ood_sr,
+                    "ood/id_minus_ood_pearson": (id_pearson - ood_pr) if not np.isnan(ood_pr) and not np.isnan(id_pearson) else float("nan"),
+                })
+        except Exception:
+            pass
+
+        # 5) EPIC alternative: 1 - Spearman on holdout totals as proxy distance
+        try:
+            if hasattr(self, "eval_holdout") and self.eval_holdout:
+                fb = "evaluative" if "evaluative" in self.feedback_types else self.feedback_types[0]
+                segs = [h[0] for h in self.eval_holdout]
+                gt = np.array([h[1] for h in self.eval_holdout])
+                preds, _ = self._predict_segment_totals(fb, segs)
+                _, sp = self._pearson_spearman(preds, gt)
+                metrics["epic_proxy/1_minus_spearman"] = float(1.0 - (sp if not np.isnan(sp) else 0.0))
+        except Exception:
+            pass
+
+        if metrics:
+            self.wandb.log(metrics, step=step)
 
     def train(self, total_timesteps: int, sampling_strategy: str = "random", query_sampling_strategy: str = "none", query_sampling_multiplier: float = 2.0):
         """
