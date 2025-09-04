@@ -195,6 +195,51 @@ class SingleNetwork(LightningModule):
         """Compute the loss for validation."""
         loss = self.loss_function(self, batch)
         self.log("val_loss", loss, prog_bar=True)
+        
+        # Compute accuracy for comparative feedback if applicable
+        if self._is_comparative_feedback(batch):
+            accuracy = self._compute_pairwise_accuracy(batch)
+            self.log("val_accuracy", accuracy, prog_bar=True)
+
+    def _is_comparative_feedback(self, batch):
+        """Check if this is comparative feedback (pairwise comparison)."""
+        # Comparative feedback has pair_data structure
+        try:
+            if len(batch) >= 2:
+                pair_data = batch[0]
+                if isinstance(pair_data, tuple) and len(pair_data) == 2:
+                    # Check if each element in pair_data is a trajectory tuple (obs, actions, mask)
+                    trajectory1, trajectory2 = pair_data
+                    if (isinstance(trajectory1, tuple) and len(trajectory1) == 3 and
+                        isinstance(trajectory2, tuple) and len(trajectory2) == 3):
+                        return True
+        except Exception:
+            pass
+        return False
+    
+    def _compute_pairwise_accuracy(self, batch):
+        """Compute accuracy for pairwise comparisons."""
+        # Handle both standard format and RT-rank format
+        pair_data, preferred_indices = batch
+        
+        (obs1, actions1, mask1), (obs2, actions2, mask2) = pair_data
+        
+        # Compute network outputs
+        outputs1 = self(obs1, actions1)
+        outputs2 = self(obs2, actions2)
+        
+        # Sum over sequence dimension
+        rewards1 = (outputs1 * mask1).sum(dim=1).squeeze(-1)
+        rewards2 = (outputs2 * mask2).sum(dim=1).squeeze(-1)
+        
+        # Compute predictions (0 if first trajectory is better, 1 if second)
+        predictions = (rewards2 > rewards1).long()
+        
+        # Compute accuracy
+        correct = (predictions == preferred_indices).float()
+        accuracy = correct.mean()
+        
+        return accuracy
 
     def configure_optimizers(self):
         """Configure optimizer to optimize the neural network."""
@@ -330,6 +375,50 @@ class SingleCnnNetwork(LightningModule):
         """Compute the loss for validation."""
         loss = self.loss_function(self, batch)
         self.log("val_loss", loss, prog_bar=True)
+        
+        # Compute accuracy for comparative feedback if applicable
+        if self._is_comparative_feedback(batch):
+            accuracy = self._compute_pairwise_accuracy(batch)
+            self.log("val_accuracy", accuracy, prog_bar=True)
+
+    def _is_comparative_feedback(self, batch):
+        """Check if this is comparative feedback (pairwise comparison)."""
+        # Comparative feedback has pair_data structure
+        try:
+            if len(batch) >= 2:
+                pair_data = batch[0]
+                if isinstance(pair_data, tuple) and len(pair_data) == 2:
+                    # Check if each element in pair_data is a trajectory tuple (obs, actions, mask)
+                    trajectory1, trajectory2 = pair_data
+                    if (isinstance(trajectory1, tuple) and len(trajectory1) == 3 and
+                        isinstance(trajectory2, tuple) and len(trajectory2) == 3):
+                        return True
+        except Exception:
+            pass
+        return False
+    
+    def _compute_pairwise_accuracy(self, batch):
+        """Compute accuracy for pairwise comparisons."""
+        pair_data, preferred_indices = batch
+        
+        (obs1, actions1, mask1), (obs2, actions2, mask2) = pair_data
+        
+        # Compute network outputs
+        outputs1 = self(obs1, actions1)
+        outputs2 = self(obs2, actions2)
+        
+        # Sum over sequence dimension
+        rewards1 = (outputs1 * mask1).sum(dim=1).squeeze(-1)
+        rewards2 = (outputs2 * mask2).sum(dim=1).squeeze(-1)
+        
+        # Compute predictions (0 if first trajectory is better, 1 if second)
+        predictions = (rewards2 > rewards1).long()
+        
+        # Compute accuracy
+        correct = (predictions == preferred_indices).float()
+        accuracy = correct.mean()
+        
+        return accuracy
 
     def configure_optimizers(self):
         """Configure optimizer to optimize the neural network."""
