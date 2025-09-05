@@ -76,9 +76,6 @@ def calculate_single_reward_loss(network: LightningModule, batch: Tensor):
     return loss
 
 
-# Lightning networks
-
-
 class SingleNetwork(LightningModule):
     """Neural network to model the RL agent's reward using Pytorch Lightning."""
 
