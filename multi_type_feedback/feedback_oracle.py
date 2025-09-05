@@ -52,11 +52,9 @@ class FeedbackOracle:
             reference_data = pickle.load(f)
 
         # Store reference optimality gaps for evaluative feedback calibration
-        self.reference_opt_gaps = reference_data["opt_gaps"]
-        max_rating = 10
-        self.ratings_bins = np.linspace(
-            min(self.reference_opt_gaps), max(self.reference_opt_gaps), max_rating + 1
-        )
+        # Keep a sorted copy to compute an empirical CDF for stable percentile mapping
+        self.reference_opt_gaps = np.asarray(reference_data["opt_gaps"], dtype=float)
+        self._opt_gaps_sorted = np.sort(self.reference_opt_gaps)
 
         # Process state-action pairs for clustering (descriptive feedback)
         states_actions = []
@@ -64,21 +62,29 @@ class FeedbackOracle:
             states_actions.extend(
                 [np.concatenate((step[0].squeeze(0), step[1])) for step in segment]
             )
-        states_actions = np.array(states_actions)
+        states_actions = np.array(states_actions, dtype=float)
+
+        # Normalize features for more meaningful clustering across mixed scales
+        self._sa_mean = states_actions.mean(axis=0)
+        self._sa_std = states_actions.std(axis=0)
+        # avoid division by zero
+        self._sa_std[self._sa_std == 0] = 1.0
+        states_actions_std = (states_actions - self._sa_mean) / self._sa_std
 
         # Fit clustering model
-        batch_size = min(1000, len(states_actions) // 100)
+        batch_size = max(1, min(1000, len(states_actions_std) // 100))
         self.kmeans = MiniBatchKMeans(
             n_clusters=self.n_clusters, batch_size=batch_size, random_state=42
         )
-        self.kmeans.fit(states_actions)
+        self.kmeans.fit(states_actions_std)
 
-        # Store cluster representatives and their average returns
-        self.cluster_representatives = []
-        self.cluster_rewards = []
+        # Store cluster representatives (in raw/original space) and their average returns
+        self.cluster_representatives = []  # raw (de-normalized) centers used as descriptive exemplars
+        self.cluster_rewards = []          # average per-step reward in cluster
+        self._cluster_centers_std = []     # centers in standardized space for nearest-center queries
 
         # Calculate average rewards for each cluster
-        cluster_assignments = self.kmeans.predict(states_actions)
+        cluster_assignments = self.kmeans.predict(states_actions_std)
         rewards = []
         for segment in reference_data["segments"]:
             rewards.extend([step[2] for step in segment])
@@ -87,13 +93,17 @@ class FeedbackOracle:
         for i in range(self.n_clusters):
             cluster_mask = cluster_assignments == i
             if np.any(cluster_mask):
-                center = self.kmeans.cluster_centers_[i]
+                center_std = self.kmeans.cluster_centers_[i]
+                # de-standardize center back to original feature space for model inputs
+                center = center_std * self._sa_std + self._sa_mean
                 avg_reward = np.mean(rewards[cluster_mask])
                 self.cluster_representatives.append(center)
                 self.cluster_rewards.append(avg_reward)
+                self._cluster_centers_std.append(center_std)
 
         self.cluster_representatives = np.array(self.cluster_representatives)
         self.cluster_rewards = np.array(self.cluster_rewards)
+        self._cluster_centers_std = np.array(self._cluster_centers_std)
 
     def get_feedback(
         self,
@@ -193,7 +203,7 @@ class FeedbackOracle:
             )
             mask = torch.cat([mask, torch.zeros(pad_size, 1)], dim=0)
 
-        # Calculate rating
+        # Calculate rating via empirical CDF on reference distribution
         opt_gap = -self._compute_discounted_return(trajectory)
 
         if self.noise_level > 0:
@@ -201,13 +211,14 @@ class FeedbackOracle:
                 0, self.noise_level * np.std(self.reference_opt_gaps)
             )
 
-        bin_index = np.digitize(opt_gap, self.ratings_bins) - 1
-        rating = 10 - bin_index
-        rating = max(0, min(10, rating))
+        # Fraction of reference opt_gaps <= current (ECDF), map better (smaller) gaps to higher ratings
+        cdf = np.searchsorted(self._opt_gaps_sorted, opt_gap, side="right") / max(
+            1, self._opt_gaps_sorted.size
+        )
+        rating = 1.0 - float(cdf)
+        rating = float(np.clip(rating, 0.0, 1.0))
 
-        # for simplicity, we normalize the rating form 0-0.9
-
-        return (obs, actions, mask), rating / 10
+        return (obs, actions, mask), rating
 
     def get_comparative_feedback(
         self,
@@ -400,19 +411,21 @@ class FeedbackOracle:
         self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]]
     ) -> Tuple[np.ndarray, np.ndarray, float]:
         """Return the most similar cluster representative and its average reward."""
-        # Compute average state-action for the trajectory
+        # Compute average state-action for the trajectory (raw space)
         states_actions = np.array(
-            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory]
+            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory],
+            dtype=float,
         )
         avg_state_action = np.mean(states_actions, axis=0)
 
-        # Find closest cluster
-        distances = cdist([avg_state_action], self.cluster_representatives)
-        closest_cluster = np.argmin(distances)
+        # Find closest cluster using standardized space for stable distances
+        avg_state_action_std = (avg_state_action - self._sa_mean) / self._sa_std
+        distances = cdist([avg_state_action_std], self._cluster_centers_std)
+        closest_cluster = int(np.argmin(distances))
 
-        # Get cluster representative
+        # Get cluster representative (raw center) and reward
         representative = self.cluster_representatives[closest_cluster]
-        reward = self.cluster_rewards[closest_cluster]
+        reward = float(self.cluster_rewards[closest_cluster])
 
         # Add noise to reward if specified
         if self.noise_level > 0:
@@ -436,27 +449,31 @@ class FeedbackOracle:
         """Compare two trajectories based on their closest cluster representatives."""
         # Get cluster information for both trajectories
         states_actions1 = np.array(
-            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory1]
+            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory1],
+            dtype=float,
         )
         states_actions2 = np.array(
-            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory2]
+            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory2],
+            dtype=float,
         )
 
         avg_state_action1 = np.mean(states_actions1, axis=0)
         avg_state_action2 = np.mean(states_actions2, axis=0)
 
-        # Find closest clusters
-        distances1 = cdist([avg_state_action1], self.cluster_representatives)
-        distances2 = cdist([avg_state_action2], self.cluster_representatives)
+        # Find closest clusters using standardized space
+        avg1_std = (avg_state_action1 - self._sa_mean) / self._sa_std
+        avg2_std = (avg_state_action2 - self._sa_mean) / self._sa_std
+        distances1 = cdist([avg1_std], self._cluster_centers_std)
+        distances2 = cdist([avg2_std], self._cluster_centers_std)
 
-        cluster1 = np.argmin(distances1)
-        cluster2 = np.argmin(distances2)
+        cluster1 = int(np.argmin(distances1))
+        cluster2 = int(np.argmin(distances2))
 
         representative1 = self.cluster_representatives[cluster1]
         representative2 = self.cluster_representatives[cluster2]
 
-        reward1 = self.cluster_rewards[cluster1]
-        reward2 = self.cluster_rewards[cluster2]
+        reward1 = float(self.cluster_rewards[cluster1])
+        reward2 = float(self.cluster_rewards[cluster2])
 
         # Add noise if specified
         if self.noise_level > 0:
@@ -467,6 +484,9 @@ class FeedbackOracle:
         # Compare cluster rewards
         reward_diff = reward1 - reward2
         total_reward = abs(reward1) + abs(reward2)
+        # diff currently unused; keep calculation stable in edge-cases
+        if total_reward == 0:
+            total_reward = 1.0
         diff = abs(reward_diff) / total_reward
 
         obs_dim = trajectory1[0][0].squeeze(0).shape[0]
