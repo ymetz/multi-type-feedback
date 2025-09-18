@@ -111,16 +111,24 @@ def create_unified_dataloaders(
 ):
     """
     Create unified dataloaders that include feedback type with the data.
-
-    Args:
-        feedback_buffers: Dictionary mapping feedback types to lists of feedback
-        batch_size: Batch size for dataloaders
-        val_split: Fraction of data to use for validation
-        ensemble_count: Number of ensemble models
-
-    Returns:
-        Tuple of (train_loader, val_loader)
     """
+    
+    def unified_collate_fn(batch):
+        """Custom collate function for unified training"""
+        # Separate feedback types and data
+        feedback_types = []
+        data_batch = []
+        
+        for feedback_type, data in batch:
+            feedback_types.append(feedback_type)
+            data_batch.append(data)
+        
+        # Collate the data normally
+        collated_data = torch.utils.data.dataloader.default_collate(data_batch)
+        
+        # Return feedback types (as strings) and collated data
+        return feedback_types, collated_data
+    
     # Create unified dataset
     dataset = UnifiedBufferDataset(feedback_buffers)
 
@@ -135,13 +143,14 @@ def create_unified_dataloaders(
         dataset, [train_size, val_size]
     )
 
-    # Create data loaders
+    # Create data loaders with custom collate function
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         pin_memory=True,
         drop_last=True,
+        collate_fn=unified_collate_fn,
     )
 
     val_loader = DataLoader(
@@ -150,6 +159,7 @@ def create_unified_dataloaders(
         shuffle=False,
         pin_memory=True,
         drop_last=True,
+        collate_fn=unified_collate_fn,
     )
 
     return train_loader, val_loader

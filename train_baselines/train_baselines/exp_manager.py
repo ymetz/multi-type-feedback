@@ -743,7 +743,7 @@ class ExperimentManager:
             env.seed = lambda x: print("Trying to call seed with", x)
         elif "metaworld" in self.env_name:
             env = make_vec_metaworld_env(
-                self.env_name,
+                self.env_name.replace("metaworld-", ""),
                 n_envs=n_envs,
                 monitor_dir=log_dir,
                 wrapper_class=self.env_wrapper,

@@ -50,60 +50,70 @@ class FeedbackOracle:
         """Initialize calibration data from pre-computed reference trajectories."""
         with open(reference_data_path, "rb") as f:
             reference_data = pickle.load(f)
-
-        # Store reference optimality gaps for evaluative feedback calibration
-        # Keep a sorted copy to compute an empirical CDF for stable percentile mapping
+    
+        # ---- Evaluative feedback calibration (ECDF over optimality gaps) ----
         self.reference_opt_gaps = np.asarray(reference_data["opt_gaps"], dtype=float)
         self._opt_gaps_sorted = np.sort(self.reference_opt_gaps)
-
-        # Process state-action pairs for clustering (descriptive feedback)
-        states_actions = []
+    
+        # ---- Build state-action feature matrix (flatten obs; ensure action >= 1D) ----
+        def _flatten_sa(step):
+            obs = np.asarray(step[0])
+            obs = np.squeeze(obs)          # drop singletons, e.g. (1,H,W)->(H,W)
+            obs_flat = obs.reshape(-1)     # ALWAYS 1-D
+            act = np.asarray(step[1])
+            act_flat = np.atleast_1d(act)  # scalar or vector → 1-D
+            return np.concatenate((obs_flat, act_flat), axis=0)
+    
+        states_actions_list, rewards_list = [], []
+    
         for segment in reference_data["segments"]:
-            states_actions.extend(
-                [np.concatenate((step[0].squeeze(0), step[1])) for step in segment]
-            )
-        states_actions = np.array(states_actions, dtype=float)
-
-        # Normalize features for more meaningful clustering across mixed scales
+            for step in segment:
+                states_actions_list.append(_flatten_sa(step))
+                rewards_list.append(step[2])
+    
+        if not states_actions_list:
+            raise ValueError("No steps found in reference_data['segments'] to calibrate.")
+    
+        states_actions = np.asarray(states_actions_list, dtype=float)
+        rewards = np.asarray(rewards_list, dtype=float)
+    
+        # ---- Standardize features for clustering ----
         self._sa_mean = states_actions.mean(axis=0)
         self._sa_std = states_actions.std(axis=0)
-        # avoid division by zero
-        self._sa_std[self._sa_std == 0] = 1.0
+        self._sa_std[self._sa_std == 0] = 1.0  # avoid division by zero
         states_actions_std = (states_actions - self._sa_mean) / self._sa_std
-
-        # Fit clustering model
+    
+        # ---- Fit clustering ----
         batch_size = max(1, min(1000, len(states_actions_std) // 100))
         self.kmeans = MiniBatchKMeans(
             n_clusters=self.n_clusters, batch_size=batch_size, random_state=42
         )
         self.kmeans.fit(states_actions_std)
-
-        # Store cluster representatives (in raw/original space) and their average returns
-        self.cluster_representatives = []  # raw (de-normalized) centers used as descriptive exemplars
-        self.cluster_rewards = []          # average per-step reward in cluster
-        self._cluster_centers_std = []     # centers in standardized space for nearest-center queries
-
-        # Calculate average rewards for each cluster
+    
+        # ---- Compute per-cluster averages and store representatives ----
         cluster_assignments = self.kmeans.predict(states_actions_std)
-        rewards = []
-        for segment in reference_data["segments"]:
-            rewards.extend([step[2] for step in segment])
-        rewards = np.array(rewards)
-
+    
+        self.cluster_representatives = []  # de-standardized centers (raw feature space)
+        self.cluster_rewards = []          # avg per-step reward for cluster
+        self._cluster_centers_std = []     # centers in standardized space (for NN queries)
+    
         for i in range(self.n_clusters):
-            cluster_mask = cluster_assignments == i
-            if np.any(cluster_mask):
+            mask = cluster_assignments == i
+            if np.any(mask):
                 center_std = self.kmeans.cluster_centers_[i]
-                # de-standardize center back to original feature space for model inputs
                 center = center_std * self._sa_std + self._sa_mean
-                avg_reward = np.mean(rewards[cluster_mask])
+                avg_reward = float(rewards[mask].mean())
                 self.cluster_representatives.append(center)
                 self.cluster_rewards.append(avg_reward)
                 self._cluster_centers_std.append(center_std)
+    
+        self.cluster_representatives = np.asarray(self.cluster_representatives, dtype=float)
+        self.cluster_rewards = np.asarray(self.cluster_rewards, dtype=float)
+        self._cluster_centers_std = np.asarray(self._cluster_centers_std, dtype=float)
+    
+        if self.cluster_representatives.size == 0:
+            raise ValueError("Clustering produced no non-empty clusters. Check reference data.")
 
-        self.cluster_representatives = np.array(self.cluster_representatives)
-        self.cluster_rewards = np.array(self.cluster_rewards)
-        self._cluster_centers_std = np.array(self._cluster_centers_std)
 
     def get_feedback(
         self,
@@ -342,7 +352,7 @@ class FeedbackOracle:
                 [actions_rand, torch.zeros(pad_size, *actions_rand.shape[1:])], dim=0
             )
             mask_rand = torch.cat([mask_rand, torch.zeros(pad_size, 1)], dim=0)
-
+        
         return (
             (obs_rand, actions_rand, mask_rand),
             (obs_demo, actions_demo, mask_demo),
@@ -409,129 +419,103 @@ class FeedbackOracle:
 
     def get_descriptive_feedback(
         self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]]
-    ) -> Tuple[np.ndarray, np.ndarray, float]:
+    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor], float]:
         """Return the most similar cluster representative and its average reward."""
-        # Compute average state-action for the trajectory (raw space)
+        # Build flattened state-action features
         states_actions = np.array(
-            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory],
+            [
+                np.concatenate(
+                    (np.squeeze(step[0]).reshape(-1), np.atleast_1d(step[1]))
+                )
+                for step in trajectory
+            ],
             dtype=float,
         )
         avg_state_action = np.mean(states_actions, axis=0)
-
-        # Find closest cluster using standardized space for stable distances
-        avg_state_action_std = (avg_state_action - self._sa_mean) / self._sa_std
-        distances = cdist([avg_state_action_std], self._cluster_centers_std)
+    
+        # Nearest cluster in standardized space
+        avg_std = (avg_state_action - self._sa_mean) / self._sa_std
+        distances = cdist([avg_std], self._cluster_centers_std)
         closest_cluster = int(np.argmin(distances))
-
-        # Get cluster representative (raw center) and reward
+    
+        # Representative (raw space) and reward
         representative = self.cluster_representatives[closest_cluster]
         reward = float(self.cluster_rewards[closest_cluster])
-
-        # Add noise to reward if specified
+    
         if self.noise_level > 0:
-            reward += np.random.normal(
-                0, self.noise_level * np.std(self.cluster_rewards)
-            )
-
-        # Split into state and action components
-        obs_dim = trajectory[0][0].squeeze(0).shape[0]
-        return (
-            torch.as_tensor(representative[:obs_dim]).unsqueeze(0).float(),  # state
-            torch.as_tensor(representative[obs_dim:]).unsqueeze(0).float(),  # action
-            torch.ones(1).unsqueeze(-1),  # mask (for compatability)
-        ), reward
-
+            reward += np.random.normal(0, self.noise_level * np.std(self.cluster_rewards))
+    
+        # Split representative back into (state, action) using flattened obs dim
+        obs_example = np.asarray(trajectory[0][0])
+        obs_dim = int(np.prod(np.squeeze(obs_example).shape))
+    
+        state_rep = torch.as_tensor(representative[:obs_dim]).unsqueeze(0).float()
+        action_rep = torch.as_tensor(representative[obs_dim:]).unsqueeze(0).float()
+        mask = torch.ones(1).unsqueeze(-1)  # for compatibility
+    
+        return (state_rep, action_rep, mask), reward
+    
+    
     def get_descriptive_preference_feedback(
         self,
         trajectory1: List[Tuple[np.ndarray, np.ndarray, float, bool]],
         trajectory2: List[Tuple[np.ndarray, np.ndarray, float, bool]],
-    ) -> Tuple[int, int, int]:
+    ) -> Tuple[
+        Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+              Tuple[torch.Tensor, torch.Tensor, torch.Tensor]], int]:
         """Compare two trajectories based on their closest cluster representatives."""
-        # Get cluster information for both trajectories
-        states_actions1 = np.array(
-            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory1],
-            dtype=float,
-        )
-        states_actions2 = np.array(
-            [np.concatenate((step[0].squeeze(0), step[1])) for step in trajectory2],
-            dtype=float,
-        )
-
-        avg_state_action1 = np.mean(states_actions1, axis=0)
-        avg_state_action2 = np.mean(states_actions2, axis=0)
-
-        # Find closest clusters using standardized space
-        avg1_std = (avg_state_action1 - self._sa_mean) / self._sa_std
-        avg2_std = (avg_state_action2 - self._sa_mean) / self._sa_std
-        distances1 = cdist([avg1_std], self._cluster_centers_std)
-        distances2 = cdist([avg2_std], self._cluster_centers_std)
-
-        cluster1 = int(np.argmin(distances1))
-        cluster2 = int(np.argmin(distances2))
-
-        representative1 = self.cluster_representatives[cluster1]
-        representative2 = self.cluster_representatives[cluster2]
-
-        reward1 = float(self.cluster_rewards[cluster1])
-        reward2 = float(self.cluster_rewards[cluster2])
-
-        # Add noise if specified
+        def _avg_sa(traj):
+            X = np.array(
+                [
+                    np.concatenate(
+                        (np.squeeze(step[0]).reshape(-1), np.atleast_1d(step[1]))
+                    )
+                    for step in traj
+                ],
+                dtype=float,
+            )
+            return X.mean(axis=0)
+    
+        avg1 = _avg_sa(trajectory1)
+        avg2 = _avg_sa(trajectory2)
+    
+        avg1_std = (avg1 - self._sa_mean) / self._sa_std
+        avg2_std = (avg2 - self._sa_mean) / self._sa_std
+    
+        d1 = cdist([avg1_std], self._cluster_centers_std)
+        d2 = cdist([avg2_std], self._cluster_centers_std)
+    
+        c1 = int(np.argmin(d1))
+        c2 = int(np.argmin(d2))
+    
+        rep1 = self.cluster_representatives[c1]
+        rep2 = self.cluster_representatives[c2]
+    
+        r1 = float(self.cluster_rewards[c1])
+        r2 = float(self.cluster_rewards[c2])
+    
         if self.noise_level > 0:
             noise_scale = self.noise_level * np.std(self.cluster_rewards)
-            reward1 += np.random.normal(0, noise_scale)
-            reward2 += np.random.normal(0, noise_scale)
-
-        # Compare cluster rewards
-        reward_diff = reward1 - reward2
-        total_reward = abs(reward1) + abs(reward2)
-        # diff currently unused; keep calculation stable in edge-cases
-        if total_reward == 0:
-            total_reward = 1.0
-        diff = abs(reward_diff) / total_reward
-
-        obs_dim = trajectory1[0][0].squeeze(0).shape[0]
-        if reward1 > reward2:
-            return (
-                (
-                    torch.as_tensor(representative2[:obs_dim])
-                    .unsqueeze(0)
-                    .float(),  # state
-                    torch.as_tensor(representative2[obs_dim:])
-                    .unsqueeze(0)
-                    .float(),  # action,
-                    torch.ones(1).unsqueeze(-1),  # mask (for compatability)
-                ),
-                (
-                    torch.as_tensor(representative1[:obs_dim])
-                    .unsqueeze(0)
-                    .float(),  # state
-                    torch.as_tensor(representative1[obs_dim:])
-                    .unsqueeze(0)
-                    .float(),  # action
-                    torch.ones(1).unsqueeze(-1),  # mask (for compatability)
-                ),
-            ), 1
+            r1 += np.random.normal(0, noise_scale)
+            r2 += np.random.normal(0, noise_scale)
+    
+        # determine flattened obs_dim for splitting
+        obs_example = np.asarray(trajectory1[0][0])
+        obs_dim = int(np.prod(np.squeeze(obs_example).shape))
+    
+        def _to_tensors(rep):
+            s = torch.as_tensor(rep[:obs_dim]).unsqueeze(0).float()
+            a = torch.as_tensor(rep[obs_dim:]).unsqueeze(0).float()
+            m = torch.ones(1).unsqueeze(-1)
+            return (s, a, m)
+    
+        pair = (_to_tensors(rep1), _to_tensors(rep2))
+        if r1 > r2:
+            # Return (worse, better), label=1 (preference for second)
+            return (pair[0], pair[1]), 1
         else:
-            return (
-                (
-                    torch.as_tensor(representative1[:obs_dim])
-                    .unsqueeze(0)
-                    .float(),  # state
-                    torch.as_tensor(representative1[obs_dim:])
-                    .unsqueeze(0)
-                    .float(),  # action
-                    torch.ones(1).unsqueeze(-1),  # mask (for compatability)
-                ),
-                (
-                    torch.as_tensor(representative2[:obs_dim])
-                    .unsqueeze(0)
-                    .float(),  # state
-                    torch.as_tensor(representative2[obs_dim:])
-                    .unsqueeze(0)
-                    .float(),  # action
-                    torch.ones(1).unsqueeze(-1),  # mask (for compatability)
-                ),
-            ), 1
+            return (pair[1], pair[0]), 1
+    
 
     def get_random_trajectory(self):
         """Existing implementation..."""

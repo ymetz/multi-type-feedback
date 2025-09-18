@@ -3,28 +3,31 @@
 # ==============================
 # Config
 # ==============================
-# Fixed total timesteps & feedback budget
-TOTAL_TIMESTEPS=1000000
+# Fixed total feedback budget
 FEEDBACK_BUDGET=1500
 
+# Number of iterations options for hyperparameter tuning
+nr_of_iterations_opts=(10 20 50)
+
 # Environments - mix of continuous control tasks
-envs=("Swimmer-v5" "Walker2d-v5" "HalfCheetah-v5")
+#envs=("highway-fast-v0" "merge-v0" "roundabout-v0")
+envs=("metaworld-sweep-into-v3" "metaworld-pick-place-v3" "metaworld-button-press-v3")
 seeds=(1789 12 912391)
 
 # Feedback type combinations to test
-single_feedback=("evaluative" "comparative" "demonstrative" "corrective" "descriptive" "supervised")
+#single_feedback=("evaluative" "comparative" "demonstrative" "corrective" "descriptive" "supervised")
+single_feedback=("demonstrative" "corrective")
 
 # Reward model type
 reward_model_type="separate"
 
-# Key hyperparameters (will plug into the call just like your sweep)
+# Key hyperparameters
 reward_training_epochs=50
-feedback_buffer_size=5000
+feedback_buffer_sizes=(750)
 sampling_strategy="random"
 
-# We'll *compute* n_feedback_per_iteration from the budget for these choices:
+# Initial feedback count options
 initial_feedback_count_opts=(250 500)
-rl_steps_per_iteration_opts=(10000 20000 40000 100000)
 
 # (Unused here but left for completeness if you later extend)
 shared_layers=5
@@ -50,8 +53,7 @@ create_job_script() {
 #SBATCH --output=logs/${job_name}_%j.out
 #SBATCH --error=logs/${job_name}_%j.err
 
-# Load environment
-source /pfs/data5/home/kn/kn_kn/kn_pop257914/ws_feedback_querying/venv/bin/activate
+source /pfs/data6/home/kn/kn_kn/kn_pop257914/ws_feedback_querying/venv/bin/activate
 
 # Force CPU usage
 export CUDA_VISIBLE_DEVICES=""
@@ -67,67 +69,47 @@ EOT
 
 job_counter=0
 
-echo "Phase 1: Creating single feedback type baseline jobs with fixed budget=${FEEDBACK_BUDGET}..."
+echo "Phase 1: Creating single feedback type baseline jobs with budget=${FEEDBACK_BUDGET}..."
 
-# Loop seeds/envs/feedback types and hyperparams where we enforce the budget
+# Loop seeds/envs/feedback types and hyperparams
 for seed in "${seeds[@]}"; do
   for env in "${envs[@]}"; do
     for feedback in "${single_feedback[@]}"; do
       for init_feedback in "${initial_feedback_count_opts[@]}"; do
-        for rl_steps in "${rl_steps_per_iteration_opts[@]}"; do
+        for buffer_size in "${feedback_buffer_sizes[@]}"; do
+          for nr_iterations in "${nr_of_iterations_opts[@]}"; do
 
-          # Number of RL updates
-          updates=$(( TOTAL_TIMESTEPS / rl_steps ))
+            # Check if initial feedback exceeds budget
+            if (( init_feedback >= FEEDBACK_BUDGET )); then
+              echo "Skipping init=${init_feedback} (exceeds budget ${FEEDBACK_BUDGET})"
+              continue
+            fi
 
-          # If TOTAL_TIMESTEPS not divisible by rl_steps, skip (shouldn't happen with given opts)
-          if (( updates * rl_steps != TOTAL_TIMESTEPS )); then
-            echo "Skipping rl_steps=${rl_steps} (not dividing TOTAL_TIMESTEPS=${TOTAL_TIMESTEPS})"
-            continue
-          fi
+            # Build job name with key params visible
+            job_name="baseline_${env}_${feedback}_s${seed}_init${init_feedback}_iter${nr_iterations}_budget${FEEDBACK_BUDGET}"
 
-          # Remaining budget after initial feedback
-          remaining=$(( FEEDBACK_BUDGET - init_feedback ))
-          if (( remaining <= 0 )); then
-            echo "Skipping init=${init_feedback} (exceeds or equals budget)"
-            continue
-          fi
+            # Command: now much simpler, let Python handle the budget calculations
+            cmd="python multi_type_feedback/dynamic_rlhf.py \
+                --algorithm ppo \
+                --environment ${env} \
+                --feedback-types ${feedback} \
+                --reward-model-type ${reward_model_type} \
+                --seed ${seed} \
+                --expert-algorithm sac \
+                --feedback-budget ${FEEDBACK_BUDGET} \
+                --nr-of-iterations ${nr_iterations} \
+                --reward-training-epochs ${reward_training_epochs} \
+                --feedback-buffer-size ${buffer_size} \
+                --initial-feedback-count ${init_feedback} \
+                --sampling-strategy ${sampling_strategy} \
+                --reference-data-folder ../multi-type-feedback_iclr2025/rlhf/feedback \
+                --expert-model-base-path gt_agents \
+                --wandb-project-name single_baselines_budget${FEEDBACK_BUDGET}"
 
-          # Check if an integer n_feedback_per_iteration exists
-          if (( remaining % updates != 0 )); then
-            # Not an integer; skip this combo
-            continue
-          fi
-
-          n_feedback=$(( remaining / updates ))
-          if (( n_feedback <= 0 )); then
-            continue
-          fi
-
-          # Build job name with key params visible
-          job_name="baseline_${env}_${feedback}_s${seed}_init${init_feedback}_rl${rl_steps}_nf${n_feedback}"
-
-          # Command: now includes all the “extra” args (like your sweep), but with computed n_feedback
-          cmd="python multi_type_feedback/dynamic_rlhf.py \
-              --algorithm ppo \
-              --environment ${env} \
-              --feedback-types ${feedback} \
-              --reward-model-type ${reward_model_type} \
-              --seed ${seed} \
-              --n-feedback-per-iteration ${n_feedback} \
-              --reward-training-epochs ${reward_training_epochs} \
-              --feedback-buffer-size ${feedback_buffer_size} \
-              --initial-feedback-count ${init_feedback} \
-              --rl-steps-per-iteration ${rl_steps} \
-              --sampling-strategy ${sampling_strategy} \
-              --reference-data-folder ../multi-type-feedback_iclr2025/rlhf/feedback \
-              --expert-model-base-path gt_agents \
-              --wandb-project-name single_baselines_budget${FEEDBACK_BUDGET}"
-
-          # Time limit heuristic: more RL steps => fewer updates, but same total timesteps;
-          # keep a safe default; adjust if you have runtime stats
-          create_job_script $job_counter "$cmd" "02:00:00" $job_name
-          ((job_counter++))
-
+            # Time limit heuristic: adjust based on your experience
+            create_job_script $job_counter "$cmd" "03:00:00" $job_name
+            ((job_counter++))
+          done
         done
       done
     done
@@ -178,9 +160,13 @@ echo "=================================="
 echo "Sweep setup complete!"
 echo "Total jobs created: $job_counter"
 echo "=================================="
-echo "Budget logic:"
-echo "  initial_feedback + (TOTAL_TIMESTEPS / rl_steps_per_iteration) * n_feedback_per_iteration = ${FEEDBACK_BUDGET}"
-echo "  TOTAL_TIMESTEPS = ${TOTAL_TIMESTEPS}"
+echo "Budget configuration:"
+echo "  Total feedback budget: ${FEEDBACK_BUDGET}"
+echo "  Number of iterations options: ${nr_of_iterations_opts[@]}"
+echo "  Python script will automatically calculate:"
+echo "    - n_feedback_per_iteration = (budget - initial_feedback) / nr_of_iterations"
+echo "    - rl_steps_per_iteration = total_timesteps / nr_of_iterations"
+echo "    - total_timesteps comes from ExperimentManager based on environment"
 echo "=================================="
 echo "To submit jobs, run: ./submit_jobs_baselines.sh"
 echo "=================================="

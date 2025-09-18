@@ -44,7 +44,7 @@ class RewardModelUpdateCallback(EventCallback):
 
         :return: True to continue training, False to stop
         """
-        # Check if we need to update the reward models
+        # Check if we need to update the reward models        
         timesteps_since_update = self.num_timesteps - self.last_update_timestep
 
         if timesteps_since_update >= self.update_freq:
@@ -151,8 +151,7 @@ class RewardModelUpdateCallback(EventCallback):
                 if hasattr(self.drlhf_agent, "_log_iteration_metrics"):
                     self.drlhf_agent._log_iteration_metrics(step=global_step)
             except Exception as e:
-                if self.verbose > 0:
-                    print(f"[WARN] Extended metric logging failed: {e}")
+                print(f"[WARN] Extended metric logging failed: {e}")
 
             # Update the last update timestep
             self.last_update_timestep = self.num_timesteps

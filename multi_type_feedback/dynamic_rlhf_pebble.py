@@ -133,7 +133,7 @@ class DynamicRLHFRewardFunction(RewardFn):
         return self.drlhf_agent.compute_ensemble_reward(state, actions)
 
 
-class DynamicRLHF:
+class DynamicRLHFPebble:
     def __init__(
         self,
         oracle: FeedbackOracle,
@@ -145,9 +145,11 @@ class DynamicRLHF:
             "demonstrative",
             "descriptive",
         ],
-        n_feedback_per_iteration: int = 50,
-        feedback_buffer_size: int = 2000,
-        rl_steps_per_iteration: int = 5000,
+        nr_of_iterations: int = 20,
+        feedback_budget: int = 1500,
+        feedback_buffer_size: int = 750,
+        n_feedback_per_iteration: Optional[int] = None,   # now optional, computed if None
+        rl_steps_per_iteration: Optional[int] = None,     # now optional, computed after init_rl
         reward_training_epochs: int = 10,
         device: str = "cuda",
         num_ensemble_models: int = 4,
@@ -173,6 +175,8 @@ class DynamicRLHF:
         self.algorithm = algorithm
         self.feedback_types = feedback_types
         self.n_feedback_per_iteration = n_feedback_per_iteration
+        self.nr_of_iterations = nr_of_iterations
+        self.feedback_budget = feedback_budget
         self.feedback_buffer_size = feedback_buffer_size
         self.rl_steps_per_iteration = rl_steps_per_iteration
         self.reward_training_epochs = reward_training_epochs
@@ -212,6 +216,44 @@ class DynamicRLHF:
         # Initialize reward models
         self.reward_models = self._init_reward_models()
 
+        self.reward_function = DynamicRLHFRewardFunction(self)
+
+        # Update the experiment manager with our reward function
+        if self.exp_manager:
+            self.exp_manager.reward_function = self.reward_function
+
+        # (1) Compute n_feedback_per_iteration immediately (based on budget only)
+        if n_feedback_per_iteration is None:
+            remaining_budget = self.feedback_budget - self.initial_feedback_count
+            if remaining_budget <= 0:
+                raise ValueError(
+                    f"Initial feedback count ({self.initial_feedback_count}) "
+                    f"exceeds or equals total budget ({self.feedback_budget})"
+                )
+            if remaining_budget % self.nr_of_iterations != 0:
+                self.n_feedback_per_iteration = remaining_budget // self.nr_of_iterations
+                actual_budget = (
+                    self.initial_feedback_count
+                    + self.n_feedback_per_iteration * self.nr_of_iterations
+                )
+                print(
+                    f"Warning: Budget {self.feedback_budget} cannot be evenly "
+                    f"distributed over {self.nr_of_iterations} iterations."
+                )
+                print(
+                    f"Using {self.n_feedback_per_iteration} feedback per iteration, "
+                    f"actual total budget: {actual_budget}"
+                )
+            else:
+                self.n_feedback_per_iteration = remaining_budget // self.nr_of_iterations
+                print(f"Computed n_feedback_per_iteration: {self.n_feedback_per_iteration}")
+        else:
+            self.n_feedback_per_iteration = n_feedback_per_iteration
+
+        # (2) Defer RL-steps-per-iteration computation; set placeholders
+        self.total_timesteps: Optional[int] = None
+        self.rl_steps_per_iteration = rl_steps_per_iteration  # may be None until init
+
         # Initialize Welford's algorithm state for reward standardization
         self.reward_mean = None
         self.squared_distance_from_mean = None
@@ -220,15 +262,14 @@ class DynamicRLHF:
         if apply_random_response_handling:
             self._apply_random_response_handling()
 
-        # Create reward function wrapper
-        self.reward_function = DynamicRLHFRewardFunction(self)
-
         # Update the experiment manager with our reward function
         if self.exp_manager:
             self.exp_manager.reward_function = self.reward_function
 
         # Initialize RL agent first (needed for exploration)
         self.rl_agent = self._init_rl_agent()
+
+        self._compute_rl_steps_after_init()
         
         # Phase 1: Intrinsic exploration (if enabled)
         if self.enable_intrinsic_exploration:
@@ -402,6 +443,35 @@ class DynamicRLHF:
         # For unified, we return a dictionary with a single key
         # This is to maintain compatibility with the rest of the code
         return {"unified": model}
+
+    def _compute_rl_steps_after_init(self):
+        """
+        Compute total_timesteps and rl_steps_per_iteration once exp_manager has been initialized.
+        """
+        if self.total_timesteps is None:
+            # Prefer exp_manager.n_timesteps if available
+            if self.exp_manager and hasattr(self.exp_manager, "n_timesteps"):
+                self.total_timesteps = int(self.exp_manager.n_timesteps)
+            else:
+                raise ValueError(
+                    "total_timesteps is not available. Ensure ExperimentManager sets n_timesteps."
+                )
+
+        if self.rl_steps_per_iteration is None:
+            if self.total_timesteps % self.nr_of_iterations != 0:
+                print(
+                    f"Warning: Total timesteps ({self.total_timesteps}) not evenly "
+                    f"divisible by nr_of_iterations ({self.nr_of_iterations})"
+                )
+                self.rl_steps_per_iteration = self.total_timesteps // self.nr_of_iterations
+                actual_timesteps = self.rl_steps_per_iteration * self.nr_of_iterations
+                print(
+                    f"Using {self.rl_steps_per_iteration} RL steps per iteration, "
+                    f"actual total timesteps: {actual_timesteps}"
+                )
+            else:
+                self.rl_steps_per_iteration = self.total_timesteps // self.nr_of_iterations
+                print(f"Computed rl_steps_per_iteration: {self.rl_steps_per_iteration}")
 
     def _initialize_reward_models_with_random_feedback(self):
         """Collect initial random feedback and train reward models before RL training begins."""
@@ -827,41 +897,56 @@ class DynamicRLHF:
         trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]],
         feedback_type: str,
     ) -> float:
-        """Compute uncertainty for a trajectory using the ensemble variance of the specific reward model."""
-        reward_model = self.reward_models[feedback_type]
-
+        """Compute uncertainty for a trajectory using the ensemble variance of the reward model."""
+        device = self.device
+    
         # Stack observations and actions from trajectory
-        states = torch.vstack(
-            [torch.as_tensor(step[0]).float() for step in trajectory]
-        ).to(self.device)
-        actions = torch.vstack(
-            [torch.as_tensor(step[1]).float() for step in trajectory]
-        ).to(self.device)
-
-        # Get predictions from all ensemble members
+        states = torch.vstack([torch.as_tensor(step[0]).float() for step in trajectory]).to(device)
+        actions = torch.vstack([torch.as_tensor(step[1]).float() for step in trajectory]).to(device)
+    
         with torch.no_grad():
-            if reward_model.ensemble_count > 1:
-                states_expanded = states.unsqueeze(0).expand(
-                    reward_model.ensemble_count, *states.shape
-                )
-                actions_expanded = actions.unsqueeze(0).expand(
-                    reward_model.ensemble_count, *actions.shape
-                )
-                predictions = reward_model(
-                    states_expanded, actions_expanded
-                )  # Shape: [ensemble_size, traj_len, 1]
-
-                # Compute trajectory-level uncertainty as mean of step-wise uncertainties
-                step_uncertainties = predictions.std(
-                    dim=0
-                )  # Standard deviation across ensemble members
-                trajectory_uncertainty = (
-                    step_uncertainties.mean().item()
-                )  # Mean uncertainty across trajectory
+            if self.reward_model_type == "separate":
+                reward_model = self.reward_models[feedback_type]
+                if reward_model.ensemble_count > 1:
+                    states_expanded = states.unsqueeze(0).expand(reward_model.ensemble_count, *states.shape)
+                    actions_expanded = actions.unsqueeze(0).expand(reward_model.ensemble_count, *actions.shape)
+                    preds = reward_model(states_expanded, actions_expanded)  # [E, T, 1] or [E, T]
+                    if preds.dim() == 3 and preds.shape[-1] == 1:
+                        preds = preds.squeeze(-1)
+                    step_unc = preds.std(dim=0)                # [T]
+                    traj_unc = step_unc.mean().item()
+                else:
+                    traj_unc = 0.0
+    
+            elif self.reward_model_type == "multi-head":
+                model = list(self.reward_models.values())[0]   # {"multi_head": model}
+                if model.ensemble_count > 1:
+                    states_expanded = states.unsqueeze(0).expand(model.ensemble_count, *states.shape)
+                    actions_expanded = actions.unsqueeze(0).expand(model.ensemble_count, *actions.shape)
+                    preds = model(states_expanded, actions_expanded, feedback_type)  # [E, T, 1] or [E, T]
+                    if preds.dim() == 3 and preds.shape[-1] == 1:
+                        preds = preds.squeeze(-1)
+                    step_unc = preds.std(dim=0)                # [T]
+                    traj_unc = step_unc.mean().item()
+                else:
+                    traj_unc = 0.0
+    
+            elif self.reward_model_type == "unified":
+                model = list(self.reward_models.values())[0]   # {"unified": model}
+                if model.ensemble_count > 1:
+                    states_expanded = states.unsqueeze(0).expand(model.ensemble_count, *states.shape)
+                    actions_expanded = actions.unsqueeze(0).expand(model.ensemble_count, *actions.shape)
+                    preds = model(states_expanded, actions_expanded, feedback_type)  # [E, T, 1] or [E, T]
+                    if preds.dim() == 3 and preds.shape[-1] == 1:
+                        preds = preds.squeeze(-1)
+                    step_unc = preds.std(dim=0)                # [T]
+                    traj_unc = step_unc.mean().item()
+                else:
+                    traj_unc = 0.0
             else:
-                trajectory_uncertainty = 0.0
-
-        return trajectory_uncertainty
+                raise ValueError(f"Unknown reward_model_type: {self.reward_model_type}")
+    
+        return traj_unc
 
     def compute_trajectory_overall_uncertainty(
         self, trajectory: List[Tuple[np.ndarray, np.ndarray, float, bool]], 
@@ -1493,11 +1578,16 @@ class DynamicRLHF:
 
         return final_rewards.cpu().numpy()  # shape: [batch_size,]
 
-    def train(self, total_timesteps: int, sampling_strategy: str = "random", query_sampling_strategy: str = "none", query_sampling_multiplier: float = 2.0):
+    def train(self, total_timesteps: Optional[int] = None, sampling_strategy: str = "random", query_sampling_strategy: str = "none", query_sampling_multiplier: float = 2.0):
         """
         Run full training loop with a single call to learn() and using callbacks
         for reward model updates.
         """
+
+        if total_timesteps is not None:
+            self.total_timesteps = int(total_timesteps)
+            # If the user overrides total_timesteps post-init, recompute RL steps
+            self._compute_rl_steps_after_init()
 
         # Create reward model callback
         reward_model_callback = RewardModelUpdateCallback(
@@ -1522,17 +1612,14 @@ class DynamicRLHF:
         else:
             callback = reward_model_callback
 
-        # Train with a single call to learn()
         if self.exp_manager:
-            # Use ExperimentManager's learn method
+            existing = list(getattr(self.exp_manager, "callbacks", []) or [])
+            self.exp_manager.callbacks = [reward_model_callback] + existing
             self.exp_manager.learn(self.rl_agent)
         else:
-            # Fallback to direct learning
-            self.rl_agent.learn(
-                total_timesteps=total_timesteps,
-                callback=callback,
-                reset_num_timesteps=True,
-            )
+            self.rl_agent.learn(total_timesteps=total_timesteps,
+                                callback=reward_model_callback,
+                                reset_num_timesteps=True)
 
         # Clean up wandb if needed
         if self.wandb_logger is not None and hasattr(self.wandb_logger, "experiment"):
@@ -1597,16 +1684,10 @@ def main():
         help="Folder containing pre-computed offline feedback for calibration",
     )
     parser.add_argument(
-        "--n-feedback-per-iteration",
+        "--nr-of-iterations",
         type=int,
-        default=50,
-        help="Feedback Instances collected per iteration",
-    )
-    parser.add_argument(
-        "--rl-steps-per-iteration",
-        type=int,
-        default=10000,
-        help="Number of steps between reward model updates",
+        default=20,
+        help="Number of reward model update iterations (computes rl-steps-per-iteration from total timesteps)",
     )
     parser.add_argument(
         "--n-timesteps",
@@ -1627,9 +1708,15 @@ def main():
         help="Number of feedback samples to collect before starting RL training",
     )
     parser.add_argument(
+        "--feedback-budget",
+        type=int,
+        default=1500,
+        help="Total feedback budget for the entire training run",
+    )
+    parser.add_argument(
         "--feedback-buffer-size",
         type=int,
-        default=5000,
+        default=750,
         help="Maximum size of the feedback buffer",
     )
     parser.add_argument(
@@ -1658,6 +1745,12 @@ def main():
         type=int,
         default=5,
         help="Number of shared layers for multi-head policy",
+    )
+    parser.add_argument(
+        "--expert-algorithm",
+        type=str,
+        default=None,
+        help="Optional: We can load the expert policy with a separate training algorithm",
     )
     parser.add_argument(
         "--head-layer-num",
@@ -1715,27 +1808,53 @@ def main():
     else:
         enable_intrinsic_exploration = args.enable_intrinsic_exploration
 
+    # Calculate remaining budget after initial feedback
+    remaining_budget = args.feedback_budget - args.initial_feedback_count
+    if remaining_budget <= 0:
+        raise ValueError(f"Initial feedback count ({args.initial_feedback_count}) exceeds or equals total budget ({args.feedback_budget})")
+
+    if remaining_budget % args.nr_of_iterations != 0:
+        # Round down to ensure we don't exceed budget
+        n_feedback_per_iteration = remaining_budget // args.nr_of_iterations
+        actual_budget = args.initial_feedback_count + (n_feedback_per_iteration * args.nr_of_iterations)
+        print(f"Warning: Budget {args.feedback_budget} cannot be evenly distributed over {args.nr_of_iterations} iterations.")
+        print(f"Using {n_feedback_per_iteration} feedback per iteration, actual total budget: {actual_budget}")
+    else:
+        n_feedback_per_iteration = remaining_budget // args.nr_of_iterations
+        print(f"Computed n_feedback_per_iteration: {n_feedback_per_iteration}")
+
+    uuid_str = f"_{uuid.uuid4()}"
+    exp_manager = ExperimentManager(
+        args=args,
+        algo=args.algorithm,
+        env_id=args.environment,
+        log_folder=args.save_folder,
+        eval_freq=5000,
+        n_eval_episodes=5,
+        use_wandb_callback=True,
+        wandb_callback_continuous=True,
+        reward_function=None,
+        uuid_str=uuid_str,
+    )
+
     # Setup oracle
     feedback_id, _ = TrainingUtils.get_model_ids(args)
     device = TrainingUtils.get_device()
     feedback_path = Path(args.reference_data_folder) / f"{feedback_id}.pkl"
-
     gen_environment = TrainingUtils.setup_environment(args.environment, args.seed)
     expert_models = TrainingUtils.load_expert_models(
         env_name=args.environment,
-        algorithm=args.algorithm,
+        algorithm=args.expert_algorithm if args.expert_algorithm else args.algorithm,
         checkpoints_path=str(get_project_root() / args.expert_model_base_path),
         environment=gen_environment,
         top_n_models=args.top_n_models,
     )
-
     oracle = FeedbackOracle(
         expert_models=expert_models,
         environment=gen_environment,
         reference_data_path=feedback_path,
         noise_level=args.noise_level,
     )
-    #unique_id = str(uuid.uuid4())[:8]
 
     reward_model_type = args.reward_model_type if len(args.feedback_types) > 1 else f"single_{''.join(args.feedback_types)}"
 
@@ -1746,53 +1865,39 @@ def main():
         config={
             "algorithm": args.algorithm,
             "feedback_types": args.feedback_types,
-            "n_feedback_per_iteration": args.n_feedback_per_iteration,
-            "rl_steps_per_iteration": args.rl_steps_per_iteration,
+            "nr_of_iterations": args.nr_of_iterations,
+            "feedback_budget": args.feedback_budget,
             "reward_training_epochs": args.reward_training_epochs,
             "feedback_buffer_size": args.feedback_buffer_size,
+            "reward_model_type": args.reward_model_type,
+            "sampling_strategy": args.sampling_strategy,
+            "query_sampling_strategy": args.query_sampling_strategy,
+            "initial_feedback_count": args.initial_feedback_count,
         },
     )
 
     continuous_lightning_logger = ContinuousWandbLogger()
-
-    # Create experiment manager
-    exp_manager = ExperimentManager(
-        args=args,
-        algo=args.algorithm,
-        env_id=args.environment,
-        log_folder=args.save_folder,
-        eval_freq=5000,
-        n_eval_episodes=5,
-        use_wandb_callback=True,
-        wandb_callback_continuous=True,
-        # Note: reward_function will be set by DynamicRLHF
-        reward_function=None,
-    )
-
-    # Setup experiment and get hyperparameters
-    hyperparams = exp_manager.get_hyperparam_config_for_algo()
-
     custom_sb3_logger = create_continuous_wandb_logger(
         global_step_offset=0,
-        run_id=wandb.run.id,  # Reuse the same W&B run
+        run_id=wandb.run.id,
         additional_formats=["stdout"],
         folder="logs",
     )
 
     # Create DynamicRLHF with ExperimentManager
-    drlhf = DynamicRLHF(
+    drlhf = DynamicRLHFPebble(
         oracle=oracle,
         env_name=args.environment,
         algorithm=args.algorithm,
         feedback_types=args.feedback_types,
-        n_feedback_per_iteration=args.n_feedback_per_iteration,
+        nr_of_iterations=args.nr_of_iterations,
+        feedback_budget=args.feedback_budget,
         feedback_buffer_size=args.feedback_buffer_size,
-        rl_steps_per_iteration=args.rl_steps_per_iteration,
         reward_training_epochs=args.reward_training_epochs,
         num_ensemble_models=args.num_ensemble_models,
         apply_random_response_handling=args.random_response_handling,
         initial_feedback_count=args.initial_feedback_count,
-        hyperparams=hyperparams,
+        hyperparams=exp_manager.get_hyperparam_config_for_algo(),
         callbacks=exp_manager.callbacks,
         device=device,
         wandb_logger=continuous_lightning_logger,
@@ -1808,9 +1913,13 @@ def main():
         intrinsic_k_neighbors=args.intrinsic_k_neighbors,
     )
 
-    n_timesteps = args.n_timesteps if args.n_timesteps > 0 else exp_manager.n_timesteps
+    wandb.config.update({
+        "n_feedback_per_iteration": drlhf.n_feedback_per_iteration,
+        "rl_steps_per_iteration": drlhf.rl_steps_per_iteration,
+        "total_timesteps": drlhf.total_timesteps,
+    }, allow_val_change=True)
+
     drlhf.train(
-        total_timesteps=n_timesteps, 
         sampling_strategy=args.sampling_strategy,
         query_sampling_strategy=args.query_sampling_strategy,
         query_sampling_multiplier=args.query_sampling_multiplier
