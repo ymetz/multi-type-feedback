@@ -4,6 +4,7 @@ import math
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
 from typing import Dict, List, Optional, Tuple
+from math import isclose
 
 import numpy as np
 from sklearn.cluster import KMeans
@@ -34,22 +35,141 @@ def _calculate_example_length(example: Dict) -> float:
     return 50.0
 
 
-def split_partition_avoiding_ties(ranks: List[float]) -> List[List[int]]:
-    """Split a partition to avoid ties in rankings."""
+def split_partition_avoiding_ties(
+    ranks: List[float],
+    strategy,
+    rel_tol,
+    rng,
+) -> List[List[int]]:
+    """
+    Split indices to avoid rank ties using different strategies.
+
+    Args:
+        ranks: List of rank values (floats)
+        strategy: "max" (prioritize bigger partitions),
+                 "targeted_size_random:N" (target size N with random assignment and balancing),
+                 "targeted_size_spread:N" (target size N with round-robin for max distance),
+                 "targeted_size_spread:auto" (auto-determine partition count by max tie group size)
+        rel_tol: Relative tolerance for float comparison with isclose
+        rng: Random number generator (required for targeted_size_random strategy)
+
+    Returns:
+        List of sub-partitions, each containing indices with no tied ranks
+    """
     if not ranks:
         return []
-    
-    # Group indices by rank value
-    rank_to_indices = defaultdict(list)
-    for i, rank in enumerate(ranks):
-        rank_to_indices[rank].append(i)
-    
-    # Each unique rank gets its own partition
-    partitions = []
-    for indices in rank_to_indices.values():
-        partitions.append(indices)
-    
-    return partitions
+
+    n = len(ranks)
+    if n == 1:
+        return [[0]]
+
+    target_size = None
+    if ":" in strategy:
+        if strategy.startswith("targeted_size_random:"):
+            target_size = int(strategy.split(":")[1])
+            strategy = "targeted_size_random"
+        elif strategy.startswith("targeted_size_spread:"):
+            value = strategy.split(":")[1]
+            target_size = "auto" if value == "auto" else int(value)
+            strategy = "targeted_size_spread"
+
+    # Group consecutive equal ranks
+    sorted_indices = sorted(range(n), key=lambda i: ranks[i])
+    groups = []
+    i = 0
+    while i < n:
+        j = i + 1
+        # Find all indices with ranks close to the current one
+        while j < n and isclose(
+            ranks[sorted_indices[i]],
+            ranks[sorted_indices[j]],
+            rel_tol=rel_tol,
+            abs_tol=rel_tol,
+        ):
+            j += 1
+        groups.append(sorted_indices[i:j])
+        i = j
+
+    # Fast path: no ties exist, return single partition for tie-splitting strategies
+    if all(len(g) == 1 for g in groups) and strategy == "max":
+        return [list(range(n))]
+
+    if strategy == "targeted_size_random":
+        if target_size is None:
+            raise ValueError(
+                "targeted_size_random strategy requires target_size parameter"
+            )
+
+        max_group_size = max(len(g) for g in groups)
+        num_partitions = max(max_group_size, math.ceil(n / target_size))
+
+        # Shuffle all items for unbiased random assignment
+        shuffled_indices = list(range(n))
+        rng.shuffle(shuffled_indices)
+
+        partitions = [[] for _ in range(num_partitions)]
+        partition_ranks = [set() for _ in range(num_partitions)]
+
+        for idx in shuffled_indices:
+            rank = ranks[idx]
+
+            partitions_with_room = [
+                p for p in range(num_partitions) if len(partitions[p]) < target_size
+            ]
+            partitions_no_tie = [
+                p for p in partitions_with_room if rank not in partition_ranks[p]
+            ]
+
+            # Prefer tie-free placement, fall back to allowing ties
+            available = partitions_no_tie if partitions_no_tie else partitions_with_room
+
+            chosen = rng.choice(available)
+            partitions[chosen].append(idx)
+            partition_ranks[chosen].add(rank)
+
+        return partitions
+
+    elif strategy == "targeted_size_spread":
+        if target_size is None:
+            raise ValueError(
+                "targeted_size_spread strategy requires target_size parameter"
+            )
+
+        # Round-robin assignment for maximum within-partition distance
+        if target_size == "auto":
+            max_group_size = max(len(g) for g in groups)
+            num_partitions = max_group_size
+        else:
+            num_partitions = math.ceil(n / target_size)
+
+        sorted_items = sorted(range(n), key=lambda i: ranks[i])
+        partitions = [[] for _ in range(num_partitions)]
+
+        for i, idx in enumerate(sorted_items):
+            partitions[i % num_partitions].append(idx)
+
+        return partitions
+
+    elif strategy == "max":
+        # Max strategy: repeatedly take one from each non-empty group
+        partitions = []
+        group_queues = [list(group) for group in groups]
+
+        while any(group_queues):
+            partition = []
+            for group_queue in group_queues:
+                if group_queue:
+                    partition.append(group_queue.pop(0))
+            if partition:
+                partitions.append(partition)
+
+        return partitions
+
+    else:
+        raise ValueError(
+            f"Unknown strategy: {strategy}. Use 'max', 'targeted_size_random:N', 'targeted_size_spread:N', or 'targeted_size_spread:auto'"
+        )
+
 
 
 def _compute_base_partitions(
@@ -201,23 +321,30 @@ class BaseStratifier(ABC):
 class GlobalPartitionStratifier(BaseStratifier):
     """Stratifier that assigns all examples to a single global partition."""
 
-    def __init__(self, split_on_ties: bool = False):
-        self.split_on_ties = split_on_ties
-
     def compute_partitions(self, examples: List[Dict], rng) -> List[int]:
-        if not self.split_on_ties:
-            return [0] * len(examples)
-
-        ranks = [ex["rank"] for ex in examples]
-        sub_partitions = split_partition_avoiding_ties(ranks)
+        filtered_indices = []
+        valid_indices = []
+        for i, ex in enumerate(examples):
+            if ex.get("rank") is None:
+                filtered_indices.append(i)
+            else:
+                valid_indices.append(i)
 
         partition_ids = [None] * len(examples)
-        for pid, sub_partition in enumerate(sub_partitions):
-            for idx in sub_partition:
-                partition_ids[idx] = pid
 
-        print("\n[GlobalPartitionStratifier] After tie-splitting:")
-        print(f"  Total partitions: {len(sub_partitions)}")
+        for idx in valid_indices:
+            partition_ids[idx] = 0
+
+        current_pid = 1
+        for idx in filtered_indices:
+            partition_ids[idx] = current_pid
+            current_pid += 1
+
+        if filtered_indices:
+            print(
+                f"  Filtered examples in singleton partitions: {len(filtered_indices)}"
+            )
+
         _log_partition_statistics(partition_ids, 1, "GlobalPartitionStratifier")
 
         return partition_ids

@@ -5,16 +5,19 @@
 #envs=("Ant-v5" "Hopper-v5" "Humanoid-v5")
 #envs=("metaworld-button-press-v2" "metaworld-sweep-into-v2" "metaworld-pick-place-v2")
 #envs=("roundabout-v0" "merge-v0" "highway-fast-v0")
-#envs=("roundabout-v0" "merge-v0" "highway-fast-v0")
-envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
+envs=("Swimmer-v5")
 #seeds=(1789 1687123 12 912391 330)
-seeds=(1789 1687123 12 912391 330)
+seeds=(1789)
+
 #feedback_types=("evaluative" "comparative" "corrective" "descriptive" "descriptive_preference")
 feedback_types=("comparative")
-#noise_levels=(0.1 0.25 0.5 0.75 1.5 3.0)
+#noise_levels=(0.1 0.25 0.5 0.75 1.5 3.0) # 0.1 0.25 0.5
+# noise_levels=(0.0 0.1 0.25 0.5)
 noise_levels=(0.0)
-n_feedbacks=(-1) # default, use all
+n_feedbacks=(5000) # default, use all
 rt_loss_weights=(0.0 1.0)
+#partitioners=("none" "random" "round_robin")
+partitioners=("none" "random" "round_robin")
 #n_feedbacks=(5000 2500 1250 750)
 
 
@@ -31,7 +34,9 @@ for seed in "${seeds[@]}"; do
             for noise in "${noise_levels[@]}"; do
                 for n_feedback in "${n_feedbacks[@]}"; do
                     for rt_loss_weight in "${rt_loss_weights[@]}"; do
-                        combinations+=("$seed $env $feedback $noise $n_feedback $rt_loss_weight")
+                        for partitioner in "${partitioners[@]}"; do
+                            combinations+=("$seed $env $feedback $noise $n_feedback $rt_loss_weight $partitioner")
+                        done
                     done
                 done
             done
@@ -69,8 +74,8 @@ EOT
 
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
-        read seed env feedback noise n_feedback rt_loss_weight <<< $combination
-        echo "python multi_type_feedback/train_reward_model.py --algorithm ppo --environment $env --feedback-type $feedback --n-feedback $n_feedback --seed $seed --noise-level $noise --rt-loss-weight $rt_loss_weight --no-loading-bar --wandb-project-name rt_rank &" >> $sbatch_script
+        read seed env feedback noise n_feedback rt_loss_weight partitioner <<< $combination
+        echo "python multi_type_feedback/train_reward_model.py --algorithm ppo --environment $env --feedback-type $feedback --n-feedback $n_feedback --seed $seed --noise-level $noise --rt-loss-weight $rt_loss_weight --no-loading-bar --wandb-project-name test_sweep --partitioner $partitioner &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

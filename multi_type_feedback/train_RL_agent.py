@@ -115,10 +115,20 @@ def main():
     parser.add_argument(
         "--feedback-type", type=str, default="evaluative", help="Type of feedback"
     )
+    parser.add_argument(
+        "--rt-loss-weight",
+        type=float,
+        default=0.0,
+        help="Weight for RT-rank loss component (0.0 = disabled)",
+    )
     args = parser.parse_args()
 
     TrainingUtils.set_seeds(args.seed)
     _, model_id = TrainingUtils.get_model_ids(args)
+
+    if args.rt_loss_weight > 0.0:
+        model_id = f"{model_id}_rt{args.rt_loss_weight}"
+    
     reward_model_path = (
         os.path.join(args.reward_model_folder, f"{model_id}.ckpt")
         if args.feedback_type != "baseline"

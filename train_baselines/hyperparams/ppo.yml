@@ -583,9 +583,9 @@ Walker2d-v5:
 
 procgen-coinrun-v0: &procgen-defaults
     policy: 'CnnPolicy'
-    policy_kwargs: "dict(
-        features_extractor_class=impala_policy.ImpalaCNN
-    )"
+    #policy_kwargs: "dict(
+    #    features_extractor_class=impala_policy.ImpalaCNN
+    #)"
     n_envs: 64
     gamma: 0.999
     gae_lambda: 0.95

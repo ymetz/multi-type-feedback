@@ -78,6 +78,7 @@ class FeedbackDataset(Dataset):
         zero_tolerance: float = 1e6,
         discount_factor: float = 0.99,
         stratifier=None,
+        partitioner=None,
     ):
         """Initialize dataset."""
         print("Loading dataset...")
@@ -206,16 +207,26 @@ class FeedbackDataset(Dataset):
                         flipped += 1
                     self.preds.append(0)
                 else:
-                    self.targets.append(((obs, actions, mask), (obs2, actions2, mask2)))
+                    #self.targets.append(((obs, actions, mask), (obs2, actions2, mask2)))
+                    self.targets.append(((obs2, actions2, mask2), (obs, actions, mask)))
                     self.preds.append(0)
                 
                 self.ranks.append(synthetic_rank)
             
             # Compute stratification partitions if stratifier is provided
+            rng = np.random.default_rng(seed)
+            print("STRAT AND PART", stratifier, partitioner)
             if stratifier is not None and all_examples:
-                rng = np.random.default_rng(seed)
                 self.partition_ids = stratifier.compute_partitions(all_examples, rng)
+                for i, ex in enumerate(all_examples):
+                    ex["partition_id"] = self.partition_ids[i]
                 print(f"Computed {len(set(self.partition_ids))} partitions for RT-rank loss")
+
+                if partitioner:
+                    self.partition_ids, stats = partitioner.partition_examples(all_examples, rng)
+                    for i, ex in enumerate(all_examples):
+                        ex["partition_id"] = self.partition_ids[i]                    
+                
             else:
                 # Default: all examples in same partition
                 self.partition_ids = [0] * len(self.targets)
@@ -500,6 +511,7 @@ class LoadFeedbackDataset(FeedbackDataset):
         seed: int = 1234,
         discount_factor: float = 0.99,
         stratifier=None,
+        partitioner=None,
     ):
 
         with open(dataset_path, "rb") as feedback_file:
@@ -516,6 +528,7 @@ class LoadFeedbackDataset(FeedbackDataset):
             seed,
             discount_factor=discount_factor,
             stratifier=stratifier,
+            partitioner=partitioner,
         )
 
 

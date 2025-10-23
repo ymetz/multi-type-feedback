@@ -11,6 +11,7 @@ from masksembles.torch import Masksembles1D, Masksembles2D
 from pytorch_lightning import LightningModule
 from torch import Tensor, nn
 from torch.nn.functional import mse_loss, nll_loss
+from torch.optim.lr_scheduler import LinearLR
 
 def compute_pl_log_likelihood_of_ranking(log_item_worths, ranking):
     """
@@ -42,7 +43,7 @@ def compute_pl_log_likelihood_of_ranking(log_item_worths, ranking):
     return log_result
 
 
-def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tensor, divide_by_len: bool = False) -> Tensor:
+def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tensor, divide_by_len: bool = True) -> Tensor:
     """
     Compute RT ranking loss with anchoring (a fixed reference point at 0 utility).
 
@@ -355,10 +356,10 @@ class SingleNetwork(LightningModule):
         """Check if this is comparative feedback (pairwise comparison)."""
         # Comparative feedback has pair_data structure
         try:
-            if len(batch) >= 2:
-                pair_data = batch[0]
-                if isinstance(pair_data, tuple) and len(pair_data) == 2:
-                    return True
+            pair_data = batch[0]
+            # If we can unpack, it's a pair
+            trajectory1, trajectory2 = pair_data
+            return True
         except Exception:
             pass
         return False
@@ -393,9 +394,25 @@ class SingleNetwork(LightningModule):
         return accuracy
 
     def configure_optimizers(self):
-        """Configure optimizer to optimize the neural network."""
+        """Configure optimizer with linear learning rate schedule."""
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-        return optimizer
+        
+        # Linear learning rate decay from initial lr to 0
+        scheduler = LinearLR(
+          optimizer,
+          start_factor=1.0,  # Start at full learning rate
+          end_factor=0.1,    # End at 0 learning rate
+          total_iters=self.trainer.max_epochs if self.trainer else 30
+        )
+        
+        return {
+          "optimizer": optimizer,
+          "lr_scheduler": {
+              "scheduler": scheduler,
+              "interval": "epoch",  # Update every epoch
+              "frequency": 1,
+          }
+        }
 
 
 class SingleCnnNetwork(LightningModule):
@@ -557,10 +574,10 @@ class SingleCnnNetwork(LightningModule):
         """Check if this is comparative feedback (pairwise comparison)."""
         # Comparative feedback has pair_data structure
         try:
-            if len(batch) >= 2:
-                pair_data = batch[0]
-                if isinstance(pair_data, tuple) and len(pair_data) == 2:
-                    return True
+            pair_data = batch[0]
+            # If we can unpack, it's a pair
+            trajectory1, trajectory2 = pair_data
+            return True
         except Exception:
             pass
         return False
@@ -595,6 +612,22 @@ class SingleCnnNetwork(LightningModule):
         return accuracy
 
     def configure_optimizers(self):
-        """Configure optimizer to optimize the neural network."""
+        """Configure optimizer with linear learning rate schedule."""
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.learning_rate)
-        return optimizer
+        
+        # Linear learning rate decay from initial lr to 0
+        scheduler = LinearLR(
+          optimizer,
+          start_factor=1.0,  # Start at full learning rate
+          end_factor=0.0,    # End at 0 learning rate
+          total_iters=self.trainer.max_epochs if self.trainer else 30
+        )
+        
+        return {
+          "optimizer": optimizer,
+          "lr_scheduler": {
+              "scheduler": scheduler,
+              "interval": "epoch",  # Update every epoch
+              "frequency": 1,
+          }
+        }

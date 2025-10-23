@@ -1,8 +1,9 @@
 #!/bin/bash
 # Define arrays
-envs=("Walker2d-v5" "Swimmer-v5" "HalfCheetah-v5")
-seeds=(1789 12 912391 330)
-save_freqs=(50000 50000 50000)
+#envs=("Walker2d-v5" "Swimmer-v5" "HalfCheetah-v5")
+envs=("highway-fast-v0" "MiniGrid-FourRooms-v0" "merge-v0")
+#seeds=(1789 1687123 12 912391 330)
+save_freqs=(5000 250000 5000)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -32,17 +33,17 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
     cat <<EOT > $sbatch_script
 #!/bin/bash
 #SBATCH --partition=cpu,cpu_il
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=8
 #SBATCH --ntasks=1
 #SBATCH --job-name=train_agents_$batch_id
-#SBATCH --time=04:30:00
+#SBATCH --time=02:00:00
 #SBATCH --output=logs/train_agents_${batch_id}_%j.out
 EOT
     
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
         read seed env save_freq <<< "$combination"
-        echo "python train_baselines/train.py --algo sac --env $env --verbose 0 --save-freq $save_freq --seed $seed --log-folder gt_agents &" >> $sbatch_script
+        echo "python train_baselines/train.py --algo ppo --env $env --verbose 0 --save-freq $save_freq --seed $seed --log-folder gt_agents &" >> $sbatch_script
     done
     
     # Wait for all background jobs to finish
@@ -57,8 +58,8 @@ EOT
     
     # Add delay between job submissions (except for the last job)
     if [ $((i + batch_size)) -lt $total_combinations ]; then
-        echo "Waiting 60 seconds before submitting next batch..."
-        sleep 60
+        echo "Waiting 30 seconds before submitting next batch..."
+        sleep 20
     fi
 done
 
