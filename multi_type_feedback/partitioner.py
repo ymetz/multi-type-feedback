@@ -154,7 +154,7 @@ class RandomPartitioner(BasePartitioner):
 
         current_partition_id = 0
 
-        partition_ids = [None] * len(examples)
+        partition_ids = [0] * len(examples)
         for i in range(0, len(valid_indices), self.partition_size):
             batch_indices = valid_indices[i : i + self.partition_size]
             for idx in batch_indices:
