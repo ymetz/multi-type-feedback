@@ -121,13 +121,24 @@ def main():
         default=0.0,
         help="Weight for RT-rank loss component (0.0 = disabled)",
     )
+    parser.add_argument(
+        "--partitioner",
+        type=str,
+        default="none",
+        choices=["round_robin", "random", "none"],
+    )
+    parser.add_argument(
+        "--partition-size",
+        type=int,
+        default=8,
+    )
     args = parser.parse_args()
 
     TrainingUtils.set_seeds(args.seed)
     _, model_id = TrainingUtils.get_model_ids(args)
 
     if args.rt_loss_weight > 0.0:
-        model_id = f"{model_id}_rt{args.rt_loss_weight}"
+        model_id = f"{model_id}_rt{args.rt_loss_weight}_part{args.partitioner}_ps{args.partition_size}"
     
     reward_model_path = (
         os.path.join(args.reward_model_folder, f"{model_id}.ckpt")

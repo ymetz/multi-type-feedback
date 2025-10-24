@@ -1,9 +1,9 @@
 #!/bin/bash
 # Define arrays
 #envs=("Walker2d-v5" "Swimmer-v5" "HalfCheetah-v5")
-envs=("highway-fast-v0" "MiniGrid-FourRooms-v0" "merge-v0")
-#seeds=(1789 1687123 12 912391 330)
-save_freqs=(5000 250000 5000)
+envs=("Ant-v5" "Hopper-v5" "Humanoid-v5")
+seeds=(1789 1687123 12 912391 330)
+save_freqs=(50000 50000 50000)
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs

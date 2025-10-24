@@ -356,10 +356,14 @@ class SingleNetwork(LightningModule):
         """Check if this is comparative feedback (pairwise comparison)."""
         # Comparative feedback has pair_data structure
         try:
-            pair_data = batch[0]
-            # If we can unpack, it's a pair
-            trajectory1, trajectory2 = pair_data
-            return True
+            if len(batch) >= 2:
+                pair_data = batch[0]
+                if isinstance(pair_data, tuple) and len(pair_data) == 2:
+                    # Check if each element in pair_data is a trajectory tuple (obs, actions, mask)
+                    trajectory1, trajectory2 = pair_data
+                    if (isinstance(trajectory1, tuple) and len(trajectory1) == 3 and
+                        isinstance(trajectory2, tuple) and len(trajectory2) == 3):
+                        return True
         except Exception:
             pass
         return False
@@ -574,10 +578,14 @@ class SingleCnnNetwork(LightningModule):
         """Check if this is comparative feedback (pairwise comparison)."""
         # Comparative feedback has pair_data structure
         try:
-            pair_data = batch[0]
-            # If we can unpack, it's a pair
-            trajectory1, trajectory2 = pair_data
-            return True
+            if len(batch) >= 2:
+                pair_data = batch[0]
+                if isinstance(pair_data, tuple) and len(pair_data) == 2:
+                    # Check if each element in pair_data is a trajectory tuple (obs, actions, mask)
+                    trajectory1, trajectory2 = pair_data
+                    if (isinstance(trajectory1, tuple) and len(trajectory1) == 3 and
+                        isinstance(trajectory2, tuple) and len(trajectory2) == 3):
+                        return True
         except Exception:
             pass
         return False

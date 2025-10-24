@@ -22,6 +22,7 @@ from multi_type_feedback.networks import (
     calculate_single_reward_loss,
 )
 from multi_type_feedback.utils import TrainingUtils
+from multi_type_feedback.partition_sampler import PartitionBatchSampler
 
 # for convenice sake, todo: make dynamic in the future
 discount_factors = {
@@ -68,6 +69,7 @@ def train_reward_model(
     rt_loss_weight: float = 0.0,
     log_stratifier=None,
     log_partitioner=None,
+    partition_size=1,
 ):
     """Train a reward model given trajectories data."""
     split_generator = torch.Generator().manual_seed(seed) # make sure to have consistent train-test splits (although we already set the seed globally)
@@ -76,26 +78,72 @@ def train_reward_model(
         dataset, lengths=[training_set_size, len(dataset) - training_set_size], generator=split_generator
     )
 
-    train_loader = DataLoader(
-        train_set,
-        batch_size=num_ensemble_models * batch_size_multiplier,
-        shuffle=True,
-        pin_memory=True,
-        # num_workers=cpu_count,
-        num_workers=0,
-        drop_last=True,
-    )
+    # ------------------
+    # Build DataLoaders
+    # ------------------
+    effective_batch_size = num_ensemble_models * batch_size_multiplier
 
-    val_loader = DataLoader(
-        val_set,
-        batch_size=num_ensemble_models * batch_size_multiplier,
-        pin_memory=True,
-        num_workers=1,
-        drop_last=True,
+    use_partition_batches = (
+        hasattr(dataset, "partition_ids")
+        and isinstance(dataset.partition_ids, list)
+        and len(dataset.partition_ids) == len(dataset)
+        and (len(set(dataset.partition_ids)) > 1)
     )
+    
+    if use_partition_batches:
+        assert hasattr(train_set, "indices") and hasattr(val_set, "indices")
+
+        print("====== USING PARTITION BATCHES ===========")
+    
+        train_part_ids = [dataset.partition_ids[i] for i in train_set.indices]
+        val_part_ids   = [dataset.partition_ids[i] for i in val_set.indices]
+    
+        train_batch_sampler = PartitionBatchSampler(
+            partition_ids=train_part_ids,
+            seed=seed,
+            shuffle_partitions=True,
+            shuffle_within=True,
+        )
+        val_batch_sampler = PartitionBatchSampler(
+            partition_ids=val_part_ids,
+            seed=seed + 1,
+            shuffle_partitions=False,
+            shuffle_within=False,
+        )
+    
+        train_loader = DataLoader(
+            train_set,
+            batch_sampler=train_batch_sampler,
+            pin_memory=True,
+            num_workers=0,
+        )
+        val_loader = DataLoader(
+            val_set,
+            batch_sampler=val_batch_sampler,
+            pin_memory=True,
+            num_workers=1,
+        )
+    else:
+        # Fallback: standard random batching
+        train_loader = DataLoader(
+            train_set,
+            batch_size=effective_batch_size,
+            shuffle=True,
+            pin_memory=True,
+            num_workers=0,
+            drop_last=True,
+        )
+        val_loader = DataLoader(
+            val_set,
+            batch_size=effective_batch_size,
+            pin_memory=True,
+            num_workers=1,
+            drop_last=True,
+        )
+
 
     if rt_loss_weight > 0.0:
-        reward_model_id = f"{reward_model_id}_rt{rt_loss_weight}"
+        reward_model_id = f"{reward_model_id}_rt{rt_loss_weight}_part{log_partitioner}_ps{partition_size}"
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=save_path,
@@ -149,7 +197,7 @@ def main():
         "--feedback-type", type=str, default="comparative", help="Type of feedback"
     )
     parser.add_argument(
-        "--n-ensemble", type=int, default=4, help="Number of ensemble models"
+        "--n-ensemble", type=int, default=1, help="Number of ensemble models"
     )
     parser.add_argument(
         "--no-loading-bar", action="store_true", help="Disable loading bar"
@@ -184,6 +232,11 @@ def main():
         type=str,
         default="none",
         choices=["round_robin", "random", "none"],
+    )
+    parser.add_argument(
+        "--partition-size",
+        type=int,
+        default=8,
     )
     args = parser.parse_args()
 
@@ -221,9 +274,9 @@ def main():
             RandomPartitioner,
         )
         if args.partitioner == "round_robin":
-            partitioner = RoundRobinPartitioner(target_size=8)
+            partitioner = RoundRobinPartitioner(target_size=args.partition_size)
         elif args.partitioner == "random":
-            partitioner = RandomPartitioner(partition_size=8)
+            partitioner = RandomPartitioner(partition_size=args.partition_size)
         elif args.partitioner == "none":
             partitioner = None
         else:
@@ -293,6 +346,7 @@ def main():
         rt_loss_weight=args.rt_loss_weight,
         log_stratifier=args.stratifier if args.stratifier is not None else "none",
         log_partitioner=args.partitioner if args.partitioner is not None else "none",
+        partition_size=args.partition_size,
     )
 
 

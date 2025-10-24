@@ -475,12 +475,21 @@ class FeedbackDataset(Dataset):
         print(f"N TARGETS AVAILABLE: {len(self.targets)}, N_FEEDBACK: {n_feedback}")
 
         if n_feedback != -1 and n_feedback < len(self.targets):
-            # is a bit inefficient as we first collected the entire dataset..but we just have to do it once
             rng = np.random.default_rng(seed)
             indices = rng.choice(len(self.targets), size=n_feedback, replace=False)
 
             self.targets = [self.targets[i] for i in indices]
-            self.preds = [self.preds[i] for i in indices]
+            self.preds   = [self.preds[i]   for i in indices]
+
+            if hasattr(self, "ranks") and len(self.ranks) == len(self.targets) + (len(indices) - len(indices)):
+                # this condition is weird; better just guard sanely:
+                pass
+
+            if hasattr(self, "ranks") and len(self.ranks) > 0:
+                self.ranks = [self.ranks[i] for i in indices]
+            if hasattr(self, "partition_ids") and len(self.partition_ids) > 0:
+                self.partition_ids = [self.partition_ids[i] for i in indices]
+
 
     def __len__(self):
         """Return size of dataset."""
