@@ -2,7 +2,7 @@
 
 **Paper:** [ResponseRank: Data-Efficient Reward Modeling through Preference Strength Learning](https://arxiv.org/abs/2512.25023)
 
-This repository contains the code for the control experiments presented in the ResponseRank paper. While the codebase builds on existing training infrastructure for multi-type feedback, **ResponseRank** focuses exclusively on comparative (pairwise preference) feedback and employs a novel RtRank loss that incorporates response information to improve reward modeling efficiency.
+This repository contains the code for the control experiments presented in the ResponseRank paper. While the codebase builds on existing training infrastructure for multi-type feedback, **ResponseRank** focuses exclusively on comparative (pairwise preference) feedback and employs a novel loss that incorporates response information to improve reward modeling efficiency.
 
 ## Table of Contents
 
@@ -59,7 +59,7 @@ python multi_type_feedback/generate_feedback.py --algorithm ppo --environment <e
 
 ### 3. Reward Model Training (`multi_type_feedback/train_reward_model.py`)
 
-Trains reward models based on generated feedback using either standard Bradley-Terry (BT) loss or the **ResponseRank (RtRank)** loss.
+Trains reward models based on generated feedback using either standard Bradley-Terry (BT) loss or the **ResponseRank** loss.
 
 #### Basic Usage:
 
@@ -79,7 +79,7 @@ python multi_type_feedback/train_reward_model.py --algorithm ppo --environment <
 
 #### Key ResponseRank Parameters:
 
-- `--rt-loss-weight <float>`: Weight for the RT-rank loss component (default: 0.0 for standard BT loss).
+- `--rt-loss-weight <float>`: Weight for the ResponseRank loss component (default: 0.0 for standard BT loss).
   - `0.0`: Standard Bradley-Terry loss (baseline)
   - `0.1-1.0`: ResponseRank loss with increasing emphasis on response information
 
@@ -213,7 +213,7 @@ To generate equivalent results, be aware to use the provided default values for 
         type=str,
         default="global",
         choices=["knn", "std_window", "global", "none"],
-        help="Stratification method for RT-rank loss",
+        help="Stratification method for Response-rank loss",
     )
     parser.add_argument(
         "--partitioner",
