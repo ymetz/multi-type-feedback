@@ -1,12 +1,27 @@
-# Reward Learning from Multiple Feedback Types
+# ResponseRank: Data-Efficient Reward Modeling through Preference Strength Learning
 
-Code for Feedback Generation, Reward Learning, and RL Benchmarks
+**Paper:** [ResponseRank: Data-Efficient Reward Modeling through Preference Strength Learning](https://arxiv.org/abs/2512.25023)
 
-This repository contains code for training and evaluating reinforcement learning agents using various types of feedback.
+This repository contains the code for the control experiments presented in the ResponseRank paper. While the codebase builds on existing training infrastructure for multi-type feedback, **ResponseRank** focuses exclusively on comparative (pairwise preference) feedback and employs a novel RtRank loss that incorporates response information to improve reward modeling efficiency.
+
+## Table of Contents
+
+- [Repository Structure](#repository-structure)
+- [Main Components](#main-components)
+  - [Initial Training](#1-initial-training-train_baselinestrainpy)
+  - [Feedback Generation](#2-feedback-generation-multi_type_feedbackgenerate_feedbackpy)
+  - [Reward Model Training](#3-reward-model-training-multi_type_feedbacktrain_reward_modelpy)
+  - [Agent Training with Learned Rewards](#4-agent-training-with-learned-rewards-multi_type_feedbacktrain_rl_agentpy)
+- [Quick Start](#quick-start)
+- [Analysis and Visualization](#analysis-and-visualization)
+- [Replication](#replication)
+- [Supported Environments](#supported-environments)
+- [Technical Notes](#technical-notes)
+- [Citation](#citation)
 
 ## Repository Structure
 
-- `train_baselines/`: Main training scripts (Main is a fork of `Stable Baselines3 Zoo`, not by the authors of this repository)
+- `train_baselines/`: Training scripts for expert models (Main is a fork of `Stable Baselines3 Zoo`, not by the authors of this repository) - used for sampling of datasets
 - `multi_type_feedback/`: Scripts for reward model training and agent training with learned rewards
 - `setup.sh`: Setup script for the environment
 - `dependencies/masksembles/`: Masksembles implementation, not by the authors of this repository
@@ -22,94 +37,210 @@ Trains PPO agents in various environments:
 python train_baselines/train.py --algo ppo --env <environment> --verbose 0 --save-freq <frequency> --seed <seed> --gym-packages procgen ale_py --log-folder gt_agents
 ```
 
-In the paper, we trained the Mujoco environments HalfCheetah-v5, Swimmer-v5, and Walker2d-v5, as well as the Highway-env environments with PPO.
-We recommend to train other continuous control environments, including Ant-v5, Hopper-v5, Humanoid-v5 and Metaworld environments with SAC:
+**Environments used in the paper:** HalfCheetah-v5, Swimmer-v5, Walker2d-v5 (MuJoCo), and highway-fast-v0, merge-v0 (Highway-env), all trained with PPO.
+
+For future experiments, the framework already supports SAC. We recommend the training of more complex environments including Ant-v5, Hopper-v5, Humanoid-v5 and Metaworld environments with SAC:
 
 ```bash
 python train_baselines/train.py --algo sac --env <Ant-v5|Hopper-v5|metaworld-sweep-into-v2|...> --verbose 0 --save-freq <frequency> --seed <seed> --gym-packages procgen ale_py --log-folder gt_agents
 ```
 
-Environments: Ant-v5, Swimmer-v5, HalfCheetah-v5, Hopper-v5, Atari, Procgen, ...
-Info: Please use gt_agents as the log folder to ensure compatibility with the generation script. However, you can adapt the expert model dirs if necessary.
+**Note:** Use `gt_agents` as the log folder to ensure compatibility with downstream scripts. You can adapt the expert model directories in the generation script if needed.
 
 ### 2. Feedback Generation (`multi_type_feedback/generate_feedback.py`)
 
 Generates feedback for trained agents:
 
 ```bash
-python multi_type_feedback/generate_feedback.py --algorithm ppo --environment <env> --seed <seed> --n-feedback 10000 --save-folder feedback
+python multi_type_feedback/generate_feedback.py --algorithm ppo --environment <env> --seed <seed> --n-feedback 5000 --save-folder feedback
 ```
 
-Note: The script looks in the gt_agents folder for trained agents. It expects that the `python train_baselines/train_baselines/benchmark.py` script has been run to generate the evaluation scores.
-
-### 2.5 Random Samples for Demonstrative Feedback (`multi_type_feedback/generate_samples.py`)
-
-For demonstrative feedback, we utilize random feedback for simulated preference pairs. To generate the random samples, you need to run a separate script:
-
-```bash
-python multi_type_feedback/generate_samples.py --algorithm <ppo|sac> --environment HalfCheetah-v5 --n-samples 5000 --random
-```
-
-This script generates random samples in a separate `samples` directory. If you encounter errors like `FileNotFoundError: [Errno 2] No such file or directory: 'samples/random_HalfCheetah-v5.pkl`, be sure first to run the random sample generation script.
+**Note:** This script loads trained agents from the `gt_agents` folder and expects that `python train_baselines/benchmark.py` has been run to generate evaluation scores for the agents.
 
 ### 3. Reward Model Training (`multi_type_feedback/train_reward_model.py`)
 
-Trains reward models based on generated feedback:
+Trains reward models based on generated feedback using either standard Bradley-Terry (BT) loss or the **ResponseRank (RtRank)** loss.
+
+#### Basic Usage:
 
 ```bash
-python multi_type_feedback/train_reward_model.py --algorithm ppo --environment <env> --feedback-type <type> --seed <seed> --feedback-folder feedback --save-folder reward_models
+python multi_type_feedback/train_reward_model.py --algorithm ppo --environment <env> --seed <seed> --feedback-folder feedback --save-folder reward_models
 ```
 
-Feedback types: evaluative, comparative, demonstrative, corrective, descriptive, descriptive_preference
+By default, reward models are trained with comparative (pairwise preference) feedback using the standard Bradley-Terry loss.
 
-### 4. Agent Training with Learned Rewards (`multi_type_feedback/train_agent.py`)
+#### ResponseRank Training:
 
-Trains agents using the learned reward models:
+To enable **ResponseRank** training with response-aware loss, specify the `--rt-loss-weight` parameter:
 
 ```bash
-python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env> --feedback-type <type> --seed <seed>
+python multi_type_feedback/train_reward_model.py --algorithm ppo --environment <env> --seed <seed> --feedback-folder feedback --save-folder reward_models --rt-loss-weight 0.5
 ```
 
-### 5. Agent Training with Learned Reward Function Ensemble (`multi_type_feedback/train_agent_ensemble.py`)
+#### Key ResponseRank Parameters:
 
-Trains agents using the learned reward models:
+- `--rt-loss-weight <float>`: Weight for the RT-rank loss component (default: 0.0 for standard BT loss).
+  - `0.0`: Standard Bradley-Terry loss (baseline)
+  - `0.1-1.0`: ResponseRank loss with increasing emphasis on response information
+
+- `--stratifier <str>`: Stratification method for grouping preferences by similarity (default: `global`). Options:
+  - `global`: Single global partition across all preferences
+  - `knn`: K-nearest neighbors clustering based on trajectory features
+  - `std_window`: Stratification based on standard deviation windows
+  - `none`: No stratification
+
+- `--partitioner <str>`: Partitioning strategy for batch construction (default: `random`). Options:
+  - `random`: Random assignment to partitions of specified size
+  - `round_robin`: Distribute examples evenly across partitions
+  - `none`: No partitioning
+
+- `--partition-size <int>`: Target size for each partition when using partitioner (default: 8)
+
+- `--n-ensemble <int>`: Number of ensemble models for uncertainty estimation (default: 1)
+
+#### Example with Full ResponseRank Configuration:
 
 ```bash
-python multi_type_feedback/train_RL_agent_with_ensemble.py --algorithm ppo --environment <env> --feedback-types <types> --seed <seed>
+python multi_type_feedback/train_reward_model.py \
+    --algorithm ppo \
+    --environment HalfCheetah-v5 \
+    --seed 42 \
+    --feedback-folder feedback \
+    --save-folder reward_models \
+    --rt-loss-weight 0.5 \
+    --stratifier global \
+    --partitioner random \
+    --partition-size 8 \
+    --n-ensemble 3
 ```
 
-Feedback types: evaluative, comparative, demonstrative, corrective, descriptive, descriptive_preference
 
-## Usage
+### 4. Agent Training with Learned Rewards (`multi_type_feedback/train_RL_agent.py`)
 
-1. Install the package using `pip install -e .`
-2. Run initial training (e.g., with `train_baselines/start_training.sh`)
-3. Generate feedback
-4. Train reward models
-5. Train agents with learned rewards
+Trains RL agents using the learned reward models instead of the ground-truth environment rewards:
 
-For detailed parameters and options, refer to the individual script files.
+```bash
+python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env> --seed <seed>
+```
+
+This script automatically loads the corresponding trained reward model from the `reward_models` folder and uses it to provide rewards during training.
+
+## Quick Start
+
+### Installation
+
+```bash
+pip install -e .
+```
+
+Ensure CUDA is properly configured for GPU acceleration.
+
+### Basic Workflow
+
+1. **Train Expert Agents**: Train PPO/SAC agents on your target environment
+   ```bash
+   python train_baselines/train.py --algo ppo --env HalfCheetah-v5 --seed 0 --log-folder gt_agents
+   ```
+
+2. **Generate Preference Feedback**: Create pairwise comparison dataset
+   ```bash
+   python multi_type_feedback/generate_feedback.py --algorithm ppo --environment HalfCheetah-v5 --seed 0 --n-feedback 5000 --save-folder feedback
+   ```
+
+3. **Train Reward Model**: Train using standard BT or ResponseRank loss
+   ```bash
+   # Standard BT loss
+   python multi_type_feedback/train_reward_model.py --algorithm ppo --environment HalfCheetah-v5 --seed 0
+
+   # ResponseRank loss
+   python multi_type_feedback/train_reward_model.py --algorithm ppo --environment HalfCheetah-v5 --seed 0 --rt-loss-weight 0.5 --stratifier global
+   ```
+
+4. **Train RL Agent with Learned Rewards**: Use the learned reward model
+   ```bash
+   python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment HalfCheetah-v5 --seed 0
+   ```
+
+For detailed parameters and options, refer to the individual script files or use the `--help` flag.
 
 
-## Additional files for figure generation and plotting
+## Analysis and Visualization
 
-- `train_baselines/benchmark.py`: Benchmark trained agents on various environments
-- `multi_type_feedback/Analyze_Generated_Feedback.ipynb`: Jupyter notebook for analyzing generated feedback
-- `multi_type_feedback/Analyze_Reward_Model_Predictions.ipynb`: Jupyter notebook for analyzing reward models
-- `multi_type_feedback/Generate_RL_result_curves.ipynb`: Jupyter notebook for generating RL result curves
+The repository includes several Jupyter notebooks for analyzing results and generating figures:
 
-and more...
+- [notebooks/RtRank_Generate_Data_and_Plots.ipynb](notebooks/RtRank_Generate_Data_and_Plots.ipynb) Read data from W&B to generate result tables and plots (learning curves)
+- [train_baselines/benchmark.py](train_baselines/benchmark.py): Benchmark trained agents on various environments
+- [notebook/Analyze_Generated_Feedback.ipynb](notebook/Analyze_Generated_Feedback.ipynb): Analyze generated preference feedback datasets
+- [notebook/Analyze_Reward_Model_Predictions.ipynb](notebook/Analyze_Reward_Model_Predictions.ipynb): Evaluate reward model predictions and accuracy
+- [notebook/Generate_RL_result_curves.ipynb](notebook/Generate_RL_result_curves.ipynb): Generate learning curves for RL agents
+
+Additional analysis notebooks are available in the `notebooks/` directory.
+
+# Replication
+
+To replicate the results reported in the paper, we have prepared four independent scripts. We utilize Weights & Biases for data logging and
+synchronization. To generate the result files (tables & plots), run the following scripts:
+
+1. Train expert models
+```bash
+./scripts/train_expert_models_rt.sh
+```
+
+2. Generate feedback datasets based on expert model-sampling
+```bash
+./scripts/generate_feedback_rt.sh
+```
+
+3. Train reward models based on generated feedback
+```bash
+./scripts/train_reward_models_rt.sh
+```
+
+4. Train downstream RL models based on reward models
+```bash
+./scripts/train_RL_models_rt.sh
+```
+
+The provided scripts are targeted for a `SLURM`-based job submission system. Use your AI tool of choice to translate it
+to alternative job scheduling systems.
 
 
 ## Supported Environments
 
-- Mujoco
-- Procgen available in `dependency/procgen`: Fork of Procgen with Gymnasium support
-- Atari
-- potentially other Gym environments
+- **MuJoCo**: HalfCheetah-v5, Swimmer-v5, Walker2d-v5, Ant-v5, Hopper-v5, Humanoid-v5
+- **Highway-env**: highway-fast-v0, merge-v0, roundabout-v0
+- **Metaworld**: metaworld-sweep-into-v2, metaworld-button-press-v2, metaworld-pick-place-v2
+- **Procgen**: Available in `dependencies/procgen` (fork with Gymnasium support)
+- **Atari**: ALE environments (BeamRider, MsPacman, Enduro, Pong, etc.)
+- Other Gym/Gymnasium-compatible environments
 
-## Notes
+## Technical Notes
 
-- This repository uses CUDA for GPU acceleration. Ensure proper CUDA setup before running.
-- The training scripts are designed to distribute jobs across multiple GPUs.
-- For large-scale experiments, consider using a job scheduler like Slurm (example scripts provided in the original bash files).
+- **GPU Acceleration**: This repository requires CUDA for GPU acceleration. Ensure proper CUDA setup before running experiments.
+- **Logging**: Experiments are tracked using Weights & Biases (wandb). Configure your wandb project name using the `--wandb-project-name` flag.
+- **Reproducibility**: Set seeds explicitly using the `--seed` parameter for reproducible experiments.
+- **Job Scheduling**: For large-scale experiments, consider using a job scheduler like Slurm. Example scripts are available in the bash files.
+
+## Citation
+
+If you use this code in your research, please cite the ResponseRank paper:
+
+```bibtex
+@article{responserank2025,
+  title={ResponseRank: Data-Efficient Reward Modeling through Preference Strength Learning},
+  author={[Author names]},
+  journal={arXiv preprint arXiv:2512.25023},
+  year={2025}
+}
+```
+
+## License
+
+[Add license information here]
+
+## Acknowledgments
+
+This repository builds upon:
+- [Stable Baselines3 Zoo](https://github.com/DLR-RM/rl-baselines3-zoo) for baseline training
+- [Imitation](https://github.com/HumanCompatibleAI/imitation) package (adapted version included in `dependencies/`)
+- Masksembles implementation (included in `dependencies/masksembles/`)

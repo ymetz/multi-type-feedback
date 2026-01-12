@@ -113,7 +113,7 @@ def main():
         help="Folder for finished feedback RL agents",
     )
     parser.add_argument(
-        "--feedback-type", type=str, default="evaluative", help="Type of feedback"
+        "--feedback-type", type=str, default="comparative", help="Type of feedback"
     )
     parser.add_argument(
         "--rt-loss-weight",

@@ -1,13 +1,9 @@
 #!/bin/bash
 
-# Set the experiment parameters
-#envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
-#envs=("ALE/Pong-v5" "ALE/BeamRider-v5" "ALE/MsPacman-v5" "ALE/Enduro-v5") #"ALE/Pong-v5" "ALE/BeamRider-v5" "ALE/MsPacman-v5" "ALE/Enduro-v5")
-#envs=("metaworld-sweep-into-v2" "metaworld-pick-place-v2" "metaworld-button-press-v2")
-#envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5")
-envs=("highway-fast-v0") #"merge-v0")
-#seeds=(1789 12 912391 330 1687123)
-seeds=(1789 12 912391 330 1687123)
+envs=("Swimmer-v5" "HalfCheetah-v5" "Walker2d-v5""merge-v0" ) # sweep over all envs
+
+seeds=(1789 1687123 12 912391 330) # we use five seeds
+save_freqs=(50000 50000 50000 50000) # we try to collect 20 checkpoints for diversity, so this is total_timesteps // 20
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -43,9 +39,9 @@ for ((i=0; i<$total_combinations; i+=$batch_size)); do
 #SBATCH --output=logs/generate_feedback_${batch_id}_%j.out
 
 # Load any necessary modules or activate environments here
-source /pfs/data5/home/kn/kn_kn/kn_pop257914/ws_feedback_querying/venv/bin/activate
+# source /venv/bin/activate
 
-# Run the training jobs in background
+# Run the feedback generation jobs in background
 EOT
 
     # Add each task to the Slurm script
