@@ -107,7 +107,7 @@ python multi_type_feedback/train_reward_model.py \
     --seed 42 \
     --feedback-folder feedback \
     --save-folder reward_models \
-    --rt-loss-weight 0.5 \
+    --rt-loss-weight 1.0  \
     --stratifier global \
     --partitioner random \
     --partition-size 8 \
@@ -123,7 +123,11 @@ Trains RL agents using the learned reward models instead of the ground-truth env
 python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env> --seed <seed>
 ```
 
-This script automatically loads the corresponding trained reward model from the `reward_models` folder and uses it to provide rewards during training.
+This script automatically loads the corresponding trained reward model from the `reward_models` folder and uses it to provide rewards during training. You can load reward models trained via the BT baseline or via RT weight by passing the `rt-loss-weight`parameter analogously to reward model training. If available, the corresponding reward model is automatically loaded:
+
+```bash
+python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env> --seed <seed> --rt-loss-weight 1.0
+```
 
 ## Quick Start
 
@@ -199,6 +203,29 @@ synchronization. To generate the result files (tables & plots), run the followin
 4. Train downstream RL models based on reward models
 ```bash
 ./scripts/train_RL_models_rt.sh
+```
+
+To generate equivalent results, be aware to use the provided default values for stratification, and partitioning:
+
+```python
+    parser.add_argument(
+        "--stratifier",
+        type=str,
+        default="global",
+        choices=["knn", "std_window", "global", "none"],
+        help="Stratification method for RT-rank loss",
+    )
+    parser.add_argument(
+        "--partitioner",
+        type=str,
+        default="random",
+        choices=["round_robin", "random", "none"],
+    )
+    parser.add_argument(
+        "--partition-size",
+        type=int,
+        default=8,
+    )
 ```
 
 The provided scripts are targeted for a `SLURM`-based job submission system. Use your AI tool of choice to translate it
