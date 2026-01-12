@@ -254,19 +254,12 @@ If you use this code in your research, please cite the ResponseRank paper:
 
 ```bibtex
 @inproceedings{kaufmann2025responserank,
-  slug = {responserank},
-  details_link = {true},
-  custom_content_before = {true},
-  author = {Kaufmann, Timo and Metz, Yannick and Keim, Daniel and Hüllermeier, Eyke},
-  booktitle = {The Annual Conference on Neural Information Processing Systems (NeurIPS)},
-  title = {ResponseRank: Data-Efficient Reward Modeling through Preference Strength Learning},
-  year = {2025}
+  title={ResponseRank: Data-Efficient Reward Modeling through Preference Strength Learning},
+  author={Kaufmann, Timo and Metz, Yannick and Keim, Daniel and H{\"u}llermeier, Eyke},
+  booktitle={Advances in Neural Information Processing Systems},
+  year={2025}
 }
 ```
-
-## License
-
-[Add license information here]
 
 ## Acknowledgments
 
