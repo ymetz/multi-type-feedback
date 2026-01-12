@@ -2,7 +2,7 @@ import copy
 
 import gymnasium as gym
 import numpy as np
-from ale_py import AtariEnv
+#from ale_py import AtariEnv
 from gymnasium.envs.mujoco import MujocoEnv
 from minigrid.minigrid_env import MiniGridEnv
 
@@ -38,8 +38,8 @@ class SaveResetEnvWrapper(gym.Wrapper):
                 "qpos": np.copy(self.unwrapped.data.qpos),
                 "qval": np.copy(self.unwrapped.data.qvel),
             }
-        elif isinstance(self.unwrapped, AtariEnv):
-            state = self.unwrapped.clone_state()
+        #elif isinstance(self.unwrapped, AtariEnv):
+        #    state = self.unwrapped.clone_state()
         elif isinstance(self.unwrapped, MiniGridEnv):
             # Minigrid environment
             state = {
@@ -89,8 +89,8 @@ class SaveResetEnvWrapper(gym.Wrapper):
         if isinstance(self.unwrapped, MujocoEnv):
             # MuJoCo environment
             self.unwrapped.set_state(state["qpos"], state["qval"])
-        elif isinstance(self.unwrapped, AtariEnv):
-            self.unwrapped.restore_state(state)
+        #elif isinstance(self.unwrapped, AtariEnv):
+        #    self.unwrapped.restore_state(state)
         elif isinstance(self.unwrapped, MiniGridEnv):
             # Minigrid environment (A bit cluncky i guess)
             self.unwrapped.grid = state["grid"]

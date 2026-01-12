@@ -34,7 +34,7 @@ class CustomReward(RewardFn):
         self.device = device
 
         self.reward_model = reward_model_cls.load_from_checkpoint(
-            reward_model_path, map_location=device
+            reward_model_path, map_location=device, weights_only=False
         )
 
         self.rewards = []
@@ -122,9 +122,16 @@ def main():
         help="Weight for RT-rank loss component (0.0 = disabled)",
     )
     parser.add_argument(
+        "--stratifier",
+        type=str,
+        default="global",
+        choices=["knn", "std_window", "global", "none"],
+        help="Stratification method for RT-rank loss",
+    )
+    parser.add_argument(
         "--partitioner",
         type=str,
-        default="none",
+        default="random",
         choices=["round_robin", "random", "none"],
     )
     parser.add_argument(
@@ -138,7 +145,7 @@ def main():
     _, model_id = TrainingUtils.get_model_ids(args)
 
     if args.rt_loss_weight > 0.0:
-        model_id = f"{model_id}_rt{args.rt_loss_weight}_part{args.partitioner}_ps{args.partition_size}"
+        model_id = f"{model_id}_rt{args.rt_loss_weight}"
     
     reward_model_path = (
         os.path.join(args.reward_model_folder, f"{model_id}.ckpt")

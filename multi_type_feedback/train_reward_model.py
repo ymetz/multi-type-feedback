@@ -143,7 +143,7 @@ def train_reward_model(
 
 
     if rt_loss_weight > 0.0:
-        reward_model_id = f"{reward_model_id}_rt{rt_loss_weight}_part{log_partitioner}_ps{partition_size}"
+        reward_model_id = f"{reward_model_id}_rt{rt_loss_weight}"#_part{log_partitioner}_ps{partition_size}"
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=save_path,
@@ -230,7 +230,7 @@ def main():
     parser.add_argument(
         "--partitioner",
         type=str,
-        default="none",
+        default="random",
         choices=["round_robin", "random", "none"],
     )
     parser.add_argument(
@@ -249,6 +249,7 @@ def main():
 
     # Setup stratifier if RT-rank loss is enabled
     stratifier = None
+    partitioner = None
     if args.rt_loss_weight > 0.0:
         from multi_type_feedback.stratification import (
             GlobalPartitionStratifier,
@@ -267,20 +268,19 @@ def main():
         else:
             raise ValueError(f"Unknown stratifier: {args.stratifier}")
 
-    partitioner = None
-    if args.partitioner is not None:
-        from multi_type_feedback.partitioner import (
-            RoundRobinPartitioner,
-            RandomPartitioner,
-        )
-        if args.partitioner == "round_robin":
-            partitioner = RoundRobinPartitioner(target_size=args.partition_size)
-        elif args.partitioner == "random":
-            partitioner = RandomPartitioner(partition_size=args.partition_size)
-        elif args.partitioner == "none":
-            partitioner = None
-        else:
-            raise ValueError(f"Unknown partitioner: {args.partitioner}")
+        if args.partitioner is not None:
+            from multi_type_feedback.partitioner import (
+                RoundRobinPartitioner,
+                RandomPartitioner,
+            )
+            if args.partitioner == "round_robin":
+                partitioner = RoundRobinPartitioner(target_size=args.partition_size)
+            elif args.partitioner == "random":
+                partitioner = RandomPartitioner(partition_size=args.partition_size)
+            elif args.partitioner == "none":
+                partitioner = None
+            else:
+                raise ValueError(f"Unknown partitioner: {args.partitioner}")
 
     # Setup reward model
     reward_model = (

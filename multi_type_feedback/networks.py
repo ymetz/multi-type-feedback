@@ -348,9 +348,8 @@ class SingleNetwork(LightningModule):
             self.log("val_loss", loss, prog_bar=True)
             
             # Compute accuracy for comparative feedback if applicable
-            if self._is_comparative_feedback(batch):
-                accuracy = self._compute_pairwise_accuracy(batch)
-                self.log("val_accuracy", accuracy, prog_bar=True)
+            accuracy = self._compute_pairwise_accuracy(batch)
+            self.log("val_accuracy", accuracy, prog_bar=True)
     
     def _is_comparative_feedback(self, batch):
         """Check if this is comparative feedback (pairwise comparison)."""

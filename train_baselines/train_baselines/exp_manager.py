@@ -12,7 +12,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import gymnasium as gym
 import numpy as np
 import optuna
-import procgen
 import torch as th
 import yaml
 from gymnasium import spaces
@@ -736,6 +735,7 @@ class ExperimentManager:
         # On most env, SubprocVecEnv does not help and is quite memory hungry,
         # therefore, we use DummyVecEnv by default
         if "procgen" in self.env_name.gym_id:
+            import procgen
             _, short_name, _ = self.env_name.gym_id.split("-")
             env = procgen.ProcgenEnv(num_envs=n_envs, env_name=short_name)
             env = VecExtractDictObs(env, "rgb")
