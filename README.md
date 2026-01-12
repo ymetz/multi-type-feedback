@@ -55,7 +55,7 @@ Generates feedback for trained agents:
 python multi_type_feedback/generate_feedback.py --algorithm ppo --environment <env> --seed <seed> --n-feedback 5000 --save-folder feedback
 ```
 
-**Note:** This script loads trained agents from the `gt_agents` folder and expects that `python train_baselines/benchmark.py` has been run to generate evaluation scores for the agents.
+**Note:** This script loads trained agents from the `gt_agents` folder and expects that `python train_baselines/train_baselines/benchmark_evals.py` has been run to generate evaluation scores for the agents.
 
 ### 3. Reward Model Training (`multi_type_feedback/train_reward_model.py`)
 
@@ -173,10 +173,10 @@ For detailed parameters and options, refer to the individual script files or use
 The repository includes several Jupyter notebooks for analyzing results and generating figures:
 
 - [notebooks/RtRank_Generate_Data_and_Plots.ipynb](notebooks/RtRank_Generate_Data_and_Plots.ipynb) Read data from W&B to generate result tables and plots (learning curves)
-- [train_baselines/benchmark.py](train_baselines/benchmark.py): Benchmark trained agents on various environments
-- [notebook/Analyze_Generated_Feedback.ipynb](notebook/Analyze_Generated_Feedback.ipynb): Analyze generated preference feedback datasets
-- [notebook/Analyze_Reward_Model_Predictions.ipynb](notebook/Analyze_Reward_Model_Predictions.ipynb): Evaluate reward model predictions and accuracy
-- [notebook/Generate_RL_result_curves.ipynb](notebook/Generate_RL_result_curves.ipynb): Generate learning curves for RL agents
+- [train_baselines/train_baselines/benchmark_evals.py](train_baselines/train_baselines/benchmark_evals.py): Benchmark trained agents on various environments
+- [notebooks/Analyze_Generated_Feedback.ipynb](notebooks/Analyze_Generated_Feedback.ipynb): Analyze generated preference feedback datasets
+- [notebooks/Analyze_Reward_Model_Predictions.ipynb](notebooks/Analyze_Reward_Model_Predictions.ipynb): Evaluate reward model predictions and accuracy
+- [notebooks/Generate_RL_result_curves.ipynb](notebooks/Generate_RL_result_curves.ipynb): Generate learning curves for RL agents
 
 Additional analysis notebooks are available in the `notebooks/` directory.
 
