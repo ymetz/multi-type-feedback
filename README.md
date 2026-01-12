@@ -253,11 +253,14 @@ to alternative job scheduling systems.
 If you use this code in your research, please cite the ResponseRank paper:
 
 ```bibtex
-@article{responserank2025,
-  title={ResponseRank: Data-Efficient Reward Modeling through Preference Strength Learning},
-  author={[Author names]},
-  journal={arXiv preprint arXiv:2512.25023},
-  year={2025}
+@inproceedings{kaufmann2025responserank,
+  slug = {responserank},
+  details_link = {true},
+  custom_content_before = {true},
+  author = {Kaufmann, Timo and Metz, Yannick and Keim, Daniel and Hüllermeier, Eyke},
+  booktitle = {The Annual Conference on Neural Information Processing Systems (NeurIPS)},
+  title = {ResponseRank: Data-Efficient Reward Modeling through Preference Strength Learning},
+  year = {2025}
 }
 ```
 
