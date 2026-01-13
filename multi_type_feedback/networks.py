@@ -43,7 +43,7 @@ def compute_pl_log_likelihood_of_ranking(log_item_worths, ranking):
     return log_result
 
 
-def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tensor, divide_by_len: bool = True) -> Tensor:
+def compute_responserank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tensor, divide_by_len: bool = True) -> Tensor:
     """
     Compute RT ranking loss with anchoring (a fixed reference point at 0 utility).
 
@@ -102,10 +102,10 @@ def compute_rtrank_loss(utility_diff: Tensor, ranks: Tensor, partition_ids: Tens
         return -joint_log_likelihood
 
 
-def calculate_rtrank_pairwise_loss(network: LightningModule, batch: Tensor):
-    """Calculate RT-rank enhanced pairwise loss for the better trajectory."""
+def calculate_responserank_pairwise_loss(network: LightningModule, batch: Tensor):
+    """Calculate Response-rank enhanced pairwise loss for the better trajectory."""
     if len(batch) == 4:
-        # RT-rank format: (pair_data, preferred_indices, ranks, partition_ids)
+        # Response-rank format: (pair_data, preferred_indices, ranks, partition_ids)
         pair_data, preferred_indices, ranks, partition_ids = batch
     else:
         # Fallback to standard format: (pair_data, preferred_indices)
@@ -131,10 +131,10 @@ def calculate_rtrank_pairwise_loss(network: LightningModule, batch: Tensor):
     log_probs = F.log_softmax(rewards, dim=1)
     pref_loss = nll_loss(log_probs, preferred_indices)
     
-    # RT-rank loss
-    rtrank_loss = compute_rtrank_loss(utility_diff, ranks, partition_ids)
+    # Response-rank loss
+    responserank_loss = compute_responserank_loss(utility_diff, ranks, partition_ids)
     
-    return pref_loss, rtrank_loss
+    return pref_loss, responserank_loss
 
 
 def calculate_mse_loss(network: LightningModule, batch: Tensor):
@@ -156,9 +156,9 @@ def calculate_mle_loss(network: LightningModule, batch: Tensor):
 
 def calculate_pairwise_loss(network: LightningModule, batch: Tensor):
     """Calculate the maximum likelihood loss for the better trajectory."""
-    # Handle both standard format and RT-rank format
+    # Handle both standard format and Response-rank format
     if len(batch) == 4:
-        # RT-rank format: (pair_data, preferred_indices, ranks, partition_ids)
+        # Response-rank format: (pair_data, preferred_indices, ranks, partition_ids)
         pair_data, preferred_indices, _, _ = batch
     else:
         # Standard format: (pair_data, preferred_indices)
@@ -226,7 +226,7 @@ class SingleNetwork(LightningModule):
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,
         masksemble_scale: float = 1.8,
-        rt_loss_weight: float = 0.0,
+        rr_loss_weight: float = 0.0,
     ):
         super().__init__()
 
@@ -234,7 +234,7 @@ class SingleNetwork(LightningModule):
         self.learning_rate = learning_rate
         self.ensemble_count = ensemble_count
         self.masksemble_scale = masksemble_scale
-        self.rt_loss_weight = rt_loss_weight
+        self.rr_loss_weight = rr_loss_weight
         obs_space, action_space = input_spaces
 
         action_is_discrete = isinstance(action_space, gym.spaces.Discrete)
@@ -318,13 +318,13 @@ class SingleNetwork(LightningModule):
 
     def training_step(self, batch: Tensor):
         """Compute the loss for training."""
-        if hasattr(self, 'rt_loss_weight') and self.rt_loss_weight > 0:
-            # RT-rank loss returns tuple (pref_loss, rtrank_loss)
-            pref_loss, rtrank_loss = self.loss_function(self, batch)
-            total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
+        if hasattr(self, 'rr_loss_weight') and self.rr_loss_weight > 0:
+            # Response-rank loss returns tuple (pref_loss, responserank_loss)
+            pref_loss, responserank_loss = self.loss_function(self, batch)
+            total_loss = (1 - self.rr_loss_weight) * pref_loss + self.rr_loss_weight * responserank_loss
             
             self.log("train_pref_loss", pref_loss, on_epoch=True, prog_bar=True)
-            self.log("train_rtrank_loss", rtrank_loss, on_epoch=True, prog_bar=True)
+            self.log("train_responserank_loss", responserank_loss, on_epoch=True, prog_bar=True)
             self.log("train_loss", total_loss, on_epoch=True, prog_bar=True)
             
             return total_loss
@@ -335,9 +335,9 @@ class SingleNetwork(LightningModule):
 
     def validation_step(self, batch: Tensor, _batch_idx: int):
         """Compute the loss for validation."""
-        if hasattr(self, 'rt_loss_weight') and self.rt_loss_weight > 0:
-            pref_loss, rtrank_loss = self.loss_function(self, batch)
-            total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
+        if hasattr(self, 'rr_loss_weight') and self.rr_loss_weight > 0:
+            pref_loss, responserank_loss = self.loss_function(self, batch)
+            total_loss = (1 - self.rr_loss_weight) * pref_loss + self.rr_loss_weight * responserank_loss
             self.log("val_loss", total_loss, prog_bar=True)
             
             # Compute accuracy for comparative feedback
@@ -369,9 +369,9 @@ class SingleNetwork(LightningModule):
     
     def _compute_pairwise_accuracy(self, batch):
         """Compute accuracy for pairwise comparisons."""
-        # Handle both standard format and RT-rank format
+        # Handle both standard format and Response-rank format
         if len(batch) == 4:
-            # RT-rank format: (pair_data, preferred_indices, ranks, partition_ids)
+            # Response-rank format: (pair_data, preferred_indices, ranks, partition_ids)
             pair_data, preferred_indices, _, _ = batch
         else:
             # Standard format: (pair_data, preferred_indices)
@@ -437,7 +437,7 @@ class SingleCnnNetwork(LightningModule):
         last_activation: Union[Type[nn.Module], None] = None,
         ensemble_count: int = 0,
         masksemble_scale: float = 1.8,
-        rt_loss_weight: float = 0.0,
+        rr_loss_weight: float = 0.0,
     ):
         super().__init__()
 
@@ -445,7 +445,7 @@ class SingleCnnNetwork(LightningModule):
         self.learning_rate = learning_rate
         self.ensemble_count = ensemble_count
         self.masksemble_scale = masksemble_scale
-        self.rt_loss_weight = rt_loss_weight
+        self.rr_loss_weight = rr_loss_weight
         obs_space, action_space = input_spaces
         input_channels = obs_space.shape[0]
 
@@ -539,13 +539,13 @@ class SingleCnnNetwork(LightningModule):
 
     def training_step(self, batch: Tensor):
         """Compute the loss for training."""
-        if hasattr(self, 'rt_loss_weight') and self.rt_loss_weight > 0:
-            # RT-rank loss returns tuple (pref_loss, rtrank_loss)
-            pref_loss, rtrank_loss = self.loss_function(self, batch)
-            total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
+        if hasattr(self, 'rr_loss_weight') and self.rr_loss_weight > 0:
+            # Response-rank loss returns tuple (pref_loss, responserank_loss)
+            pref_loss, responserank_loss = self.loss_function(self, batch)
+            total_loss = (1 - self.rr_loss_weight) * pref_loss + self.rr_loss_weight * responserank_loss
             
             self.log("train_pref_loss", pref_loss, on_epoch=True, prog_bar=True)
-            self.log("train_rtrank_loss", rtrank_loss, on_epoch=True, prog_bar=True)
+            self.log("train_responserank_loss", responserank_loss, on_epoch=True, prog_bar=True)
             self.log("train_loss", total_loss, on_epoch=True, prog_bar=True)
             
             return total_loss
@@ -556,9 +556,9 @@ class SingleCnnNetwork(LightningModule):
 
     def validation_step(self, batch: Tensor, _batch_idx: int):
         """Compute the loss for validation."""
-        if hasattr(self, 'rt_loss_weight') and self.rt_loss_weight > 0:
-            pref_loss, rtrank_loss = self.loss_function(self, batch)
-            total_loss = (1 - self.rt_loss_weight) * pref_loss + self.rt_loss_weight * rtrank_loss
+        if hasattr(self, 'rr_loss_weight') and self.rr_loss_weight > 0:
+            pref_loss, responserank_loss = self.loss_function(self, batch)
+            total_loss = (1 - self.rr_loss_weight) * pref_loss + self.rr_loss_weight * responserank_loss
             self.log("val_loss", total_loss, prog_bar=True)
             
             # Compute accuracy for comparative feedback
@@ -591,9 +591,9 @@ class SingleCnnNetwork(LightningModule):
     
     def _compute_pairwise_accuracy(self, batch):
         """Compute accuracy for pairwise comparisons."""
-        # Handle both standard format and RT-rank format
+        # Handle both standard format and Response-rank format
         if len(batch) == 4:
-            # RT-rank format: (pair_data, preferred_indices, ranks, partition_ids)
+            # Response-rank format: (pair_data, preferred_indices, ranks, partition_ids)
             pair_data, preferred_indices, _, _ = batch
         else:
             # Standard format: (pair_data, preferred_indices)

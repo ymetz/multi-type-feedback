@@ -71,15 +71,16 @@ By default, reward models are trained with comparative (pairwise preference) fee
 
 #### ResponseRank Training:
 
-To enable **ResponseRank** training with response-aware loss, specify the `--rt-loss-weight` parameter:
+To enable **ResponseRank** training with response-aware loss, specify the `--rr-loss-weight` parameter (use 1.0 for full ResponseRank loss):
 
 ```bash
-python multi_type_feedback/train_reward_model.py --algorithm ppo --environment <env> --seed <seed> --feedback-folder feedback --save-folder reward_models --rt-loss-weight 0.5
+python multi_type_feedback/train_reward_model.py --algorithm ppo --environment <env> --seed <seed> --feedback-folder feedback --save-folder reward_models --rr-loss-weight 1.0
 ```
+Most of the time, using `--rr-loss-weight 1.0` is recommended to fully leverage the benefits of ResponseRank.
 
 #### Key ResponseRank Parameters:
 
-- `--rt-loss-weight <float>`: Weight for the ResponseRank loss component (default: 0.0 for standard BT loss).
+- `--rr-loss-weight <float>`: Weight for the ResponseRank loss component (default: 0.0 for standard BT loss).
   - `0.0`: Standard Bradley-Terry loss (baseline)
   - `0.1-1.0`: ResponseRank loss with increasing emphasis on response information
 
@@ -107,11 +108,11 @@ python multi_type_feedback/train_reward_model.py \
     --seed 42 \
     --feedback-folder feedback \
     --save-folder reward_models \
-    --rt-loss-weight 1.0  \
+    --rr-loss-weight 1.0  \
     --stratifier global \
     --partitioner random \
     --partition-size 8 \
-    --n-ensemble 3
+    --n-ensemble 1
 ```
 
 
@@ -123,10 +124,10 @@ Trains RL agents using the learned reward models instead of the ground-truth env
 python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env> --seed <seed>
 ```
 
-This script automatically loads the corresponding trained reward model from the `reward_models` folder and uses it to provide rewards during training. You can load reward models trained via the BT baseline or via RT weight by passing the `rt-loss-weight`parameter analogously to reward model training. If available, the corresponding reward model is automatically loaded:
+This script automatically loads the corresponding trained reward model from the `reward_models` folder and uses it to provide rewards during training. You can load reward models trained via the BT baseline or via RT weight by passing the `rr-loss-weight`parameter analogously to reward model training. If available, the corresponding reward model is automatically loaded:
 
 ```bash
-python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env> --seed <seed> --rt-loss-weight 1.0
+python multi_type_feedback/train_RL_agent.py --algorithm ppo --environment <env> --seed <seed> --rr-loss-weight 1.0
 ```
 
 ## Quick Start
@@ -157,7 +158,7 @@ Ensure CUDA is properly configured for GPU acceleration.
    python multi_type_feedback/train_reward_model.py --algorithm ppo --environment HalfCheetah-v5 --seed 0
 
    # ResponseRank loss
-   python multi_type_feedback/train_reward_model.py --algorithm ppo --environment HalfCheetah-v5 --seed 0 --rt-loss-weight 0.5 --stratifier global
+   python multi_type_feedback/train_reward_model.py --algorithm ppo --environment HalfCheetah-v5 --seed 0 --rr-loss-weight 0.5 --stratifier global
    ```
 
 4. **Train RL Agent with Learned Rewards**: Use the learned reward model
@@ -172,7 +173,7 @@ For detailed parameters and options, refer to the individual script files or use
 
 The repository includes several Jupyter notebooks for analyzing results and generating figures:
 
-- [notebooks/RtRank_Generate_Data_and_Plots.ipynb](notebooks/RtRank_Generate_Data_and_Plots.ipynb) Read data from W&B to generate result tables and plots (learning curves)
+- [notebooks/ResponseRank_Generate_Data_and_Plots.ipynb](notebooks/ResponseRank_Generate_Data_and_Plots.ipynb) Read data from W&B to generate result tables and plots (learning curves)
 - [train_baselines/train_baselines/benchmark_evals.py](train_baselines/train_baselines/benchmark_evals.py): Benchmark trained agents on various environments
 - [notebooks/Analyze_Generated_Feedback.ipynb](notebooks/Analyze_Generated_Feedback.ipynb): Analyze generated preference feedback datasets
 - [notebooks/Analyze_Reward_Model_Predictions.ipynb](notebooks/Analyze_Reward_Model_Predictions.ipynb): Evaluate reward model predictions and accuracy
@@ -187,22 +188,22 @@ synchronization. To generate the result files (tables & plots), run the followin
 
 1. Train expert models
 ```bash
-./scripts/train_expert_models_rt.sh
+./scripts/train_expert_models_rr.sh
 ```
 
 2. Generate feedback datasets based on expert model-sampling
 ```bash
-./scripts/generate_feedback_rt.sh
+./scripts/generate_feedback_rr.sh
 ```
 
 3. Train reward models based on generated feedback
 ```bash
-./scripts/train_reward_models_rt.sh
+./scripts/train_reward_models_rr.sh
 ```
 
 4. Train downstream RL models based on reward models
 ```bash
-./scripts/train_RL_models_rt.sh
+./scripts/train_RL_models_rr.sh
 ```
 
 To generate equivalent results, be aware to use the provided default values for stratification, and partitioning:

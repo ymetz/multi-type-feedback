@@ -1,4 +1,4 @@
-"""Stratification module for RT-rank loss implementation."""
+"""Stratification module for Response-rank loss implementation."""
 
 import math
 from abc import ABC, abstractmethod

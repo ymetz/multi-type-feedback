@@ -90,7 +90,7 @@ class FeedbackDataset(Dataset):
             Tuple[NDArray, NDArray, NDArray],
         ] = []
         self.preds: List[int] = []
-        self.ranks: List[float] = []  # For RT-rank loss
+        self.ranks: List[float] = []  # For Response-rank loss
         self.partition_ids: List[int] = []  # For stratification
 
         if not feedback_data:
@@ -220,7 +220,7 @@ class FeedbackDataset(Dataset):
                 self.partition_ids = stratifier.compute_partitions(all_examples, rng)
                 for i, ex in enumerate(all_examples):
                     ex["partition_id"] = self.partition_ids[i]
-                print(f"Computed {len(set(self.partition_ids))} partitions for RT-rank loss")
+                print(f"Computed {len(set(self.partition_ids))} partitions for Response-rank loss")
 
                 if partitioner:
                     self.partition_ids, stats = partitioner.partition_examples(all_examples, rng)
@@ -498,7 +498,7 @@ class FeedbackDataset(Dataset):
     def __getitem__(self, index):
         """Return item with given index."""
         if hasattr(self, 'ranks') and len(self.ranks) > 0:
-            # Return additional data for RT-rank loss
+            # Return additional data for Response-rank loss
             return (self.targets[index], self.preds[index], 
                    self.ranks[index], self.partition_ids[index])
         else:

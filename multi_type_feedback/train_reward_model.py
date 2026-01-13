@@ -18,7 +18,7 @@ from multi_type_feedback.networks import (
     SingleCnnNetwork,
     SingleNetwork,
     calculate_pairwise_loss,
-    calculate_rtrank_pairwise_loss,
+    calculate_responserank_pairwise_loss,
     calculate_single_reward_loss,
 )
 from multi_type_feedback.utils import TrainingUtils
@@ -66,7 +66,7 @@ def train_reward_model(
     seed: int = 0,
     wandb_project_name: str = "multi-type-rlhf",
     save_path: str = "reward_models",
-    rt_loss_weight: float = 0.0,
+    rr_loss_weight: float = 0.0,
     log_stratifier=None,
     log_partitioner=None,
     partition_size=1,
@@ -142,8 +142,8 @@ def train_reward_model(
         )
 
 
-    if rt_loss_weight > 0.0:
-        reward_model_id = f"{reward_model_id}_rt{rt_loss_weight}"#_part{log_partitioner}_ps{partition_size}"
+    if rr_loss_weight > 0.0:
+        reward_model_id = f"{reward_model_id}_rr{rr_loss_weight}"#_part{log_partitioner}_ps{partition_size}"
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=save_path,
@@ -162,7 +162,7 @@ def train_reward_model(
             "seed": seed,
             "environment": environment,
             "n_feedback": n_feedback,
-            "rt_loss_weight": rt_loss_weight,
+            "rr_loss_weight": rr_loss_weight,
             "stratifier": log_stratifier,
             "partitioner": log_partitioner,  
         },
@@ -215,17 +215,17 @@ def main():
         help="Save folder for trained reward models",
     )
     parser.add_argument(
-        "--rt-loss-weight",
+        "--rr-loss-weight",
         type=float,
         default=0.0,
-        help="Weight for RT-rank loss component (0.0 = disabled)",
+        help="Weight for Response-rank loss component (0.0 = disabled)",
     )
     parser.add_argument(
         "--stratifier",
         type=str,
         default="global",
         choices=["knn", "std_window", "global", "none"],
-        help="Stratification method for RT-rank loss",
+        help="Stratification method for Response-rank loss",
     )
     parser.add_argument(
         "--partitioner",
@@ -247,10 +247,10 @@ def main():
 
     feedback_id, model_id = TrainingUtils.get_model_ids(args)
 
-    # Setup stratifier if RT-rank loss is enabled
+    # Setup stratifier if Response-rank loss is enabled
     stratifier = None
     partitioner = None
-    if args.rt_loss_weight > 0.0:
+    if args.rr_loss_weight > 0.0:
         from multi_type_feedback.stratification import (
             GlobalPartitionStratifier,
             KnnStratifier,
@@ -305,12 +305,12 @@ def main():
         loss_function=(
             calculate_single_reward_loss
             if args.feedback_type in ["evaluative", "descriptive"]
-            else (calculate_rtrank_pairwise_loss if args.rt_loss_weight > 0.0 
+            else (calculate_responserank_pairwise_loss if args.rr_loss_weight > 0.0 
                   else calculate_pairwise_loss)
         ),
         learning_rate=1e-5,
         ensemble_count=args.n_ensemble,
-        rt_loss_weight=args.rt_loss_weight,
+        rr_loss_weight=args.rr_loss_weight,
     )
 
     dataset = LoadFeedbackDataset(
@@ -343,7 +343,7 @@ def main():
         seed=args.seed,
         wandb_project_name=args.wandb_project_name,
         save_path=args.save_folder,
-        rt_loss_weight=args.rt_loss_weight,
+        rr_loss_weight=args.rr_loss_weight,
         log_stratifier=args.stratifier if args.stratifier is not None else "none",
         log_partitioner=args.partitioner if args.partitioner is not None else "none",
         partition_size=args.partition_size,

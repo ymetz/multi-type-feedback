@@ -8,7 +8,7 @@ seeds=(1789 1687123 12 912391 330) # we use five seeds
 noise_levels=(0.0 0.1 0.25 0.5) # different noise levels - use 0.0 for no noise
 
 n_feedbacks=(5000) # default, use all
-rt_loss_weights=(0.0 1.0) # two configurations: BT baseline and full ResponseRank
+rr_loss_weights=(0.0 1.0) # two configurations: BT baseline and full ResponseRank
 
 # Create a directory for log files if it doesn't exist
 mkdir -p logs
@@ -21,8 +21,8 @@ for seed in "${seeds[@]}"; do
     for env in "${envs[@]}"; do
         for noise in "${noise_levels[@]}"; do
             for n_feedback in "${n_feedbacks[@]}"; do
-                for rt_loss_weight in "${rt_loss_weights[@]}"; do
-                    combinations+=("$seed $env $noise $n_feedback $rt_loss_weight")
+                for rr_loss_weight in "${rr_loss_weights[@]}"; do
+                    combinations+=("$seed $env $noise $n_feedback $rr_loss_weight")
                 done
             done
         done
@@ -58,8 +58,8 @@ EOT
 
     # Add each task to the Slurm script
     for combination in "${batch[@]}"; do
-        read seed env feedback noise n_feedback rt_loss_weight <<< $combination
-        echo "python multi_type_feedback/train_reward_model.py --algorithm ppo --environment $env --feedback-type comparative --n-feedback $n_feedback --seed $seed --noise-level $noise --rt-loss-weight $rt_loss_weight --no-loading-bar --wandb-project-name rt_rank &" >> $sbatch_script
+        read seed env feedback noise n_feedback rr_loss_weight <<< $combination
+        echo "python multi_type_feedback/train_reward_model.py --algorithm ppo --environment $env --feedback-type comparative --n-feedback $n_feedback --seed $seed --noise-level $noise --rr-loss-weight $rr_loss_weight --no-loading-bar --wandb-project-name response_rank &" >> $sbatch_script
     done
 
     # Wait for all background jobs to finish

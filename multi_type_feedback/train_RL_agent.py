@@ -116,17 +116,17 @@ def main():
         "--feedback-type", type=str, default="comparative", help="Type of feedback"
     )
     parser.add_argument(
-        "--rt-loss-weight",
+        "--rr-loss-weight",
         type=float,
         default=0.0,
-        help="Weight for RT-rank loss component (0.0 = disabled)",
+        help="Weight for Response-rank loss component (0.0 = disabled)",
     )
     parser.add_argument(
         "--stratifier",
         type=str,
         default="global",
         choices=["knn", "std_window", "global", "none"],
-        help="Stratification method for RT-rank loss",
+        help="Stratification method for Response-rank loss",
     )
     parser.add_argument(
         "--partitioner",
@@ -144,8 +144,8 @@ def main():
     TrainingUtils.set_seeds(args.seed)
     _, model_id = TrainingUtils.get_model_ids(args)
 
-    if args.rt_loss_weight > 0.0:
-        model_id = f"{model_id}_rt{args.rt_loss_weight}"
+    if args.rr_loss_weight > 0.0:
+        model_id = f"{model_id}_rr{args.rr_loss_weight}"
     
     reward_model_path = (
         os.path.join(args.reward_model_folder, f"{model_id}.ckpt")
